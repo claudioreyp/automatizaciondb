@@ -3,6 +3,7 @@ from typing import Dict, Any, List
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import os
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
 # Cargamos las variables de entorno desde el archivo .env
@@ -12,6 +13,15 @@ app = FastAPI(
     title="API - Base de Datos Dinámica en Supabase",
     description="Tu API para crear tablas e insertar datos al vuelo, respaldada por PostgreSQL en la nube.",
     version="3.0.0"
+)
+
+# Permitir CORS para que cualquier frontend remoto conecte con la API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # La conexión que te da Supabase en su panel (Settings -> Database -> Connection string -> URI)
