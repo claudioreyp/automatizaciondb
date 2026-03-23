@@ -134,7 +134,15 @@ def leer_datos(nombre_tabla: str):
         conn.close()
         raise HTTPException(status_code=404, detail=f"No se pudo leer la tabla. Error: {str(e)}")
     conn.close()
-    return filas
+    
+    seguras = []
+    for f in filas:
+        fd = dict(f)
+        if 'izipay_private' in fd:
+            del fd['izipay_private']
+        seguras.append(fd)
+        
+    return seguras
 
 @app.put("/api/datos/{nombre_tabla}/{id}", summary="Actualizar Dato en Supabase")
 def actualizar_dato(nombre_tabla: str, id: int, datos: Dict[str, Any] = Body(...)):
