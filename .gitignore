@@ -1,0 +1,15 @@
+# Entornos virtuales
+venv/
+env/
+mi_entorno/
+
+# Archivos de Python compilados
+__pycache__/
+*.pyc
+
+# Secretos y contraseñas (NUNCA SUBIR A GITHUB)
+.env
+
+# Archivos locales de bases de datos
+*.db
+datos.db

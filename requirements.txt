@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+pydantic
+a2wsgi
+psycopg2-binary
+python-dotenv
