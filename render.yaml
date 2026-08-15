@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: automatizaciondb
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    preDeployCommand: alembic upgrade head
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.4
+      - key: ENVIRONMENT
+        value: production
+      - key: AUTO_CREATE_SCHEMA
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_JWKS_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: INTEGRATION_SERVICE_TOKEN
+        sync: false
+      - key: INVITE_REDIRECT_URL
+        sync: false
+      - key: LEGACY_PUBLIC_READS_ENABLED
+        value: "true"

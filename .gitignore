@@ -9,7 +9,13 @@ __pycache__/
 
 # Secretos y contraseñas (NUNCA SUBIR A GITHUB)
 .env
+.env.local
 
 # Archivos locales de bases de datos
 *.db
 datos.db
+uploads/
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
