@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -99,6 +99,7 @@ from .schemas import (
     PublicReservationCreate,
     RecipeReplace,
     RegisterCreate,
+    RestaurantOnboardingCreate,
     ReservationCreate,
     ReservationUpdate,
     SplitPreview,
@@ -180,6 +181,80 @@ def serialize_invitation(invitation: Invitation) -> dict:
         "accepted_at": invitation.accepted_at,
         "created_at": invitation.created_at,
     }
+
+
+def create_invitation_record(
+    db: Session,
+    user: AuthContext,
+    business: Business,
+    email: str,
+    role: str,
+    branch_id: int | None = None,
+) -> tuple[Invitation, str]:
+    normalized_email = email.strip().lower()
+    for pending in db.scalars(
+        select(Invitation).where(
+            Invitation.business_id == business.id,
+            Invitation.email == normalized_email,
+            Invitation.status == "pending",
+        )
+    ):
+        pending.status = "superseded"
+    raw_token = secrets.token_urlsafe(36)
+    invitation = Invitation(
+        business_id=business.id,
+        branch_id=branch_id,
+        email=normalized_email,
+        role=role,
+        token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+        expires_at=utcnow() + timedelta(days=7),
+        created_by=user.user_id,
+    )
+    db.add(invitation)
+    db.flush()
+    audit(
+        db,
+        user,
+        "invitation.created",
+        "invitation",
+        invitation.id,
+        business.id,
+        {"email": normalized_email, "role": role},
+    )
+    return invitation, raw_token
+
+
+async def deliver_invitation(invitation: Invitation, raw_token: str) -> dict:
+    settings = get_settings()
+    delivery_status = "not_configured"
+    redirect_url = f"{settings.invite_redirect_url}?token={raw_token}"
+    if settings.supabase_url and settings.supabase_service_role_key:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.post(
+                    f"{settings.supabase_url.rstrip('/')}/auth/v1/invite",
+                    headers={
+                        "apikey": settings.supabase_service_role_key,
+                        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "email": invitation.email,
+                        "redirect_to": redirect_url,
+                        "data": {
+                            "impulsa_invitation_id": invitation.id,
+                            "business_id": invitation.business_id,
+                        },
+                    },
+                )
+                response.raise_for_status()
+                delivery_status = "sent"
+        except httpx.HTTPError:
+            delivery_status = "failed"
+    result = {**serialize_invitation(invitation), "delivery_status": delivery_status}
+    if settings.is_development:
+        result["development_accept_url"] = redirect_url
+    return result
 
 
 def serialize_branch(branch: Branch) -> dict:
@@ -548,65 +623,16 @@ async def create_invitation(
         branch = db.get(Branch, payload.branch_id)
         if not branch or branch.business_id != business.id:
             raise HTTPException(status_code=422, detail="Branch does not belong to business")
-    email = payload.email.strip().lower()
-    for pending in db.scalars(
-        select(Invitation).where(
-            Invitation.business_id == business.id,
-            Invitation.email == email,
-            Invitation.status == "pending",
-        )
-    ):
-        pending.status = "superseded"
-    raw_token = secrets.token_urlsafe(36)
-    invitation = Invitation(
-        business_id=business.id,
-        branch_id=payload.branch_id,
-        email=email,
-        role=payload.role,
-        token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
-        expires_at=utcnow() + timedelta(days=7),
-        created_by=user.user_id,
-    )
-    db.add(invitation)
-    db.flush()
-    audit(
+    invitation, raw_token = create_invitation_record(
         db,
         user,
-        "invitation.created",
-        "invitation",
-        invitation.id,
-        business.id,
-        {"email": email, "role": payload.role},
+        business,
+        payload.email,
+        payload.role,
+        payload.branch_id,
     )
     db.commit()
-
-    settings = get_settings()
-    delivery_status = "not_configured"
-    redirect_url = f"{settings.invite_redirect_url}?token={raw_token}"
-    if settings.supabase_url and settings.supabase_service_role_key:
-        try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                response = await client.post(
-                    f"{settings.supabase_url.rstrip('/')}/auth/v1/invite",
-                    headers={
-                        "apikey": settings.supabase_service_role_key,
-                        "Authorization": f"Bearer {settings.supabase_service_role_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "email": email,
-                        "redirect_to": redirect_url,
-                        "data": {"impulsa_invitation_id": invitation.id, "business_id": business.id},
-                    },
-                )
-                response.raise_for_status()
-                delivery_status = "sent"
-        except httpx.HTTPError:
-            delivery_status = "failed"
-    result = {**serialize_invitation(invitation), "delivery_status": delivery_status}
-    if settings.is_development:
-        result["development_accept_url"] = redirect_url
-    return result
+    return await deliver_invitation(invitation, raw_token)
 
 
 @api.post("/invitations/accept", tags=["auth"])
@@ -749,6 +775,247 @@ def issue_integration_token() -> tuple[str, str, str]:
     prefix = f"esc_live_{token_id}"
     token = f"{prefix}.{secrets.token_urlsafe(32)}"
     return token, prefix, hash_integration_token(token)
+
+
+def supabase_admin_headers() -> dict[str, str]:
+    settings = get_settings()
+    if not settings.supabase_url or not settings.supabase_service_role_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase Auth no está configurado para crear el acceso del restaurante",
+        )
+    return {
+        "apikey": settings.supabase_service_role_key,
+        "Authorization": f"Bearer {settings.supabase_service_role_key}",
+        "Content-Type": "application/json",
+    }
+
+
+async def create_supabase_owner_account(
+    email: str,
+    password: str,
+    full_name: str,
+    business_id: int,
+) -> str:
+    settings = get_settings()
+    headers = supabase_admin_headers()
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(
+                f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users",
+                headers=headers,
+                json={
+                    "email": email,
+                    "password": password,
+                    "email_confirm": True,
+                    "user_metadata": {"full_name": full_name},
+                    "app_metadata": {
+                        "provisioned_by": "escalar_admin",
+                        "business_id": business_id,
+                    },
+                },
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Supabase Auth no respondió al crear el usuario del restaurante",
+        ) from exc
+
+    if not response.is_success:
+        error_text = response.text.lower()
+        if response.status_code in {400, 409, 422} and any(
+            marker in error_text for marker in ("already", "registered", "exists")
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Ese usuario ya existe en Supabase Auth. Usa otro correo o gestiona su acceso existente.",
+            )
+        raise HTTPException(
+            status_code=502,
+            detail="Supabase Auth rechazó la creación del usuario del restaurante",
+        )
+
+    result = response.json()
+    user_id = result.get("id") or (result.get("user") or {}).get("id")
+    if not user_id:
+        raise HTTPException(
+            status_code=502,
+            detail="Supabase Auth creó una respuesta sin identificador de usuario",
+        )
+    return str(user_id)
+
+
+async def delete_supabase_auth_user(user_id: str) -> None:
+    """Best-effort compensation when the POS transaction cannot be committed."""
+    settings = get_settings()
+    try:
+        headers = supabase_admin_headers()
+        async with httpx.AsyncClient(timeout=15) as client:
+            await client.delete(
+                f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users/{user_id}",
+                headers=headers,
+            )
+    except (HTTPException, httpx.HTTPError):
+        # The original onboarding error remains authoritative. Operators can
+        # reconcile this exceptional case from Supabase's audit trail.
+        return
+
+
+@api.post("/admin/onboarding/restaurants", status_code=201, tags=["superadmin"])
+async def onboard_restaurant(
+    payload: RestaurantOnboardingCreate,
+    request: Request,
+    user: AuthContext = Depends(require_roles("superadmin")),
+    db: Session = Depends(get_db),
+):
+    if db.scalar(select(Business.id).where(Business.slug == payload.business.slug)):
+        raise HTTPException(status_code=409, detail="Business slug already exists")
+
+    business = Business(
+        name=payload.business.name,
+        slug=payload.business.slug,
+        plan=payload.business.plan,
+    )
+    db.add(business)
+    supabase_user_id: str | None = None
+    try:
+        db.flush()
+        for module in MODULES:
+            db.add(
+                ModuleEntitlement(
+                    business_id=business.id,
+                    module=module,
+                    enabled=module in payload.business.modules,
+                )
+            )
+
+        branch = Branch(business_id=business.id, **payload.branch.model_dump())
+        db.add(branch)
+        db.flush()
+        db.add(DiningArea(business_id=business.id, branch_id=branch.id, name="Salón principal"))
+        db.add(CashRegister(business_id=business.id, branch_id=branch.id, name="Caja principal"))
+
+        integration_token, prefix, token_hash = issue_integration_token()
+        credential = IntegrationCredential(
+            business_id=business.id,
+            branch_id=branch.id,
+            name=payload.credential_name,
+            token_prefix=prefix,
+            token_hash=token_hash,
+            scopes=payload.integration_scopes,
+            created_by=user.user_id,
+        )
+        db.add(credential)
+        db.flush()
+
+        owner_email = payload.owner_email.strip().lower()
+        owner_name = payload.owner_name.strip()
+        supabase_user_id = await create_supabase_owner_account(
+            owner_email,
+            payload.owner_password.get_secret_value(),
+            owner_name,
+            business.id,
+        )
+        membership = Membership(
+            auth_user_id=supabase_user_id,
+            email=owner_email,
+            full_name=owner_name,
+            business_id=business.id,
+            branch_id=None,
+            role="owner",
+            active=True,
+        )
+        db.add(membership)
+        db.flush()
+
+        audit(db, user, "business.created", "business", business.id, business.id)
+        audit(db, user, "branch.created", "branch", branch.id, business.id)
+        audit(
+            db,
+            user,
+            "integration_credential.created",
+            "integration_credential",
+            credential.id,
+            business.id,
+            {"branch_id": branch.id, "scopes": payload.integration_scopes},
+        )
+        audit(
+            db,
+            user,
+            "restaurant.onboarded",
+            "business",
+            business.id,
+            business.id,
+            {
+                "branch_id": branch.id,
+                "owner_email": owner_email,
+                "owner_user_id": supabase_user_id,
+            },
+        )
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        if supabase_user_id:
+            await delete_supabase_auth_user(supabase_user_id)
+        raise
+    except IntegrityError as exc:
+        db.rollback()
+        if supabase_user_id:
+            await delete_supabase_auth_user(supabase_user_id)
+        raise HTTPException(status_code=409, detail="Restaurant onboarding conflicts with existing data") from exc
+    except Exception as exc:
+        db.rollback()
+        if supabase_user_id:
+            await delete_supabase_auth_user(supabase_user_id)
+        raise HTTPException(status_code=500, detail="No se pudo completar el alta del restaurante") from exc
+
+    settings = get_settings()
+    api_base_url = (settings.public_api_base_url or f"{str(request.base_url).rstrip('/')}/api/v1").rstrip("/")
+    integration_base = f"{api_base_url}/integrations"
+    return {
+        "business": serialize_business(db, business),
+        "branch": serialize_branch(branch),
+        "owner_access": {
+            "user_id": supabase_user_id,
+            "email": owner_email,
+            "full_name": owner_name,
+            "role": "owner",
+            "status": "active",
+            "business_id": business.id,
+            "branch_id": None,
+        },
+        "credential": {
+            **serialize_integration_credential(credential),
+            "token": integration_token,
+        },
+        "n8n": {
+            "api_base_url": api_base_url,
+            "business_id": business.id,
+            "branch_id": branch.id,
+            "authentication": "bearer",
+            "write_idempotency_header": "Idempotency-Key",
+            "workflow_template": "Agente de POS Propio",
+            "endpoints": {
+                "restaurant_context": {"method": "GET", "url": f"{integration_base}/context"},
+                "yape_qr": {"method": "GET", "url": f"{integration_base}/context/yape-qr"},
+                "menu": {"method": "GET", "url": f"{integration_base}/context/menu"},
+                "inventory": {"method": "GET", "url": f"{integration_base}/context/inventory"},
+                "adjust_inventory": {"method": "POST", "url": f"{integration_base}/inventory/{{item_id}}/adjust"},
+                "tables": {"method": "GET", "url": f"{integration_base}/context/tables"},
+                "reservation_availability": {"method": "GET", "url": f"{integration_base}/context/availability"},
+                "create_order_draft": {"method": "POST", "url": f"{integration_base}/orders/draft"},
+                "update_order": {"method": "PATCH", "url": f"{integration_base}/orders/{{order_id}}"},
+                "confirm_order": {"method": "POST", "url": f"{integration_base}/orders/{{order_id}}/confirm"},
+                "confirm_cash_order": {"method": "POST", "url": f"{integration_base}/orders/{{order_id}}/cash-confirm"},
+                "payment_evidence": {"method": "POST", "url": f"{integration_base}/orders/{{order_id}}/payment-evidence"},
+                "order_status": {"method": "GET", "url": f"{integration_base}/orders/{{order_id}}/status"},
+                "request_human": {"method": "POST", "url": f"{integration_base}/orders/{{order_id}}/request-human"},
+                "create_reservation": {"method": "POST", "url": f"{integration_base}/reservations"},
+                "events": {"method": "GET", "url": f"{integration_base}/events"},
+                "ack_event": {"method": "POST", "url": f"{integration_base}/events/{{event_id}}/ack"},
+            },
+        },
+    }
 
 
 @api.get("/admin/integration-credentials", tags=["admin"])

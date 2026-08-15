@@ -27,5 +27,7 @@ services:
         sync: false
       - key: INVITE_REDIRECT_URL
         sync: false
+      - key: PUBLIC_API_BASE_URL
+        value: https://automatizaciondb.onrender.com/api/v1
       - key: LEGACY_PUBLIC_READS_ENABLED
         value: "true"

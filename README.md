@@ -6,6 +6,7 @@ Backend multiempresa para el POS de restaurantes de Impulsa. Expone una API Fast
 
 - Supabase Auth con membresías y roles `superadmin`, `owner`, `manager`, `cashier`, `waiter`, `kitchen` y `dispatcher`.
 - Negocios, sucursales, módulos, invitaciones y auditoría administrativa.
+- Alta compensada de restaurantes con sucursal, usuario propietario activo y credencial n8n de un solo uso.
 - Catálogo, variantes, modificadores, ingredientes, recetas y movimientos de stock.
 - Pedidos por canal, mesas, comandas/KDS, pagos parciales y división de cuenta.
 - Cajas, turnos, ingresos, retiros y cierre declarado.
@@ -45,16 +46,24 @@ python -m scripts.bootstrap_superadmin --auth-user-id UUID_DE_SUPABASE --email a
 
 `render.yaml` contiene el blueprint de despliegue sin secretos. Render ejecuta Alembic en predeploy y luego inicia Uvicorn.
 
-## Integración futura con n8n
+## Alta de un restaurante y conexión con n8n
+
+`POST /api/v1/admin/onboarding/restaurants` crea en una sola operación el negocio, la sucursal principal, las estructuras iniciales de salón/caja, el usuario propietario en Supabase Auth, su membresía activa y una credencial privada limitada a esa sucursal. Si Supabase o la transacción local fallan, se revierte el alta y se intenta eliminar cualquier usuario externo creado durante el proceso.
+
+El request recibe `owner_name`, `owner_email` (presentado como **Usuario**) y `owner_password`. La contraseña se entrega directamente a Supabase Auth mediante HTTPS, nunca se audita, nunca se persiste en las tablas del POS y nunca se devuelve en la respuesta. Admins la conserva solo en memoria para mostrarla una vez junto con el acceso a CLIENTES. La respuesta sí muestra el token n8n una sola vez e incluye todas las URLs de integración que Admins permite copiar.
+
+Configure `PUBLIC_API_BASE_URL` con la URL pública terminada en `/api/v1` para que el paquete generado use direcciones accesibles desde el VPS de n8n.
+
+## Integración con n8n
 
 Las lecturas de contexto están bajo `/api/v1/integrations/context/*`. Toda escritura de integración exige:
 
 ```http
-X-Integration-Token: <secret>
+Authorization: Bearer <secret>
 Idempotency-Key: <uuid-unico-por-operacion>
 ```
 
-Esto evita que reintentos de WhatsApp creen dos pedidos, dos confirmaciones o dos reservas. El token se guarda en credenciales de n8n, nunca en el navegador.
+Esto evita que reintentos de WhatsApp creen dos pedidos, dos confirmaciones o dos reservas. Cada token queda asociado a un solo negocio y sucursal, se almacena únicamente como hash en la API y debe guardarse en credenciales de n8n.
 
 Durante la transición siguen disponibles:
 

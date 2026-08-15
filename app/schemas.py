@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 
 class ApiModel(BaseModel):
@@ -85,6 +85,43 @@ class IntegrationCredentialCreate(ApiModel):
     @field_validator("scopes")
     @classmethod
     def validate_scopes(cls, value: list[str]) -> list[str]:
+        normalized = sorted(set(value))
+        invalid = set(normalized) - INTEGRATION_SCOPES
+        if invalid:
+            raise ValueError(f"Unsupported integration scopes: {', '.join(sorted(invalid))}")
+        if not normalized:
+            raise ValueError("At least one integration scope is required")
+        return normalized
+
+
+class RestaurantOnboardingCreate(ApiModel):
+    business: BusinessCreate
+    branch: BranchCreate
+    owner_name: str = Field(default="Propietario", min_length=2, max_length=180)
+    owner_email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    owner_password: SecretStr = Field(min_length=12, max_length=128)
+    credential_name: str = Field(default="Agente n8n principal", min_length=2, max_length=120)
+    integration_scopes: list[str] = Field(default_factory=lambda: sorted(INTEGRATION_SCOPES))
+
+    @field_validator("owner_password")
+    @classmethod
+    def validate_owner_password(cls, value: SecretStr) -> SecretStr:
+        password = value.get_secret_value()
+        checks = (
+            any(character.islower() for character in password),
+            any(character.isupper() for character in password),
+            any(character.isdigit() for character in password),
+            any(not character.isalnum() for character in password),
+        )
+        if not all(checks):
+            raise ValueError(
+                "La contraseña debe incluir mayúscula, minúscula, número y símbolo"
+            )
+        return value
+
+    @field_validator("integration_scopes")
+    @classmethod
+    def validate_integration_scopes(cls, value: list[str]) -> list[str]:
         normalized = sorted(set(value))
         invalid = set(normalized) - INTEGRATION_SCOPES
         if invalid:

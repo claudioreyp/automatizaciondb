@@ -1,7 +1,10 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
 from .api import api, legacy
@@ -51,6 +54,18 @@ app.add_middleware(
 )
 app.include_router(api)
 app.include_router(legacy)
+
+
+@app.exception_handler(RequestValidationError)
+async def redact_validation_secrets(_, exc: RequestValidationError):
+    errors = []
+    for error in exc.errors():
+        safe_error = dict(error)
+        location = [str(part).lower() for part in safe_error.get("loc", [])]
+        if any("password" in part for part in location):
+            safe_error["input"] = "[REDACTED]"
+        errors.append(safe_error)
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 
 
 def websocket_user(websocket: WebSocket, branch: Branch) -> AuthContext:

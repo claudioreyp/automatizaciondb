@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     supabase_jwks_url: str | None = None
     supabase_service_role_key: str | None = None
     invite_redirect_url: str = "http://localhost:5173/invitacion"
+    public_api_base_url: str | None = None
     integration_service_token: str | None = None
     dev_auth_token: str | None = None
     legacy_public_reads_enabled: bool = True
