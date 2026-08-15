@@ -791,29 +791,72 @@ def supabase_admin_headers() -> dict[str, str]:
     }
 
 
+def supabase_owner_function_url() -> str:
+    settings = get_settings()
+    if not settings.supabase_url:
+        raise HTTPException(
+            status_code=503,
+            detail="Supabase Auth no está configurado para crear el acceso del restaurante",
+        )
+    function_name = settings.supabase_owner_provision_function.strip()
+    if not function_name:
+        raise HTTPException(
+            status_code=503,
+            detail="La función segura para crear propietarios no está configurada",
+        )
+    return f"{settings.supabase_url.rstrip('/')}/functions/v1/{function_name}"
+
+
+def caller_bearer_headers(caller_authorization: str | None) -> dict[str, str]:
+    if not caller_authorization or not caller_authorization.lower().startswith("bearer "):
+        raise HTTPException(
+            status_code=503,
+            detail="La sesión del superadmin es necesaria para crear el acceso del restaurante",
+        )
+    return {
+        "Authorization": caller_authorization,
+        "Content-Type": "application/json",
+    }
+
+
 async def create_supabase_owner_account(
     email: str,
     password: str,
     full_name: str,
     business_id: int,
+    caller_authorization: str | None = None,
 ) -> str:
     settings = get_settings()
-    headers = supabase_admin_headers()
+    use_admin_api = bool(settings.supabase_service_role_key)
+    if use_admin_api:
+        url = f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users"
+        headers = supabase_admin_headers()
+        body = {
+            "email": email,
+            "password": password,
+            "email_confirm": True,
+            "user_metadata": {"full_name": full_name},
+            "app_metadata": {
+                "provisioned_by": "escalar_admin",
+                "business_id": business_id,
+            },
+        }
+    else:
+        url = supabase_owner_function_url()
+        headers = caller_bearer_headers(caller_authorization)
+        body = {
+            "action": "create",
+            "email": email,
+            "password": password,
+            "full_name": full_name,
+            "business_id": business_id,
+        }
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             response = await client.post(
-                f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users",
+                url,
                 headers=headers,
-                json={
-                    "email": email,
-                    "password": password,
-                    "email_confirm": True,
-                    "user_metadata": {"full_name": full_name},
-                    "app_metadata": {
-                        "provisioned_by": "escalar_admin",
-                        "business_id": business_id,
-                    },
-                },
+                json=body,
             )
     except httpx.HTTPError as exc:
         raise HTTPException(
@@ -823,6 +866,11 @@ async def create_supabase_owner_account(
 
     if not response.is_success:
         error_text = response.text.lower()
+        if response.status_code in {401, 403}:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail="La sesión del superadmin no autorizó la creación del usuario",
+            )
         if response.status_code in {400, 409, 422} and any(
             marker in error_text for marker in ("already", "registered", "exists")
         ):
@@ -845,16 +893,25 @@ async def create_supabase_owner_account(
     return str(user_id)
 
 
-async def delete_supabase_auth_user(user_id: str) -> None:
+async def delete_supabase_auth_user(
+    user_id: str,
+    caller_authorization: str | None = None,
+) -> None:
     """Best-effort compensation when the POS transaction cannot be committed."""
     settings = get_settings()
     try:
-        headers = supabase_admin_headers()
         async with httpx.AsyncClient(timeout=15) as client:
-            await client.delete(
-                f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users/{user_id}",
-                headers=headers,
-            )
+            if settings.supabase_service_role_key:
+                await client.delete(
+                    f"{settings.supabase_url.rstrip('/')}/auth/v1/admin/users/{user_id}",
+                    headers=supabase_admin_headers(),
+                )
+            else:
+                await client.post(
+                    supabase_owner_function_url(),
+                    headers=caller_bearer_headers(caller_authorization),
+                    json={"action": "delete", "user_id": user_id},
+                )
     except (HTTPException, httpx.HTTPError):
         # The original onboarding error remains authoritative. Operators can
         # reconcile this exceptional case from Supabase's audit trail.
@@ -878,6 +935,7 @@ async def onboard_restaurant(
     )
     db.add(business)
     supabase_user_id: str | None = None
+    caller_authorization = request.headers.get("Authorization")
     try:
         db.flush()
         for module in MODULES:
@@ -915,6 +973,7 @@ async def onboard_restaurant(
             payload.owner_password.get_secret_value(),
             owner_name,
             business.id,
+            caller_authorization,
         )
         membership = Membership(
             auth_user_id=supabase_user_id,
@@ -956,17 +1015,17 @@ async def onboard_restaurant(
     except HTTPException:
         db.rollback()
         if supabase_user_id:
-            await delete_supabase_auth_user(supabase_user_id)
+            await delete_supabase_auth_user(supabase_user_id, caller_authorization)
         raise
     except IntegrityError as exc:
         db.rollback()
         if supabase_user_id:
-            await delete_supabase_auth_user(supabase_user_id)
+            await delete_supabase_auth_user(supabase_user_id, caller_authorization)
         raise HTTPException(status_code=409, detail="Restaurant onboarding conflicts with existing data") from exc
     except Exception as exc:
         db.rollback()
         if supabase_user_id:
-            await delete_supabase_auth_user(supabase_user_id)
+            await delete_supabase_auth_user(supabase_user_id, caller_authorization)
         raise HTTPException(status_code=500, detail="No se pudo completar el alta del restaurante") from exc
 
     settings = get_settings()

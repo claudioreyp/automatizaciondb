@@ -55,11 +55,12 @@ def onboarding_payload(slug: str = "pizza-house") -> dict:
 
 
 def test_onboarding_creates_complete_restaurant_and_one_time_n8n_package(client, monkeypatch):
-    async def create_owner(email, password, full_name, business_id):
+    async def create_owner(email, password, full_name, business_id, caller_authorization):
         assert email == "owner@pizzahouse.pe"
         assert password == "PizzaHouse2026!"
         assert full_name == "Ana Paredes"
         assert business_id == 1
+        assert caller_authorization is None
         return "supabase-owner-1"
 
     monkeypatch.setattr("app.api.create_supabase_owner_account", create_owner)
@@ -180,7 +181,7 @@ def test_onboarding_deletes_external_user_when_local_transaction_fails(client, m
     async def create_owner(*_args):
         return "orphan-candidate"
 
-    async def delete_owner(user_id):
+    async def delete_owner(user_id, *_args):
         deleted_users.append(user_id)
 
     def fail_audit(*_args, **_kwargs):
@@ -265,3 +266,85 @@ def test_supabase_owner_helper_uses_admin_api_without_returning_password(monkeyp
     assert captured["json"]["password"] == "DirectAccess2026!"
     assert captured["json"]["app_metadata"]["business_id"] == 42
     assert captured["headers"]["Authorization"] == "Bearer service-role-secret"
+
+
+def test_supabase_owner_helper_uses_authenticated_edge_function_without_server_secret(monkeypatch):
+    captured = {}
+
+    class FakeAsyncClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, url, headers, json):
+            captured.update({"url": url, "headers": headers, "json": json})
+            return httpx.Response(
+                201,
+                json={"id": "edge-created-user"},
+                request=httpx.Request("POST", url),
+            )
+
+    monkeypatch.setattr(
+        api_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            supabase_url="https://project.supabase.co",
+            supabase_service_role_key=None,
+            supabase_owner_provision_function="provision-pos-owner",
+        ),
+    )
+    monkeypatch.setattr(api_module.httpx, "AsyncClient", FakeAsyncClient)
+
+    user_id = asyncio.run(
+        api_module.create_supabase_owner_account(
+            "owner@example.com",
+            "DirectAccess2026!",
+            "Owner Name",
+            42,
+            "Bearer superadmin-access-token",
+        )
+    )
+
+    assert user_id == "edge-created-user"
+    assert captured["url"] == "https://project.supabase.co/functions/v1/provision-pos-owner"
+    assert captured["headers"]["Authorization"] == "Bearer superadmin-access-token"
+    assert "apikey" not in captured["headers"]
+    assert captured["json"] == {
+        "action": "create",
+        "email": "owner@example.com",
+        "password": "DirectAccess2026!",
+        "full_name": "Owner Name",
+        "business_id": 42,
+    }
+
+
+def test_supabase_owner_helper_requires_superadmin_session_for_edge_function(monkeypatch):
+    monkeypatch.setattr(
+        api_module,
+        "get_settings",
+        lambda: SimpleNamespace(
+            supabase_url="https://project.supabase.co",
+            supabase_service_role_key=None,
+            supabase_owner_provision_function="provision-pos-owner",
+        ),
+    )
+
+    try:
+        asyncio.run(
+            api_module.create_supabase_owner_account(
+                "owner@example.com",
+                "DirectAccess2026!",
+                "Owner Name",
+                42,
+            )
+        )
+    except HTTPException as exc:
+        assert exc.status_code == 503
+        assert "sesión del superadmin" in exc.detail
+    else:
+        raise AssertionError("Expected the edge function path to require a bearer session")

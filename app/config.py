@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str | None = None
     supabase_jwks_url: str | None = None
     supabase_service_role_key: str | None = None
+    supabase_owner_provision_function: str = "provision-pos-owner"
     invite_redirect_url: str = "http://localhost:5173/invitacion"
     public_api_base_url: str | None = None
     integration_service_token: str | None = None

@@ -34,7 +34,7 @@ El seed crea `Bazar pizzas`, una sucursal, mesas, productos, inventario, recetas
 ## Supabase y producción
 
 1. Cree el proyecto Supabase y use su PostgreSQL como `DATABASE_URL`.
-2. Configure `SUPABASE_URL`, `SUPABASE_JWKS_URL` y `SUPABASE_SERVICE_ROLE_KEY` únicamente en Render.
+2. Configure `SUPABASE_URL` y `SUPABASE_JWKS_URL`. Para aprovisionar propietarios puede usar `SUPABASE_SERVICE_ROLE_KEY` únicamente en Render o la Edge Function protegida indicada por `SUPABASE_OWNER_PROVISION_FUNCTION`.
 3. Cree un bucket privado para evidencias de pago y archivos sensibles. Las claves de servicio nunca deben llegar a Vercel.
 4. Deje `AUTO_CREATE_SCHEMA=false` y ejecute `alembic upgrade head` antes del arranque.
 5. Restrinja `CORS_ORIGINS` a los dominios reales de ambos paneles.
@@ -49,6 +49,8 @@ python -m scripts.bootstrap_superadmin --auth-user-id UUID_DE_SUPABASE --email a
 ## Alta de un restaurante y conexión con n8n
 
 `POST /api/v1/admin/onboarding/restaurants` crea en una sola operación el negocio, la sucursal principal, las estructuras iniciales de salón/caja, el usuario propietario en Supabase Auth, su membresía activa y una credencial privada limitada a esa sucursal. Si Supabase o la transacción local fallan, se revierte el alta y se intenta eliminar cualquier usuario externo creado durante el proceso.
+
+Cuando la API no tiene `SUPABASE_SERVICE_ROLE_KEY`, reenvía el JWT del superadmin a la Edge Function `provision-pos-owner`. La función vuelve a validar al usuario y exige `app_metadata.role=superadmin` y `app_metadata.account_scope=escalar_ai_admin` antes de usar la clave de servicio disponible solo dentro de Supabase. Así el desarrollo local puede crear propietarios sin copiar una clave administrativa al equipo ni exponerla en los frontends.
 
 El request recibe `owner_name`, `owner_email` (presentado como **Usuario**) y `owner_password`. La contraseña se entrega directamente a Supabase Auth mediante HTTPS, nunca se audita, nunca se persiste en las tablas del POS y nunca se devuelve en la respuesta. Admins la conserva solo en memoria para mostrarla una vez junto con el acceso a CLIENTES. La respuesta sí muestra el token n8n una sola vez e incluye todas las URLs de integración que Admins permite copiar.
 
