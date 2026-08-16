@@ -8,7 +8,7 @@ import secrets
 from decimal import Decimal
 from pathlib import Path
 
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 
 from app.auth import hash_integration_token
 from app.database import SessionLocal
@@ -94,7 +94,7 @@ def get_or_create(session, model, defaults: dict | None = None, **filters):
     return instance, True
 
 
-def seed(*, reset_stock: bool, rotate_credential: bool, token_output: Path | None) -> dict:
+def seed(*, rotate_credential: bool, token_output: Path | None) -> dict:
     if not os.getenv("DATABASE_URL"):
         raise RuntimeError("DATABASE_URL is required")
 
@@ -206,23 +206,15 @@ def seed(*, reset_stock: bool, rotate_credential: bool, token_output: Path | Non
             defaults={"color": "#2589a6", "sort_order": 3, "active": True},
         )
 
-        stock, stock_created = get_or_create(
-            session,
-            InventoryItem,
-            branch_id=branch.id,
-            sku="STOCK-PIZZAS-TOTAL",
-            defaults={
-                "business_id": business.id,
-                "name": "Pizzas disponibles",
-                "unit": "unit",
-                "quantity": Decimal("30"),
-                "minimum_stock": Decimal("5"),
-                "active": True,
-            },
+        stock = session.scalar(
+            select(InventoryItem).where(
+                InventoryItem.branch_id == branch.id,
+                InventoryItem.sku == "STOCK-PIZZAS-TOTAL",
+            )
         )
-        if stock_created or reset_stock:
-            stock.quantity = Decimal("30")
-            stock.version = max(1, int(stock.version or 1))
+        if stock is not None:
+            session.execute(delete(RecipeItem).where(RecipeItem.inventory_item_id == stock.id))
+            session.delete(stock)
 
         for order, (sku, name, description, personal, medium, family) in enumerate(PIZZAS, start=1):
             product, _ = get_or_create(
@@ -237,7 +229,7 @@ def seed(*, reset_stock: bool, rotate_credential: bool, token_output: Path | Non
                     "description": description,
                     "price": Decimal(personal),
                     "available": True,
-                    "track_stock": True,
+                    "track_stock": False,
                     "preparation_station": "kitchen",
                     "sort_order": order,
                 },
@@ -248,7 +240,7 @@ def seed(*, reset_stock: bool, rotate_credential: bool, token_output: Path | Non
             product.description = description
             product.price = Decimal(personal)
             product.available = True
-            product.track_stock = True
+            product.track_stock = False
             product.preparation_station = "kitchen"
             product.sort_order = order
 
@@ -268,15 +260,6 @@ def seed(*, reset_stock: bool, rotate_credential: bool, token_output: Path | Non
                     session.add(variant)
                 variant.price_delta = delta
                 variant.active = True
-
-            recipe, _ = get_or_create(
-                session,
-                RecipeItem,
-                product_id=product.id,
-                inventory_item_id=stock.id,
-                defaults={"quantity": Decimal("1")},
-            )
-            recipe.quantity = Decimal("1")
 
         lasagna, _ = get_or_create(
             session,
@@ -407,19 +390,17 @@ def seed(*, reset_stock: bool, rotate_credential: bool, token_output: Path | Non
             "business_id": business.id,
             "branch_id": branch.id,
             "products": len(PIZZAS) + len(DRINKS) + 1,
-            "pizza_stock": str(stock.quantity),
+            "pizza_stock": "unlimited",
             "credential_prefix": credential.token_prefix,
         }
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--reset-stock", action="store_true")
     parser.add_argument("--rotate-credential", action="store_true")
     parser.add_argument("--token-output", type=Path)
     args = parser.parse_args()
     result = seed(
-        reset_stock=args.reset_stock,
         rotate_credential=args.rotate_credential,
         token_output=args.token_output,
     )
