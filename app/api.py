@@ -3344,6 +3344,8 @@ async def integration_upload_payment_evidence(
     security_code: str | None = Form(default=None),
     occurred_at: datetime | None = Form(default=None),
     recipient: str | None = Form(default=None),
+    looks_like_payment_receipt: bool | None = Form(default=None),
+    analysis_warnings: str | None = Form(default=None),
     whatsapp_message_id: str | None = Form(default=None),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     integration: IntegrationAuthContext = Depends(require_integration_scope("payments:write")),
@@ -3380,6 +3382,32 @@ async def integration_upload_payment_evidence(
         raise HTTPException(status_code=409, detail="This payment evidence image was already used")
     storage_path = await store_private_file(data, file.filename or "evidence.png", content_type)
     analysis = await analyze_payment_image(data, content_type)
+    supplied_warnings: list[str] = []
+    if analysis_warnings:
+        try:
+            decoded_warnings = json.loads(analysis_warnings)
+            if isinstance(decoded_warnings, list):
+                supplied_warnings = [
+                    str(item).strip()[:240]
+                    for item in decoded_warnings
+                    if str(item).strip()
+                ][:10]
+        except json.JSONDecodeError:
+            supplied_warnings = [str(analysis_warnings).strip()[:240]]
+    detection_flags = [
+        flag
+        for flag in (
+            looks_like_payment_receipt,
+            analysis.get("looks_like_payment_receipt"),
+        )
+        if isinstance(flag, bool)
+    ]
+    receipt_detected = all(detection_flags) if detection_flags else True
+    analysis = {
+        **analysis,
+        "workflow_looks_like_payment_receipt": looks_like_payment_receipt,
+        "receipt_detected": receipt_detected,
+    }
     values = evidence_values(
         {
             "provider": provider.lower(),
@@ -3392,13 +3420,34 @@ async def integration_upload_payment_evidence(
         },
         analysis,
     )
+    if not receipt_detected:
+        values.update(
+            {
+                "amount_detected": None,
+                "operation_number": None,
+                "security_code": None,
+                "occurred_at": None,
+                "recipient": None,
+                "confidence": values.get("confidence"),
+                "warnings": list(
+                    dict.fromkeys(
+                        [
+                            "La imagen no parece ser un comprobante de pago.",
+                            *supplied_warnings,
+                            *values.get("warnings", []),
+                        ]
+                    )
+                )[:10],
+            }
+        )
     evidence = PaymentEvidence(
         business_id=order.business_id,
         order_id=order.id,
         storage_path=storage_path,
         image_sha256=image_sha256,
         analysis=analysis,
-        status="under_review",
+        status="under_review" if receipt_detected else "not_a_receipt",
+        rejection_reason=None if receipt_detected else "La imagen no es un comprobante de pago.",
         **values,
     )
     db.add(evidence)
@@ -3408,21 +3457,44 @@ async def integration_upload_payment_evidence(
         db.rollback()
         raise HTTPException(status_code=409, detail="Payment operation number was already used") from exc
     user = AuthContext("integration", "owner", order.business_id, order.branch_id)
-    if order.status in {"draft", "pending_confirmation"}:
-        confirm_order(db, user, order)
     order.payment_method = provider.lower()
-    order.payment_status = "evidence_received"
+    if receipt_detected:
+        if order.status in {"draft", "pending_confirmation"}:
+            confirm_order(db, user, order)
+        order.payment_status = "evidence_received"
+    else:
+        if order.status == "draft":
+            order.status = "pending_confirmation"
+        order.payment_status = "invalid_evidence"
+        invalid_note = (
+            "PAGO YAPE PENDIENTE: la imagen recibida no parece ser un comprobante "
+            "de pago; no se pudieron extraer monto, numero de operacion ni codigo de seguridad."
+        )
+        if invalid_note not in (order.notes or ""):
+            order.notes = " | ".join(part for part in [order.notes, invalid_note] if part)
     order.submitted_at = order.submitted_at or utcnow()
     order.version += 1
     result = {
         "evidence": serialize_payment_evidence(evidence),
         "order": serialize_order(order),
-        "requires_human_review": True,
+        "requires_human_review": receipt_detected,
+        "receipt_detected": receipt_detected,
     }
     save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
-    audit(db, user, "integration.payment_evidence.created", "payment_evidence", evidence.id, order.business_id)
+    audit(
+        db,
+        user,
+        "integration.payment_evidence.created" if receipt_detected else "integration.payment_evidence.invalid",
+        "payment_evidence",
+        evidence.id,
+        order.business_id,
+    )
     db.commit()
-    await hub.broadcast(order.branch_id, "payment_evidence.created", result)
+    await hub.broadcast(
+        order.branch_id,
+        "payment_evidence.created" if receipt_detected else "payment_evidence.invalid",
+        result,
+    )
     return result
 
 

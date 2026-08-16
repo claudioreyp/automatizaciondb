@@ -182,6 +182,60 @@ def test_yape_requires_real_image_and_human_approval_emits_durable_event(
     assert all(item["id"] != payment_event["id"] for item in pending.json())
 
 
+def test_non_receipt_image_is_not_confirmed_and_leaves_an_operational_note(
+    client, tenant, auth_headers
+):
+    credential = create_credential(client, tenant, auth_headers)
+    token = credential["token"]
+    created = client.post(
+        "/api/v1/integrations/orders/draft",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "delivery",
+            "source": "whatsapp_agent",
+            "external_reference": "wa-invalid-image-001",
+            "whatsapp_chat_id": "51988888888@c.us",
+            "whatsapp_message_id": "wamid-invalid-order",
+            "customer_name": "Cliente imagen",
+            "customer_phone": "+51988888888",
+            "payment_method": "yape",
+            "delivery_address": {
+                "address": "Calle Lima 123",
+                "reference": "Frente al parque",
+            },
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
+        },
+        headers=integration_headers(token, "wa-invalid-image-001"),
+    )
+    assert created.status_code == 201, created.text
+    order_id = created.json()["id"]
+
+    uploaded = client.post(
+        f"/api/v1/integrations/orders/{order_id}/payment-evidence",
+        data={
+            "provider": "yape",
+            "looks_like_payment_receipt": "false",
+            "analysis_warnings": '["La imagen contiene un personaje animado."]',
+            "whatsapp_message_id": "wamid-invalid-image",
+        },
+        files={"file": ("pokemon.png", b"\x89PNG\r\n\x1a\nnot-a-receipt", "image/png")},
+        headers=integration_headers(token, "invalid-image-001"),
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    body = uploaded.json()
+    assert body["receipt_detected"] is False
+    assert body["requires_human_review"] is False
+    assert body["evidence"]["status"] == "not_a_receipt"
+    assert body["evidence"]["amount_detected"] is None
+    assert body["evidence"]["operation_number"] is None
+    assert body["evidence"]["security_code"] is None
+    assert body["order"]["status"] == "pending_confirmation"
+    assert body["order"]["payment_status"] == "invalid_evidence"
+    assert "no parece ser un comprobante" in body["order"]["notes"]
+    with SessionLocal() as db:
+        assert db.query(KitchenTicket).filter_by(order_id=order_id).count() == 0
+
+
 def test_cash_confirm_is_atomic_and_idempotent(client, tenant, auth_headers):
     credential = create_credential(client, tenant, auth_headers)
     token = credential["token"]
