@@ -2964,7 +2964,9 @@ async def public_branch_yape_qr(
     branch_slug: str,
     db: Session = Depends(get_db),
 ):
-    business = db.scalar(select(Business).where(Business.slug == business_slug, Business.active.is_(True)))
+    business = db.scalar(
+        select(Business).where(Business.slug == business_slug, Business.status == "active")
+    )
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
     branch = db.scalar(

@@ -25,6 +25,21 @@ def integration_headers(token: str, key: str | None = None):
     return headers
 
 
+def test_public_yape_qr_serves_active_business_image(client, tenant, auth_headers):
+    image = b"\x89PNG\r\n\x1a\nqr-test"
+    uploaded = client.post(
+        f"/api/v1/branches/{tenant['branch_id']}/yape-qr",
+        files={"file": ("yape.png", image, "image/png")},
+        headers=auth_headers,
+    )
+    assert uploaded.status_code == 200, uploaded.text
+
+    response = client.get("/api/v1/public/test-restaurant/main/yape-qr")
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "image/png"
+    assert response.content == image
+
+
 def test_branch_credential_is_one_time_scoped_and_revocable(client, tenant, auth_headers):
     credential = create_credential(client, tenant, auth_headers, ["menu:read"])
     assert credential["token"].startswith("esc_live_")
