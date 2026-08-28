@@ -1,5 +1,16 @@
 from app.database import SessionLocal
-from app.models import Branch, IntegrationCredential, InventoryItem, KitchenTicket, Order, PaymentEvidence, Product, RecipeItem
+from app.models import (
+    Branch,
+    Category,
+    IntegrationCredential,
+    InventoryItem,
+    KitchenTicket,
+    Order,
+    PaymentEvidence,
+    Product,
+    RecipeItem,
+    RestaurantTable,
+)
 
 
 def create_credential(client, tenant, auth_headers, scopes=None):
@@ -97,6 +108,108 @@ def test_credential_cannot_cross_branch(client, tenant, auth_headers):
     assert response.status_code == 403
 
 
+def test_integration_menu_and_orders_use_digital_service_channels(
+    client,
+    tenant,
+    auth_headers,
+):
+    credential = create_credential(
+        client,
+        tenant,
+        auth_headers,
+        ["menu:read", "orders:write"],
+    )
+    headers = integration_headers(credential["token"])
+    with SessionLocal.begin() as db:
+        db.get(Product, tenant["product_id"]).service_channels = ["digital_delivery"]
+
+    menu = client.get("/api/v1/integrations/context/menu", headers=headers)
+    assert menu.status_code == 200, menu.text
+    assert [product["id"] for product in menu.json()["products"]] == [tenant["product_id"]]
+
+    created = client.post(
+        "/api/v1/integrations/orders/draft",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "delivery",
+            "source": "pos",
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
+        },
+        headers=integration_headers(credential["token"], "digital-delivery-order"),
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["source"] == "integration"
+
+    with SessionLocal.begin() as db:
+        db.get(Product, tenant["product_id"]).service_channels = ["pos_delivery"]
+
+    filtered_menu = client.get("/api/v1/integrations/context/menu", headers=headers)
+    assert filtered_menu.status_code == 200, filtered_menu.text
+    assert filtered_menu.json()["products"] == []
+    blocked = client.post(
+        "/api/v1/integrations/orders/draft",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "delivery",
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
+        },
+        headers=integration_headers(credential["token"], "pos-only-delivery-order"),
+    )
+    assert blocked.status_code == 422
+    assert blocked.json()["code"] == "PRODUCT_UNAVAILABLE_FOR_CHANNEL"
+
+
+def test_integrations_reject_ad_hoc_order_lines(client, tenant, auth_headers):
+    credential = create_credential(client, tenant, auth_headers)
+    token = credential["token"]
+    arbitrary_line = {"name": "Producto inventado", "quantity": 1, "unit_price": 0.01}
+
+    modern = client.post(
+        "/api/v1/integrations/orders/draft",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "whatsapp",
+            "items": [arbitrary_line],
+        },
+        headers=integration_headers(token, "reject-modern-ad-hoc"),
+    )
+    assert modern.status_code == 422, modern.text
+    assert modern.json()["code"] == "CATALOG_PRODUCT_REQUIRED"
+
+    pos_draft = client.post(
+        "/api/v1/orders",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "counter",
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
+        },
+        headers={**auth_headers, "Idempotency-Key": "pos-draft-for-integration"},
+    )
+    assert pos_draft.status_code == 201, pos_draft.text
+    patched_pos_draft = client.patch(
+        f"/api/v1/integrations/orders/{pos_draft.json()['id']}",
+        json={
+            "expected_version": pos_draft.json()["version"],
+            "items": [arbitrary_line],
+        },
+        headers=integration_headers(token, "reject-pos-draft-ad-hoc"),
+    )
+    assert patched_pos_draft.status_code == 422, patched_pos_draft.text
+    assert patched_pos_draft.json()["code"] == "CATALOG_PRODUCT_REQUIRED"
+
+    legacy = client.post(
+        "/api/datos/pedidos_draft",
+        json={
+            "message_id": "reject-legacy-ad-hoc",
+            "items_json": [arbitrary_line],
+            "source": "pos",
+        },
+        headers=integration_headers(token),
+    )
+    assert legacy.status_code == 422, legacy.text
+    assert legacy.json()["code"] == "CATALOG_PRODUCT_REQUIRED"
+
+
 def test_legacy_draft_mapping_and_replay_are_scoped_to_credential_branch(
     client,
     tenant,
@@ -104,6 +217,7 @@ def test_legacy_draft_mapping_and_replay_are_scoped_to_credential_branch(
 ):
     first_credential = create_credential(client, tenant, auth_headers)
     with SessionLocal.begin() as db:
+        product_name = db.get(Product, tenant["product_id"]).name
         second_branch = Branch(
             business_id=tenant["business_id"],
             slug="second",
@@ -112,6 +226,24 @@ def test_legacy_draft_mapping_and_replay_are_scoped_to_credential_branch(
         db.add(second_branch)
         db.flush()
         second_branch_id = second_branch.id
+        second_category = Category(
+            business_id=tenant["business_id"],
+            branch_id=second_branch_id,
+            name="Legacy",
+        )
+        db.add(second_category)
+        db.flush()
+        second_product = Product(
+            business_id=tenant["business_id"],
+            branch_id=second_branch_id,
+            category_id=second_category.id,
+            sku="LEGACY-SECOND",
+            name=product_name,
+            price=12,
+        )
+        db.add(second_product)
+        db.flush()
+        second_product_id = second_product.id
 
     superadmin_headers = {
         **auth_headers,
@@ -130,7 +262,7 @@ def test_legacy_draft_mapping_and_replay_are_scoped_to_credential_branch(
         "negocio_id": tenant["other_business_id"],
         "message_id": "same-message-across-branches",
         "customer_name": "Legacy customer",
-        "items_json": [{"name": "Legacy item", "quantity": 1, "unit_price": 12}],
+        "items_json": [{"name": product_name, "quantity": 1, "unit_price": 0.01}],
     }
     first = client.post(
         "/api/datos/pedidos_draft",
@@ -153,7 +285,11 @@ def test_legacy_draft_mapping_and_replay_are_scoped_to_credential_branch(
         "code": "LEGACY_MESSAGE_ALREADY_USED",
     }
 
-    second_payload = {**payload, "message_id": "second-branch-message"}
+    second_payload = {
+        **payload,
+        "message_id": "second-branch-message",
+        "items_json": [{"product_id": second_product_id, "quantity": 1, "unit_price": 0.01}],
+    }
     second_created = client.post(
         "/api/datos/pedidos_draft",
         json=second_payload,
@@ -172,6 +308,56 @@ def test_legacy_draft_mapping_and_replay_are_scoped_to_credential_branch(
     )
     assert replay.status_code == 200, replay.text
     assert replay.json()["dato_guardado"]["id"] == second_order["id"]
+
+
+def test_integration_cannot_reassign_a_table_after_order_is_final(
+    client,
+    tenant,
+    auth_headers,
+):
+    credential = create_credential(client, tenant, auth_headers)
+    with SessionLocal.begin() as db:
+        second_table = RestaurantTable(
+            business_id=tenant["business_id"],
+            branch_id=tenant["branch_id"],
+            code="M-FINAL",
+            name="Mesa final",
+            capacity=4,
+        )
+        db.add(second_table)
+        db.flush()
+        second_table_id = second_table.id
+
+    created = client.post(
+        "/api/v1/integrations/orders/draft",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "dine_in",
+            "table_id": tenant["table_id"],
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
+        },
+        headers=integration_headers(credential["token"], "final-table-create"),
+    )
+    assert created.status_code == 201, created.text
+    with SessionLocal.begin() as db:
+        db.get(Order, created.json()["id"]).status = "closed"
+        db.get(RestaurantTable, tenant["table_id"]).status = "cleaning"
+
+    rejected = client.patch(
+        f"/api/v1/integrations/orders/{created.json()['id']}",
+        json={
+            "table_id": second_table_id,
+            "expected_version": created.json()["version"],
+        },
+        headers=integration_headers(credential["token"], "final-table-patch"),
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["code"] == "ORDER_TABLE_ASSIGNMENT_LOCKED"
+    with SessionLocal() as db:
+        order = db.get(Order, created.json()["id"])
+        assert order.table_id == tenant["table_id"]
+        assert db.get(RestaurantTable, tenant["table_id"]).status == "cleaning"
+        assert db.get(RestaurantTable, second_table_id).status == "available"
 
 
 def test_payment_evidence_ids_are_hidden_across_tenants(

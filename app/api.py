@@ -76,6 +76,7 @@ from .realtime import hub
 from .schemas import (
     AddOrderItem,
     AreaCreate,
+    AreaUpdate,
     BranchCreate,
     BranchUpdate,
     BusinessCreate,
@@ -146,13 +147,13 @@ from .services import (
     create_integration_event,
     create_order,
     create_reservation,
+    ensure_no_open_payment_evidence,
     get_idempotent_response,
     load_order,
     money,
     parse_legacy_items,
     product_capacity,
     promotion_is_active,
-    reverse_order_stock,
     recalculate_order,
     save_idempotent_response,
     send_order_to_kitchen,
@@ -182,6 +183,44 @@ def scoped_catalog_entity(db: Session, user: AuthContext, model, entity_id: int)
     return db.scalar(statement)
 
 
+def scoped_area_for_user(
+    db: Session,
+    user: AuthContext,
+    area_id: int,
+    *,
+    for_update: bool = False,
+) -> DiningArea | None:
+    statement = select(DiningArea).where(DiningArea.id == area_id)
+    if not user.is_superadmin:
+        if user.business_id is None:
+            return None
+        statement = statement.where(DiningArea.business_id == user.business_id)
+        if user.branch_id is not None:
+            statement = statement.where(DiningArea.branch_id == user.branch_id)
+    if for_update:
+        statement = statement.with_for_update()
+    return db.scalar(statement)
+
+
+def scoped_table_for_user(
+    db: Session,
+    user: AuthContext,
+    table_id: int,
+    *,
+    for_update: bool = False,
+) -> RestaurantTable | None:
+    statement = select(RestaurantTable).where(RestaurantTable.id == table_id)
+    if not user.is_superadmin:
+        if user.business_id is None:
+            return None
+        statement = statement.where(RestaurantTable.business_id == user.business_id)
+        if user.branch_id is not None:
+            statement = statement.where(RestaurantTable.branch_id == user.branch_id)
+    if for_update:
+        statement = statement.with_for_update()
+    return db.scalar(statement)
+
+
 def scoped_order_for_user(
     db: Session,
     user: AuthContext,
@@ -204,6 +243,93 @@ def scoped_order_for_user(
     if not order:
         raise CodedHTTPException(404, "Order not found", "ORDER_NOT_FOUND")
     return order
+
+
+FINAL_TABLE_ORDER_STATUSES = {"closed", "cancelled", "delivered"}
+TABLE_ASSIGNMENT_LOCKED_STATUSES = {"ready", "dispatched", *FINAL_TABLE_ORDER_STATUSES}
+
+
+def apply_order_table_assignment(
+    db: Session,
+    order: Order,
+    target_table_id: int | None,
+) -> list[RestaurantTable]:
+    if target_table_id == order.table_id:
+        return []
+    if order.status in TABLE_ASSIGNMENT_LOCKED_STATUSES:
+        raise CodedHTTPException(
+            409,
+            "Table assignment can no longer be changed for this order",
+            "ORDER_TABLE_ASSIGNMENT_LOCKED",
+        )
+    if target_table_id is not None and order.channel != "dine_in":
+        raise CodedHTTPException(
+            422,
+            "Only dine-in orders can be assigned to a table",
+            "TABLE_REQUIRES_DINE_IN_ORDER",
+        )
+
+    table_ids = {
+        table_id
+        for table_id in (order.table_id, target_table_id)
+        if table_id is not None
+    }
+    tables = {
+        table.id: table
+        for table in db.scalars(
+            select(RestaurantTable)
+            .where(
+                RestaurantTable.id.in_(table_ids),
+                RestaurantTable.business_id == order.business_id,
+                RestaurantTable.branch_id == order.branch_id,
+            )
+            .order_by(RestaurantTable.id)
+            .with_for_update()
+        )
+    }
+    if len(tables) != len(table_ids):
+        raise CodedHTTPException(
+            422,
+            "Table is not available for this order",
+            "ORDER_TABLE_INVALID",
+        )
+
+    target_table = tables.get(target_table_id) if target_table_id is not None else None
+    if target_table is not None:
+        active_order_id = db.scalar(
+            select(Order.id).where(
+                Order.id != order.id,
+                Order.business_id == order.business_id,
+                Order.branch_id == order.branch_id,
+                Order.table_id == target_table.id,
+                Order.status.not_in(FINAL_TABLE_ORDER_STATUSES),
+            ).limit(1)
+        )
+        if active_order_id is not None:
+            raise CodedHTTPException(
+                409,
+                "Table already has an open order",
+                "TABLE_ALREADY_HAS_OPEN_ORDER",
+            )
+        if target_table.status not in {"available", "reserved"}:
+            raise CodedHTTPException(
+                409,
+                "Table is not available",
+                "TABLE_NOT_AVAILABLE",
+            )
+
+    changed_tables: list[RestaurantTable] = []
+    previous_table = tables.get(order.table_id) if order.table_id is not None else None
+    if previous_table is not None:
+        previous_table.status = "available"
+        previous_table.version += 1
+        changed_tables.append(previous_table)
+    if target_table is not None:
+        target_table.status = "occupied"
+        target_table.version += 1
+        changed_tables.append(target_table)
+    order.table_id = target_table_id
+    return changed_tables
 
 
 def scoped_payment_evidence_for_user(
@@ -522,7 +648,13 @@ def _replace_promotion_targets(
         )
 
 
-def serialize_catalog(db: Session, branch: Branch, *, available_only: bool = False) -> dict:
+def serialize_catalog(
+    db: Session,
+    branch: Branch,
+    *,
+    available_only: bool = False,
+    digital_only: bool = False,
+) -> dict:
     category_query = (
         select(Category)
         .where(Category.branch_id == branch.id)
@@ -543,6 +675,12 @@ def serialize_catalog(db: Session, branch: Branch, *, available_only: bool = Fal
             ),
         )
     products = list(db.scalars(product_query.order_by(Product.sort_order, Product.name)))
+    if digital_only:
+        products = [
+            product
+            for product in products
+            if any(channel.startswith("digital_") for channel in (product.service_channels or []))
+        ]
     categories = list(db.scalars(category_query))
     product_ids = [product.id for product in products]
 
@@ -767,6 +905,34 @@ def serialize_catalog(db: Session, branch: Branch, *, available_only: bool = Fal
             for product in products
         ],
         "promotions": [serialize_promotion(promotion) for promotion in promotions],
+    }
+
+
+TABLE_GRID_COLUMN_STEP = 128
+TABLE_GRID_ROW_STEP = 104
+TABLE_GRID_RIGHT_MARGIN = 100
+TABLE_GRID_BOTTOM_MARGIN = 80
+
+
+def table_fits_dimensions(columns: int, rows: int, position_x: int, position_y: int) -> bool:
+    max_x = max(0, columns * TABLE_GRID_COLUMN_STEP - TABLE_GRID_RIGHT_MARGIN)
+    max_y = max(0, rows * TABLE_GRID_ROW_STEP - TABLE_GRID_BOTTOM_MARGIN)
+    return 0 <= position_x <= max_x and 0 <= position_y <= max_y
+
+
+def table_fits_area(area: DiningArea, position_x: int, position_y: int) -> bool:
+    return table_fits_dimensions(area.columns, area.rows, position_x, position_y)
+
+
+def serialize_area(area: DiningArea) -> dict:
+    return {
+        "id": area.id,
+        "branch_id": area.branch_id,
+        "name": area.name,
+        "sort_order": area.sort_order,
+        "columns": area.columns,
+        "rows": area.rows,
+        "version": area.version,
     }
 
 
@@ -1197,7 +1363,11 @@ def restaurant_context(
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
     branches = list(db.scalars(select(Branch).where(Branch.business_id == resolved).order_by(Branch.name)))
-    return {"business": serialize_business(db, business), "branches": [serialize_branch(item) for item in branches]}
+    return {
+        "business": serialize_business(db, business),
+        "branches": [serialize_branch(item) for item in branches],
+        "role": user.role,
+    }
 
 
 @api.get("/branches", tags=["branches"])
@@ -3162,13 +3332,13 @@ def list_areas(
 ):
     branch_for_user(db, user, branch_id)
     return [
-        {"id": item.id, "branch_id": item.branch_id, "name": item.name, "sort_order": item.sort_order}
+        serialize_area(item)
         for item in db.scalars(select(DiningArea).where(DiningArea.branch_id == branch_id).order_by(DiningArea.sort_order))
     ]
 
 
 @api.post("/areas", status_code=201, tags=["tables"])
-def create_area(
+async def create_area(
     payload: AreaCreate,
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
     db: Session = Depends(get_db),
@@ -3188,13 +3358,74 @@ def create_area(
         branch_id=branch.id,
         name=name,
         sort_order=payload.sort_order,
+        columns=payload.columns,
+        rows=payload.rows,
     )
     db.add(area)
     db.flush()
     audit(db, user, "area.created", "dining_area", area.id, branch.business_id, {"name": name})
     db.commit()
     db.refresh(area)
-    return {"id": area.id, "branch_id": area.branch_id, "name": area.name, "sort_order": area.sort_order}
+    result = serialize_area(area)
+    await hub.broadcast(area.branch_id, "area.created", result)
+    return result
+
+
+@api.patch("/areas/{area_id}", tags=["tables"])
+async def update_area(
+    area_id: int,
+    payload: AreaUpdate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    area = scoped_area_for_user(db, user, area_id, for_update=True)
+    if not area:
+        raise HTTPException(status_code=404, detail="Area not found")
+    assert_version(area.version, payload.expected_version)
+    changes = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
+    if "name" in changes:
+        name = (changes["name"] or "").strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Area name is required")
+        duplicate = db.scalar(
+            select(DiningArea).where(
+                DiningArea.branch_id == area.branch_id,
+                DiningArea.id != area.id,
+                func.lower(DiningArea.name) == name.lower(),
+            )
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail="An area with this name already exists")
+        changes["name"] = name
+    for field in ("sort_order", "columns", "rows"):
+        if field in changes and changes[field] is None:
+            raise HTTPException(status_code=422, detail=f"Area {field} cannot be null")
+    next_columns = changes.get("columns", area.columns)
+    next_rows = changes.get("rows", area.rows)
+    if next_columns != area.columns or next_rows != area.rows:
+        tables = list(
+            db.scalars(
+                select(RestaurantTable).where(RestaurantTable.area_id == area.id)
+            )
+        )
+        if any(
+            not table_fits_dimensions(next_columns, next_rows, table.position_x, table.position_y)
+            for table in tables
+        ):
+            raise CodedHTTPException(
+                409,
+                "Move the tables inside the new limits before reducing the area",
+                "AREA_DIMENSIONS_CONTAIN_TABLES",
+            )
+    for key, value in changes.items():
+        setattr(area, key, value)
+    area.version += 1
+    audit(db, user, "area.updated", "dining_area", area.id, area.business_id, changes)
+    db.commit()
+    db.refresh(area)
+    result = serialize_area(area)
+    await hub.broadcast(area.branch_id, "area.updated", result)
+    return result
 
 
 @api.get("/tables", tags=["tables"])
@@ -3204,7 +3435,29 @@ def list_tables(
     db: Session = Depends(get_db),
 ):
     branch_for_user(db, user, branch_id)
-    return [serialize_table(item) for item in db.scalars(select(RestaurantTable).where(RestaurantTable.branch_id == branch_id))]
+    tables = list(db.scalars(select(RestaurantTable).where(RestaurantTable.branch_id == branch_id)))
+    active_order_by_table: dict[int, int] = {}
+    active_orders = db.execute(
+        select(Order.table_id, Order.id)
+        .where(
+            Order.branch_id == branch_id,
+            Order.table_id.is_not(None),
+            Order.status.not_in(["closed", "cancelled", "delivered"]),
+        )
+        .order_by(Order.created_at.desc())
+    )
+    for table_id, order_id in active_orders:
+        if table_id is not None and table_id not in active_order_by_table:
+            active_order_by_table[table_id] = order_id
+    result = []
+    for table in tables:
+        serialized = serialize_table(table)
+        active_order_id = active_order_by_table.get(table.id)
+        serialized["active_order_id"] = active_order_id
+        if active_order_id is not None and serialized["status"] in {"available", "reserved"}:
+            serialized["status"] = "occupied"
+        result.append(serialized)
+    return result
 
 
 @api.post("/tables", status_code=201, tags=["tables"])
@@ -3215,9 +3468,17 @@ def create_table(
 ):
     branch = branch_for_user(db, user, payload.branch_id)
     if payload.area_id is not None:
-        area = db.get(DiningArea, payload.area_id)
+        area = db.scalar(
+            select(DiningArea).where(DiningArea.id == payload.area_id).with_for_update()
+        )
         if not area or area.branch_id != branch.id:
             raise HTTPException(status_code=422, detail="Area does not belong to branch")
+        if not table_fits_area(area, payload.position_x, payload.position_y):
+            raise CodedHTTPException(
+                422,
+                "Table position is outside the area limits",
+                "TABLE_OUTSIDE_AREA",
+            )
     code = payload.code.strip().upper()
     name = payload.name.strip()
     duplicate = db.scalar(
@@ -3258,15 +3519,70 @@ async def update_table(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier", "waiter")),
     db: Session = Depends(get_db),
 ):
-    table = db.scalar(select(RestaurantTable).where(RestaurantTable.id == table_id).with_for_update())
+    preview = scoped_table_for_user(db, user, table_id)
+    if not preview:
+        raise HTTPException(status_code=404, detail="Table not found")
+    values = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
+    configuration_fields = {
+        "area_id",
+        "name",
+        "capacity",
+        "position_x",
+        "position_y",
+        "width",
+        "height",
+        "shape",
+    }
+    configuration_changes = configuration_fields.intersection(values)
+    if configuration_changes and user.role not in {"superadmin", "owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Management role required for table configuration")
+    if configuration_changes and payload.expected_version is None:
+        raise HTTPException(status_code=422, detail="expected_version is required for table configuration")
+
+    locked_areas: dict[int, DiningArea] = {}
+    position_changes = {"area_id", "position_x", "position_y"}.intersection(values)
+    if position_changes:
+        area_ids = {area_id for area_id in (preview.area_id, values.get("area_id")) if area_id is not None}
+        if area_ids:
+            locked_areas = {
+                area.id: area
+                for area in db.scalars(
+                    select(DiningArea)
+                    .where(DiningArea.id.in_(area_ids), DiningArea.branch_id == preview.branch_id)
+                    .order_by(DiningArea.id)
+                    .with_for_update()
+                )
+            }
+
+    table = scoped_table_for_user(db, user, table_id, for_update=True)
     if not table:
         raise HTTPException(status_code=404, detail="Table not found")
-    branch_for_user(db, user, table.branch_id)
     assert_version(table.version, payload.expected_version)
-    values = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
-    if values.get("area_id") is not None:
-        area = db.get(DiningArea, values["area_id"])
-        if not area or area.branch_id != table.branch_id:
+    if "name" in values:
+        name = (values["name"] or "").strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Table name is required")
+        values["name"] = name
+    target_area_id = values["area_id"] if "area_id" in values else table.area_id
+    target_area = locked_areas.get(target_area_id) if target_area_id is not None else None
+    if target_area_id is not None and position_changes and target_area is None:
+        raise HTTPException(status_code=422, detail="Area does not belong to branch")
+    if target_area is not None and position_changes:
+        position_x = values.get("position_x", table.position_x)
+        position_y = values.get("position_y", table.position_y)
+        if not table_fits_area(target_area, position_x, position_y):
+            raise CodedHTTPException(
+                422,
+                "Table position is outside the area limits",
+                "TABLE_OUTSIDE_AREA",
+            )
+    if values.get("area_id") is not None and target_area is None:
+        if not db.scalar(
+            select(DiningArea.id).where(
+                DiningArea.id == values["area_id"],
+                DiningArea.branch_id == table.branch_id,
+            )
+        ):
             raise HTTPException(status_code=422, detail="Area does not belong to branch")
     for key, value in values.items():
         setattr(table, key, value)
@@ -3407,6 +3723,7 @@ async def create_order_endpoint(
     existing = get_idempotent_response(db, scope, idempotency_key, branch.business_id)
     if existing:
         return existing
+    payload = payload.model_copy(update={"source": "pos"})
     order = create_order(db, user, payload)
     db.flush()
     response = serialize_order(order)
@@ -3486,7 +3803,14 @@ async def patch_order_endpoint(
     if order.status not in {"draft", "pending_confirmation", "confirmed"}:
         raise HTTPException(status_code=409, detail="Order can no longer be edited")
     assert_version(order.version, payload.expected_version)
+    ensure_no_open_payment_evidence(db, order, "editing the order")
     values = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
+    audit_values = dict(values)
+    changed_tables = (
+        apply_order_table_assignment(db, order, values.pop("table_id"))
+        if "table_id" in values
+        else []
+    )
     for key, value in values.items():
         if key == "discount":
             order.manual_discount = money(value)
@@ -3494,9 +3818,11 @@ async def patch_order_endpoint(
             setattr(order, key, value)
     recalculate_order(db, order)
     order.version += 1
-    audit(db, user, "order.updated", "order", order.id, order.business_id, values)
+    audit(db, user, "order.updated", "order", order.id, order.business_id, audit_values)
     db.commit()
     result = serialize_order(load_order(db, order.id))
+    for table in changed_tables:
+        await hub.broadcast(table.branch_id, "table.updated", serialize_table(table))
     await hub.broadcast(order.branch_id, "order.updated", result)
     return result
 
@@ -3568,6 +3894,7 @@ async def remove_order_item_endpoint(
     assert_version(order.version, expected_version)
     if order.status not in {"draft", "pending_confirmation", "confirmed"}:
         raise HTTPException(status_code=409, detail="Order can no longer be edited")
+    ensure_no_open_payment_evidence(db, order, "removing products")
     item = next((candidate for candidate in order.items if candidate.id == item_id), None)
     if not item:
         raise HTTPException(status_code=404, detail="Order item not found")
@@ -3594,6 +3921,7 @@ async def confirm_order_endpoint(
     existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
         return existing
+    ensure_no_open_payment_evidence(db, order, "confirming the order")
     confirm_order(db, user, order)
     db.flush()
     result = serialize_order(order)
@@ -3700,6 +4028,8 @@ async def create_payment_endpoint(
     existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
         return existing
+    assert_version(order.version, payload.expected_version)
+    ensure_no_open_payment_evidence(db, order, "recording another payment")
     payment = add_payment(db, user, order, payload)
     db.flush()
     result = {
@@ -3760,10 +4090,20 @@ async def transition_ticket(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "kitchen")),
     db: Session = Depends(get_db),
 ):
-    ticket = db.get(KitchenTicket, ticket_id)
+    statement = select(KitchenTicket).where(KitchenTicket.id == ticket_id)
+    if not user.is_superadmin:
+        statement = statement.where(KitchenTicket.business_id == user.business_id)
+        if user.branch_id is not None:
+            statement = statement.where(KitchenTicket.branch_id == user.branch_id)
+    ticket = db.scalar(statement.with_for_update())
     if not ticket:
         raise HTTPException(status_code=404, detail="Kitchen ticket not found")
-    branch_for_user(db, user, ticket.branch_id)
+    if payload.expected_status != ticket.status:
+        raise CodedHTTPException(
+            409,
+            "Kitchen ticket changed on another terminal",
+            "KITCHEN_TICKET_STALE",
+        )
     allowed = {
         "queued": {"preparing", "cancelled"},
         "preparing": {"ready", "cancelled"},
@@ -4558,15 +4898,15 @@ async def review_payment_evidence(
     evidence.reviewed_by = user.user_id
     evidence.reviewed_at = utcnow()
     notification_event: IntegrationEvent | None = None
+    released_table_id: int | None = None
     if not payload.approve:
         evidence.status = "rejected"
         evidence.rejection_reason = payload.note or "Rejected by cashier"
         order.payment_status = "rejected"
         if order.status not in {"cancelled", "closed"}:
-            if order.status in {"confirmed", "sent_to_kitchen", "preparing", "ready"}:
-                reverse_order_stock(db, user, order)
-            order.status = "cancelled"
-            order.version += 1
+            released_table_id = order.table_id
+            db.flush()
+            transition_order(db, user, order, "cancelled")
         if recipient_available:
             notification_event = create_integration_event(
                 db,
@@ -4655,6 +4995,14 @@ async def review_payment_evidence(
             "acknowledged": bool(notification_event and notification_event.acknowledged_at),
         },
     }
+    if released_table_id is not None:
+        released_table = db.get(RestaurantTable, released_table_id)
+        if released_table is not None:
+            await hub.broadcast(
+                released_table.branch_id,
+                "table.updated",
+                serialize_table(released_table),
+            )
     await hub.broadcast(order.branch_id, "payment_evidence.reviewed", result)
     return result
 
@@ -5134,7 +5482,10 @@ def integration_menu(
     db: Session = Depends(get_db),
 ):
     _, branch = integration_branch_from_auth(db, integration, branch_id)
-    return {"business_id": branch.business_id, **serialize_catalog(db, branch, available_only=True)}
+    return {
+        "business_id": branch.business_id,
+        **serialize_catalog(db, branch, available_only=True, digital_only=True),
+    }
 
 
 @api.patch("/integrations/context/menu/{product_id}/availability", tags=["integrations"])
@@ -5219,7 +5570,9 @@ async def integration_create_order(
     existing = get_idempotent_response(db, scope, idempotency_key, branch.business_id)
     if existing:
         return existing
-    payload.source = payload.source or "integration"
+    requested_source = (payload.source or "").strip().lower()
+    source = requested_source if requested_source in {"agent", "n8n", "whatsapp", "whatsapp_agent"} else "integration"
+    payload = payload.model_copy(update={"source": source})
     order = create_order(db, user, payload)
     db.flush()
     result = serialize_order(order)
@@ -5250,7 +5603,15 @@ async def integration_patch_order(
         return existing
     user = AuthContext("integration", "owner", order.business_id, order.branch_id)
     assert_version(order.version, payload.expected_version)
+    ensure_no_open_payment_evidence(db, order, "editing the order")
+    if order.created_by == "integration" and order.source in {"pos", "manual"}:
+        order.source = "integration"
     changes = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
+    changed_tables = (
+        apply_order_table_assignment(db, order, changes.pop("table_id"))
+        if "table_id" in changes
+        else []
+    )
     replacement_items = changes.pop("items", None)
     if replacement_items is not None:
         if order.status not in {"draft", "pending_confirmation"}:
@@ -5260,7 +5621,16 @@ async def integration_patch_order(
             )
         order.items.clear()
         for line in payload.items or []:
-            order.items.append(build_order_item(db, order.business_id, order.branch_id, line))
+            order.items.append(
+                build_order_item(
+                    db,
+                    order.business_id,
+                    order.branch_id,
+                    line,
+                    order.channel,
+                    "integration",
+                )
+            )
     for key, value in changes.items():
         setattr(order, key, value)
     recalculate_order(db, order)
@@ -5270,6 +5640,8 @@ async def integration_patch_order(
     result = serialize_order(order)
     save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
     db.commit()
+    for table in changed_tables:
+        await hub.broadcast(table.branch_id, "table.updated", serialize_table(table))
     await hub.broadcast(order.branch_id, "order.updated", result)
     return result
 
@@ -5856,13 +6228,14 @@ async def legacy_create_draft(
             OrderCreate(
                 branch_id=branch.id,
                 channel="whatsapp",
-                source=payload.source,
+                source="whatsapp_agent",
                 customer_name=payload.customer_name,
                 customer_phone=payload.customer_phone,
                 external_reference=payload.message_id,
                 notes=payload.notes,
                 items=lines,
             ),
+            allow_catalog_name_lookup=True,
         )
     except IntegrityError as exc:
         db.rollback()

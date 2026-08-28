@@ -213,17 +213,34 @@ def promotion_is_active(
     return True
 
 
-def order_service_channel(order: Order) -> str:
-    is_digital = order.source in {"agent", "integration", "online", "public_store", "whatsapp"}
-    if order.channel in {"delivery"}:
+DIGITAL_ORDER_SOURCES = {
+    "agent",
+    "integration",
+    "n8n",
+    "online",
+    "public_store",
+    "whatsapp",
+    "whatsapp_agent",
+}
+
+
+def service_channel_for_order(channel: str, source: str | None) -> str:
+    is_digital = (source or "").strip().lower() in DIGITAL_ORDER_SOURCES
+    if channel in {"delivery"}:
         return "digital_delivery" if is_digital else "pos_delivery"
-    if order.channel in {"takeaway", "pickup"}:
+    if channel in {"takeaway", "pickup"}:
         return "digital_takeaway" if is_digital else "pos_takeaway"
-    if order.channel in {"dine_in", "table"}:
+    if channel in {"dine_in", "table"}:
         return "digital_tables" if is_digital else "pos_tables"
-    if order.channel in {"online", "whatsapp"}:
+    if channel in {"counter"}:
+        return "digital_tables" if is_digital else "pos_counter"
+    if channel in {"online", "whatsapp"}:
         return "digital_takeaway"
     return "pos_counter"
+
+
+def order_service_channel(order: Order) -> str:
+    return service_channel_for_order(order.channel, order.source)
 
 
 def _promotion_targets_product(promotion: Promotion, product: Product | None) -> bool:
@@ -358,7 +375,16 @@ def recalculate_order(db: Session, order: Order) -> None:
     )
 
 
-def build_order_item(db: Session, business_id: int, branch_id: int, line: OrderLineInput) -> OrderItem:
+def build_order_item(
+    db: Session,
+    business_id: int,
+    branch_id: int,
+    line: OrderLineInput,
+    order_channel: str | None = None,
+    order_source: str | None = None,
+    *,
+    allow_catalog_name_lookup: bool = False,
+) -> OrderItem:
     product = None
     if line.product_id is not None:
         product = db.scalar(
@@ -371,6 +397,39 @@ def build_order_item(db: Session, business_id: int, branch_id: int, line: OrderL
         )
         if not product:
             raise HTTPException(status_code=422, detail=f"Product {line.product_id} is unavailable")
+    elif allow_catalog_name_lookup and line.name:
+        products = list(
+            db.scalars(
+                select(Product).where(
+                    Product.business_id == business_id,
+                    Product.branch_id == branch_id,
+                    Product.available.is_(True),
+                    func.lower(func.trim(Product.name)) == line.name.strip().lower(),
+                )
+            )
+        )
+        if len(products) == 1:
+            product = products[0]
+
+    if product is None and (order_source or "").strip().lower() in DIGITAL_ORDER_SOURCES:
+        raise CodedHTTPException(
+            422,
+            "Integration order items must reference an available catalog product",
+            "CATALOG_PRODUCT_REQUIRED",
+        )
+
+    if product is not None:
+        required_channel = (
+            service_channel_for_order(order_channel, order_source)
+            if order_channel
+            else None
+        )
+        if required_channel and required_channel not in (product.service_channels or []):
+            raise CodedHTTPException(
+                422,
+                f"Product {product.name} is unavailable for this order channel",
+                "PRODUCT_UNAVAILABLE_FOR_CHANNEL",
+            )
     if product is None and (not line.name or line.unit_price is None):
         raise HTTPException(status_code=422, detail="Ad-hoc order items require name and unit_price")
 
@@ -501,21 +560,44 @@ def build_order_item(db: Session, business_id: int, branch_id: int, line: OrderL
     )
 
 
-def create_order(db: Session, user: AuthContext, payload: OrderCreate) -> Order:
+def create_order(
+    db: Session,
+    user: AuthContext,
+    payload: OrderCreate,
+    *,
+    allow_catalog_name_lookup: bool = False,
+) -> Order:
     branch = db.scalar(select(Branch).where(Branch.id == payload.branch_id, Branch.active.is_(True)))
     if not branch:
         raise HTTPException(status_code=404, detail="Branch not found")
     ensure_branch_scope(user, branch.business_id, branch.id)
 
+    if payload.channel == "dine_in" and not payload.table_id:
+        raise CodedHTTPException(422, "Dine-in orders require a table", "TABLE_REQUIRED_FOR_DINE_IN")
+
+    table = None
     if payload.table_id:
         table = db.scalar(
             select(RestaurantTable).where(
                 RestaurantTable.id == payload.table_id,
                 RestaurantTable.branch_id == payload.branch_id,
-            )
+            ).with_for_update()
         )
         if not table:
             raise HTTPException(status_code=422, detail="Table does not belong to branch")
+        active_order_id = db.scalar(
+            select(Order.id).where(
+                Order.table_id == table.id,
+                Order.branch_id == branch.id,
+                Order.status.not_in(["closed", "cancelled", "delivered"]),
+            ).limit(1)
+        )
+        if active_order_id is not None:
+            raise CodedHTTPException(
+                409,
+                "Table already has an open order",
+                "TABLE_ALREADY_HAS_OPEN_ORDER",
+            )
         if table.status not in {"available", "reserved"}:
             raise HTTPException(status_code=409, detail="Table is not available")
 
@@ -542,15 +624,23 @@ def create_order(db: Session, user: AuthContext, payload: OrderCreate) -> Order:
         created_by=user.user_id,
     )
     for line in payload.items:
-        order.items.append(build_order_item(db, branch.business_id, branch.id, line))
+        order.items.append(
+            build_order_item(
+                db,
+                branch.business_id,
+                branch.id,
+                line,
+                payload.channel,
+                payload.source,
+                allow_catalog_name_lookup=allow_catalog_name_lookup,
+            )
+        )
     recalculate_order(db, order)
     db.add(order)
     db.flush()
-    if payload.table_id:
-        table = db.get(RestaurantTable, payload.table_id)
-        if table:
-            table.status = "occupied"
-            table.version += 1
+    if table:
+        table.status = "occupied"
+        table.version += 1
     audit(db, user, "order.created", "order", order.id, order.business_id, {"channel": order.channel})
     return order
 
@@ -618,7 +708,17 @@ def create_integration_event(
 def add_order_item(db: Session, user: AuthContext, order: Order, line: OrderLineInput) -> Order:
     if order.status not in {"draft", "pending_confirmation", "confirmed"}:
         raise HTTPException(status_code=409, detail="Order can no longer be edited")
-    order.items.append(build_order_item(db, order.business_id, order.branch_id, line))
+    ensure_no_open_payment_evidence(db, order, "adding products")
+    order.items.append(
+        build_order_item(
+            db,
+            order.business_id,
+            order.branch_id,
+            line,
+            order.channel,
+            order.source,
+        )
+    )
     recalculate_order(db, order)
     order.version += 1
     db.flush()
@@ -797,20 +897,31 @@ def create_kitchen_tickets(
     return tickets
 
 
-def send_order_to_kitchen(db: Session, user: AuthContext, order: Order) -> list[KitchenTicket]:
-    db.flush()
+OPEN_PAYMENT_EVIDENCE_STATUSES = {"evidence_received", "under_review"}
+
+
+def ensure_no_open_payment_evidence(
+    db: Session,
+    order: Order,
+    action: str,
+) -> None:
     evidence_under_review = db.scalar(
         select(PaymentEvidence.id).where(
             PaymentEvidence.order_id == order.id,
-            PaymentEvidence.status.in_(["evidence_received", "under_review"]),
+            PaymentEvidence.status.in_(OPEN_PAYMENT_EVIDENCE_STATUSES),
         ).limit(1)
     )
     if evidence_under_review is not None:
         raise CodedHTTPException(
             409,
-            "Resolve the payment evidence review before sending the order to kitchen",
+            f"Resolve the payment evidence review before {action}",
             "PAYMENT_EVIDENCE_UNDER_REVIEW",
         )
+
+
+def send_order_to_kitchen(db: Session, user: AuthContext, order: Order) -> list[KitchenTicket]:
+    db.flush()
+    ensure_no_open_payment_evidence(db, order, "sending the order to kitchen")
     existing = list(
         db.scalars(
             select(KitchenTicket)
@@ -874,22 +985,18 @@ def append_order_item_batch(
             "Order can no longer receive products",
             "ORDER_ITEMS_LOCKED",
         )
-    evidence_under_review = db.scalar(
-        select(PaymentEvidence.id).where(
-            PaymentEvidence.order_id == order.id,
-            PaymentEvidence.status.in_(["evidence_received", "under_review"]),
-        ).limit(1)
-    )
-    if evidence_under_review is not None:
-        raise CodedHTTPException(
-            409,
-            "Resolve the payment evidence review before adding products",
-            "PAYMENT_EVIDENCE_UNDER_REVIEW",
-        )
+    ensure_no_open_payment_evidence(db, order, "adding products")
 
     previous_status = order.status
     new_items = [
-        build_order_item(db, order.business_id, order.branch_id, line)
+        build_order_item(
+            db,
+            order.business_id,
+            order.branch_id,
+            line,
+            order.channel,
+            order.source,
+        )
         for line in lines
     ]
     order.items.extend(new_items)
@@ -986,6 +1093,7 @@ def reverse_order_stock(db: Session, user: AuthContext, order: Order) -> None:
 def transition_order(db: Session, user: AuthContext, order: Order, next_status: str) -> Order:
     if next_status == order.status:
         return order
+    ensure_no_open_payment_evidence(db, order, "changing the order status")
     if next_status not in ORDER_TRANSITIONS.get(order.status, set()):
         raise HTTPException(status_code=409, detail=f"Cannot transition {order.status} to {next_status}")
     if next_status == "closed" and order.payment_status != "paid":

@@ -440,6 +440,16 @@ class AreaCreate(ApiModel):
     branch_id: int
     name: str = Field(min_length=1, max_length=120)
     sort_order: int = 0
+    columns: int = Field(default=7, ge=2, le=12)
+    rows: int = Field(default=5, ge=2, le=10)
+
+
+class AreaUpdate(ApiModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    sort_order: int | None = None
+    columns: int | None = Field(default=None, ge=2, le=12)
+    rows: int | None = Field(default=None, ge=2, le=10)
+    expected_version: int = Field(ge=1)
 
 
 class TableCreate(ApiModel):
@@ -448,8 +458,8 @@ class TableCreate(ApiModel):
     code: str = Field(min_length=1, max_length=40)
     name: str = Field(min_length=1, max_length=100)
     capacity: int = Field(default=4, ge=1, le=50)
-    position_x: int = 0
-    position_y: int = 0
+    position_x: int = Field(default=0, ge=0)
+    position_y: int = Field(default=0, ge=0)
     width: int = 120
     height: int = 92
     shape: Literal["round", "square", "rectangle"] = "round"
@@ -459,8 +469,8 @@ class TableUpdate(ApiModel):
     area_id: int | None = None
     name: str | None = None
     capacity: int | None = Field(default=None, ge=1, le=50)
-    position_x: int | None = None
-    position_y: int | None = None
+    position_x: int | None = Field(default=None, ge=0)
+    position_y: int | None = Field(default=None, ge=0)
     width: int | None = None
     height: int | None = None
     shape: Literal["round", "square", "rectangle"] | None = None
@@ -550,6 +560,7 @@ class PaymentCreate(ApiModel):
     external_reference: str | None = None
     note: str | None = None
     allocations: list[PaymentAllocationInput] = Field(default_factory=list)
+    expected_version: int | None = None
 
 
 class SplitPreview(ApiModel):
@@ -558,6 +569,7 @@ class SplitPreview(ApiModel):
 
 class TicketTransition(ApiModel):
     status: Literal["preparing", "ready", "served", "cancelled"]
+    expected_status: Literal["queued", "preparing", "ready", "served", "cancelled"]
 
 
 class RegisterCreate(ApiModel):

@@ -140,6 +140,24 @@ class DiningArea(Base, TimestampMixin):
     branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(120))
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    columns: Mapped[int] = mapped_column(
+        Integer,
+        default=7,
+        server_default=text("7"),
+        nullable=False,
+    )
+    rows: Mapped[int] = mapped_column(
+        Integer,
+        default=5,
+        server_default=text("5"),
+        nullable=False,
+    )
+    version: Mapped[int] = mapped_column(
+        Integer,
+        default=1,
+        server_default=text("1"),
+        nullable=False,
+    )
 
 
 class RestaurantTable(Base, TimestampMixin):

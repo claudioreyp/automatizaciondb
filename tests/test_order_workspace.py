@@ -1,7 +1,14 @@
 from decimal import Decimal
 
 from app.database import SessionLocal
-from app.models import InventoryItem, KitchenTicket, Order, PaymentEvidence, StockMovement
+from app.models import (
+    InventoryItem,
+    KitchenTicket,
+    Order,
+    PaymentEvidence,
+    RestaurantTable,
+    StockMovement,
+)
 
 
 def create_order(client, tenant, auth_headers, *, quantity=1, key="create-order"):
@@ -206,11 +213,105 @@ def test_confirm_and_send_is_blocked_while_yape_evidence_is_under_review(
     )
     assert blocked.status_code == 409, blocked.text
     assert blocked.json()["code"] == "PAYMENT_EVIDENCE_UNDER_REVIEW"
+
+    edited = client.patch(
+        f"/api/v1/orders/{order['id']}",
+        json={"delivery_fee": 5, "expected_version": order["version"]},
+        headers=auth_headers,
+    )
+    assert edited.status_code == 409, edited.text
+    assert edited.json()["code"] == "PAYMENT_EVIDENCE_UNDER_REVIEW"
+
+    added = client.post(
+        f"/api/v1/orders/{order['id']}/items",
+        json={
+            "item": {"product_id": tenant["product_id"], "quantity": 1},
+            "expected_version": order["version"],
+        },
+        headers=auth_headers,
+    )
+    assert added.status_code == 409, added.text
+    assert added.json()["code"] == "PAYMENT_EVIDENCE_UNDER_REVIEW"
+
+    removed = client.delete(
+        f"/api/v1/orders/{order['id']}/items/{order['items'][0]['id']}",
+        params={"expected_version": order["version"]},
+        headers=auth_headers,
+    )
+    assert removed.status_code == 409, removed.text
+    assert removed.json()["code"] == "PAYMENT_EVIDENCE_UNDER_REVIEW"
+
+    confirmed = client.post(
+        f"/api/v1/orders/{order['id']}/confirm",
+        headers={**auth_headers, "Idempotency-Key": "evidence-guard-confirm-only"},
+    )
+    assert confirmed.status_code == 409, confirmed.text
+    assert confirmed.json()["code"] == "PAYMENT_EVIDENCE_UNDER_REVIEW"
+
+    cancelled = client.post(
+        f"/api/v1/orders/{order['id']}/transition",
+        json={"status": "cancelled", "expected_version": order["version"]},
+        headers=auth_headers,
+    )
+    assert cancelled.status_code == 409, cancelled.text
+    assert cancelled.json()["code"] == "PAYMENT_EVIDENCE_UNDER_REVIEW"
+
+    payment = client.post(
+        f"/api/v1/orders/{order['id']}/payments",
+        json={"method": "cash", "amount": 20, "expected_version": order["version"]},
+        headers={**auth_headers, "Idempotency-Key": "evidence-guard-payment"},
+    )
+    assert payment.status_code == 409, payment.text
+    assert payment.json()["code"] == "PAYMENT_EVIDENCE_UNDER_REVIEW"
     with SessionLocal() as db:
         persisted = db.get(Order, order["id"])
         assert persisted.status == "draft"
+        assert float(persisted.delivery_fee) == 0
         assert float(db.get(InventoryItem, tenant["inventory_id"]).quantity) == 10.0
         assert db.query(KitchenTicket).filter_by(order_id=order["id"]).count() == 0
+
+
+def test_rejecting_payment_evidence_releases_the_order_table(
+    client,
+    tenant,
+    auth_headers,
+):
+    created = client.post(
+        "/api/v1/orders",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "dine_in",
+            "table_id": tenant["table_id"],
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
+        },
+        headers={**auth_headers, "Idempotency-Key": "reject-evidence-table"},
+    )
+    assert created.status_code == 201, created.text
+    with SessionLocal.begin() as db:
+        order = db.get(Order, created.json()["id"])
+        order.payment_status = "evidence_received"
+        evidence = PaymentEvidence(
+            business_id=tenant["business_id"],
+            order_id=order.id,
+            provider="yape",
+            storage_path="private/reject-table.webp",
+            image_sha256="d" * 64,
+            status="under_review",
+        )
+        db.add(evidence)
+        db.flush()
+        evidence_id = evidence.id
+
+    rejected = client.post(
+        f"/api/v1/payment-evidence/{evidence_id}/review",
+        json={"approve": False, "note": "No corresponde al pedido"},
+        headers=auth_headers,
+    )
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["evidence"]["status"] == "rejected"
+    assert rejected.json()["order"]["status"] == "cancelled"
+    with SessionLocal() as db:
+        assert db.get(RestaurantTable, tenant["table_id"]).status == "available"
 
 
 def test_combo_confirmation_consumes_component_recipe_stock(
@@ -523,13 +624,13 @@ def test_ready_is_blocked_until_every_ticket_is_ready(
     ticket_id = sent["tickets"][0]["id"]
     ticket_preparing = client.post(
         f"/api/v1/kitchen/tickets/{ticket_id}/transition",
-        json={"status": "preparing"},
+        json={"status": "preparing", "expected_status": "queued"},
         headers=auth_headers,
     )
     assert ticket_preparing.status_code == 200, ticket_preparing.text
     ticket_ready = client.post(
         f"/api/v1/kitchen/tickets/{ticket_id}/transition",
-        json={"status": "ready"},
+        json={"status": "ready", "expected_status": "preparing"},
         headers=auth_headers,
     )
     assert ticket_ready.status_code == 200, ticket_ready.text
