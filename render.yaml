@@ -1,6 +1,7 @@
 services:
   - type: web
-    name: automatizaciondb
+    name: escalar-ai-pos-api
+    branch: agent/escalar-ai-pos-api
     runtime: python
     buildCommand: pip install -r requirements.txt
     preDeployCommand: alembic upgrade head
@@ -28,6 +29,6 @@ services:
       - key: INVITE_REDIRECT_URL
         sync: false
       - key: PUBLIC_API_BASE_URL
-        value: https://automatizaciondb.onrender.com/api/v1
+        value: https://escalar-ai-pos-api.onrender.com/api/v1
       - key: LEGACY_PUBLIC_READS_ENABLED
-        value: "true"
+        value: "false"

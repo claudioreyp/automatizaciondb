@@ -62,6 +62,39 @@ Deno.serve(async (request) => {
     return jsonResponse({ deleted: true });
   }
 
+  if (payload.action === "reset_password") {
+    const userId = typeof payload.user_id === "string" ? payload.user_id : "";
+    const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
+    const password = typeof payload.password === "string" ? payload.password : "";
+    const businessId = Number(payload.business_id);
+    if (!/^[0-9a-f-]{36}$/i.test(userId)
+      || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)
+      || !Number.isInteger(businessId)
+      || businessId <= 0
+      || !isStrongPassword(password)) {
+      return jsonResponse({ detail: "Invalid reset data" }, 422);
+    }
+
+    const { data: existingData, error: existingError } = await admin.auth.admin.getUserById(userId);
+    const existing = existingData.user;
+    const matchesProvisionedAccount = !existingError
+      && existing?.email?.trim().toLowerCase() === email
+      && existing.app_metadata?.provisioned_by === "escalar_admin"
+      && Number(existing.app_metadata?.business_id) === businessId;
+    if (!matchesProvisionedAccount) {
+      return jsonResponse({ detail: "Owner account does not match the requested business" }, 409);
+    }
+
+    const { data, error } = await admin.auth.admin.updateUserById(userId, {
+      password,
+      email_confirm: true,
+    });
+    if (error || !data.user?.id) {
+      return jsonResponse({ detail: "Could not reset owner password" }, 502);
+    }
+    return jsonResponse({ id: data.user.id, reset: true });
+  }
+
   if (payload.action !== "create") {
     return jsonResponse({ detail: "Invalid action" }, 422);
   }

@@ -1,5 +1,5 @@
 from app.database import SessionLocal
-from app.models import IntegrationCredential, InventoryItem, KitchenTicket, Order, PaymentEvidence, Product, RecipeItem
+from app.models import Branch, IntegrationCredential, InventoryItem, KitchenTicket, Order, PaymentEvidence, Product, RecipeItem
 
 
 def create_credential(client, tenant, auth_headers, scopes=None):
@@ -97,6 +97,148 @@ def test_credential_cannot_cross_branch(client, tenant, auth_headers):
     assert response.status_code == 403
 
 
+def test_legacy_draft_mapping_and_replay_are_scoped_to_credential_branch(
+    client,
+    tenant,
+    auth_headers,
+):
+    first_credential = create_credential(client, tenant, auth_headers)
+    with SessionLocal.begin() as db:
+        second_branch = Branch(
+            business_id=tenant["business_id"],
+            slug="second",
+            name="Second",
+        )
+        db.add(second_branch)
+        db.flush()
+        second_branch_id = second_branch.id
+
+    superadmin_headers = {
+        **auth_headers,
+        "X-Dev-Role": "superadmin",
+        "X-Dev-User": "platform-superadmin",
+        "X-Branch-Id": str(second_branch_id),
+    }
+    second_credential = client.post(
+        "/api/v1/admin/integration-credentials",
+        json={"branch_id": second_branch_id, "name": "n8n second branch"},
+        headers=superadmin_headers,
+    )
+    assert second_credential.status_code == 201, second_credential.text
+
+    payload = {
+        "negocio_id": tenant["other_business_id"],
+        "message_id": "same-message-across-branches",
+        "customer_name": "Legacy customer",
+        "items_json": [{"name": "Legacy item", "quantity": 1, "unit_price": 12}],
+    }
+    first = client.post(
+        "/api/datos/pedidos_draft",
+        json=payload,
+        headers=integration_headers(first_credential["token"]),
+    )
+    assert first.status_code == 200, first.text
+    first_order = first.json()["dato_guardado"]
+    assert first_order["business_id"] == tenant["business_id"]
+    assert first_order["branch_id"] == tenant["branch_id"]
+
+    second = client.post(
+        "/api/datos/pedidos_draft",
+        json=payload,
+        headers=integration_headers(second_credential.json()["token"]),
+    )
+    assert second.status_code == 409, second.text
+    assert second.json() == {
+        "detail": "Message reference is already in use",
+        "code": "LEGACY_MESSAGE_ALREADY_USED",
+    }
+
+    second_payload = {**payload, "message_id": "second-branch-message"}
+    second_created = client.post(
+        "/api/datos/pedidos_draft",
+        json=second_payload,
+        headers=integration_headers(second_credential.json()["token"]),
+    )
+    assert second_created.status_code == 200, second_created.text
+    second_order = second_created.json()["dato_guardado"]
+    assert second_order["business_id"] == tenant["business_id"]
+    assert second_order["branch_id"] == second_branch_id
+    assert second_order["id"] != first_order["id"]
+
+    replay = client.post(
+        "/api/datos/pedidos_draft",
+        json=second_payload,
+        headers=integration_headers(second_credential.json()["token"]),
+    )
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["dato_guardado"]["id"] == second_order["id"]
+
+
+def test_payment_evidence_ids_are_hidden_across_tenants(
+    client,
+    tenant,
+    auth_headers,
+):
+    created = client.post(
+        "/api/v1/orders",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "counter",
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
+        },
+        headers={**auth_headers, "Idempotency-Key": "hidden-evidence-order"},
+    )
+    assert created.status_code == 201, created.text
+    with SessionLocal.begin() as db:
+        evidence = PaymentEvidence(
+            business_id=tenant["business_id"],
+            order_id=created.json()["id"],
+            provider="yape",
+            storage_path="private/hidden.webp",
+            image_sha256="d" * 64,
+            status="under_review",
+        )
+        db.add(evidence)
+        db.flush()
+        evidence_id = evidence.id
+
+    foreign_headers = {
+        **auth_headers,
+        "X-Business-Id": str(tenant["other_business_id"]),
+        "X-Branch-Id": str(tenant["other_branch_id"]),
+        "X-Dev-User": "foreign-owner",
+    }
+    foreign_image = client.get(
+        f"/api/v1/payment-evidence/{evidence_id}/image",
+        headers=foreign_headers,
+    )
+    missing_image = client.get(
+        "/api/v1/payment-evidence/999999/image",
+        headers=auth_headers,
+    )
+    assert foreign_image.status_code == 404
+    assert foreign_image.json() == missing_image.json() == {
+        "detail": "Payment evidence not found",
+        "code": "PAYMENT_EVIDENCE_NOT_FOUND",
+    }
+
+    foreign_review = client.post(
+        f"/api/v1/payment-evidence/{evidence_id}/review",
+        json={"approve": False},
+        headers=foreign_headers,
+    )
+    missing_review = client.post(
+        "/api/v1/payment-evidence/999999/review",
+        json={"approve": False},
+        headers=auth_headers,
+    )
+    assert foreign_review.status_code == 404
+    assert foreign_review.json() == missing_review.json() == {
+        "detail": "Payment evidence not found",
+        "code": "PAYMENT_EVIDENCE_NOT_FOUND",
+    }
+
+
 def test_yape_requires_real_image_and_human_approval_emits_durable_event(
     client, tenant, auth_headers
 ):
@@ -151,6 +293,15 @@ def test_yape_requires_real_image_and_human_approval_emits_durable_event(
         assert db.query(KitchenTicket).filter_by(order_id=order_id).count() == 0
         assert db.get(PaymentEvidence, evidence_id).image_sha256
 
+    duplicate_evidence = client.post(
+        f"/api/v1/integrations/orders/{order_id}/payment-evidence",
+        data={"provider": "yape", "operation_number": "YP-000002"},
+        files={"file": ("second.png", b"not-an-image", "image/png")},
+        headers=integration_headers(token, "evidence-image-002"),
+    )
+    assert duplicate_evidence.status_code == 409, duplicate_evidence.text
+    assert duplicate_evidence.json()["code"] == "PAYMENT_EVIDENCE_UNDER_REVIEW"
+
     approved = client.post(
         f"/api/v1/payment-evidence/{evidence_id}/review",
         json={"approve": True, "note": "Validado por caja"},
@@ -159,8 +310,34 @@ def test_yape_requires_real_image_and_human_approval_emits_durable_event(
     assert approved.status_code == 200, approved.text
     assert approved.json()["order"]["payment_status"] == "paid"
     assert approved.json()["order"]["status"] == "sent_to_kitchen"
+    assert approved.json()["notification"]["queued"] is True
+    assert approved.json()["notification"]["recipient_available"] is True
     with SessionLocal() as db:
         assert db.query(KitchenTicket).filter_by(order_id=order_id).count() == 1
+
+    with SessionLocal.begin() as db:
+        stale = PaymentEvidence(
+            business_id=tenant["business_id"],
+            order_id=order_id,
+            provider="yape",
+            storage_path="private/stale-evidence.webp",
+            image_sha256="c" * 64,
+            operation_number="YP-STALE-001",
+            status="under_review",
+        )
+        db.add(stale)
+        db.flush()
+        stale_evidence_id = stale.id
+
+    stale_rejection = client.post(
+        f"/api/v1/payment-evidence/{stale_evidence_id}/review",
+        json={"approve": False, "note": "Revisión tardía"},
+        headers=auth_headers,
+    )
+    assert stale_rejection.status_code == 200, stale_rejection.text
+    assert stale_rejection.json()["evidence"]["status"] == "superseded"
+    assert stale_rejection.json()["order"]["payment_status"] == "paid"
+    assert stale_rejection.json()["order"]["status"] == "sent_to_kitchen"
 
     events = client.get(
         "/api/v1/integrations/events",
@@ -169,6 +346,41 @@ def test_yape_requires_real_image_and_human_approval_emits_durable_event(
     assert events.status_code == 200, events.text
     payment_event = next(item for item in events.json() if item["event_type"] == "payment.approved")
     assert payment_event["whatsapp_chat_id"] == "51999999999@c.us"
+    assert payment_event["payload"]["channel"] == "whatsapp"
+    assert payment_event["payload"]["message"] == (
+        "¡Pago confirmado! Tu pedido fue aprobado y ya está en preparación. "
+        "Te avisaremos cuando esté listo para que puedas venir al local. 🍕"
+    )
+    assert approved.json()["notification"]["event_id"] == payment_event["id"]
+
+    repeated_approval = client.post(
+        f"/api/v1/payment-evidence/{evidence_id}/review",
+        json={"approve": True, "note": "Reintento del mismo clic"},
+        headers=auth_headers,
+    )
+    assert repeated_approval.status_code == 200, repeated_approval.text
+    assert repeated_approval.json()["notification"]["event_id"] == payment_event["id"]
+    repeated_events = client.get(
+        "/api/v1/integrations/events",
+        headers=integration_headers(token),
+    )
+    assert repeated_events.status_code == 200
+    assert len(
+        [
+            item
+            for item in repeated_events.json()
+            if item["event_type"] == "payment.approved"
+            and item["aggregate_id"] == str(order_id)
+        ]
+    ) == 1
+
+    future_events = client.get(
+        "/api/v1/integrations/events",
+        params={"created_after": "2999-01-01T00:00:00Z"},
+        headers=integration_headers(token),
+    )
+    assert future_events.status_code == 200
+    assert future_events.json() == []
 
     acknowledged = client.post(
         f"/api/v1/integrations/events/{payment_event['id']}/ack",
@@ -180,6 +392,49 @@ def test_yape_requires_real_image_and_human_approval_emits_durable_event(
         headers=integration_headers(token),
     )
     assert all(item["id"] != payment_event["id"] for item in pending.json())
+
+    no_recipient_order = client.post(
+        "/api/v1/integrations/orders/draft",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "counter",
+            "source": "n8n",
+            "external_reference": "payment-without-whatsapp-recipient",
+            "payment_method": "yape",
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
+        },
+        headers=integration_headers(token, "payment-without-whatsapp-recipient"),
+    )
+    assert no_recipient_order.status_code == 201, no_recipient_order.text
+    no_recipient_order_id = no_recipient_order.json()["id"]
+    no_recipient_evidence = client.post(
+        f"/api/v1/integrations/orders/{no_recipient_order_id}/payment-evidence",
+        data={"provider": "yape", "operation_number": "YP-NO-RECIPIENT"},
+        files={"file": ("yape.png", b"\x89PNG\r\n\x1a\nproof-2", "image/png")},
+        headers=integration_headers(token, "evidence-without-whatsapp-recipient"),
+    )
+    assert no_recipient_evidence.status_code == 201, no_recipient_evidence.text
+    no_recipient_approval = client.post(
+        f"/api/v1/payment-evidence/{no_recipient_evidence.json()['evidence']['id']}/review",
+        json={"approve": True},
+        headers=auth_headers,
+    )
+    assert no_recipient_approval.status_code == 200, no_recipient_approval.text
+    assert no_recipient_approval.json()["notification"] == {
+        "event_id": None,
+        "event_type": None,
+        "recipient_available": False,
+        "queued": False,
+        "acknowledged": False,
+    }
+    events_without_recipient = client.get(
+        "/api/v1/integrations/events",
+        headers=integration_headers(token),
+    )
+    assert all(
+        item["aggregate_id"] != str(no_recipient_order_id)
+        for item in events_without_recipient.json()
+    )
 
 
 def test_non_receipt_image_is_not_confirmed_and_leaves_an_operational_note(

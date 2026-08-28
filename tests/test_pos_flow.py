@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from app.database import SessionLocal
-from app.models import InventoryItem, KitchenTicket, Membership
+from app.models import AuditEvent, DiningArea, InventoryItem, KitchenTicket, Membership, RestaurantTable
 
 
 def test_health_and_openapi(client):
@@ -158,13 +158,26 @@ def test_complete_dine_in_order_is_idempotent(client, tenant, auth_headers):
     assert paid.status_code == 201, paid.text
     assert paid.json()["order"]["payment_status"] == "paid"
 
-    for next_status in ["preparing", "ready", "closed"]:
-        transitioned = client.post(
-            f"/api/v1/orders/{order['id']}/transition",
-            json={"status": next_status},
+    transitioned = client.post(
+        f"/api/v1/orders/{order['id']}/transition",
+        json={"status": "preparing"},
+        headers=auth_headers,
+    )
+    assert transitioned.status_code == 200, transitioned.text
+    ticket_id = kitchen.json()["tickets"][0]["id"]
+    for next_ticket_status in ["preparing", "ready"]:
+        ticket_transition = client.post(
+            f"/api/v1/kitchen/tickets/{ticket_id}/transition",
+            json={"status": next_ticket_status},
             headers=auth_headers,
         )
-        assert transitioned.status_code == 200, transitioned.text
+        assert ticket_transition.status_code == 200, ticket_transition.text
+    transitioned = client.post(
+        f"/api/v1/orders/{order['id']}/transition",
+        json={"status": "closed"},
+        headers=auth_headers,
+    )
+    assert transitioned.status_code == 200, transitioned.text
     assert transitioned.json()["status"] == "closed"
 
     closed = client.post(
@@ -174,6 +187,118 @@ def test_complete_dine_in_order_is_idempotent(client, tenant, auth_headers):
     )
     assert closed.status_code == 200, closed.text
     assert closed.json()["difference"] == 0.0
+
+
+def test_cancelling_a_dine_in_order_releases_its_table(client, tenant, auth_headers):
+    created = client.post(
+        "/api/v1/orders",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "dine_in",
+            "table_id": tenant["table_id"],
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
+        },
+        headers={**auth_headers, "Idempotency-Key": "cancel-table-order"},
+    )
+    assert created.status_code == 201, created.text
+
+    cancelled = client.post(
+        f"/api/v1/orders/{created.json()['id']}/transition",
+        json={"status": "cancelled"},
+        headers=auth_headers,
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    with SessionLocal() as db:
+        assert db.get(RestaurantTable, tenant["table_id"]).status == "available"
+
+
+def test_area_and_table_creation_are_audited(client, tenant, auth_headers):
+    area = client.post(
+        "/api/v1/areas",
+        json={"branch_id": tenant["branch_id"], "name": "Terraza", "sort_order": 1},
+        headers=auth_headers,
+    )
+    assert area.status_code == 201, area.text
+    duplicate = client.post(
+        "/api/v1/areas",
+        json={"branch_id": tenant["branch_id"], "name": " terraza "},
+        headers=auth_headers,
+    )
+    assert duplicate.status_code == 409
+
+    table = client.post(
+        "/api/v1/tables",
+        json={
+            "branch_id": tenant["branch_id"],
+            "area_id": area.json()["id"],
+            "code": "TERRAZA-1",
+            "name": "Mesa Terraza 1",
+            "capacity": 4,
+        },
+        headers=auth_headers,
+    )
+    assert table.status_code == 201, table.text
+
+    with SessionLocal() as db:
+        assert db.get(DiningArea, area.json()["id"]).name == "Terraza"
+        actions = {
+            event.action
+            for event in db.query(AuditEvent).filter(
+                AuditEvent.business_id == tenant["business_id"],
+                AuditEvent.entity_id.in_([area.json()["id"], table.json()["id"]]),
+            )
+        }
+        assert "area.created" in actions
+        assert "table.created" in actions
+
+
+def test_table_cannot_reference_an_area_from_another_branch(client, tenant, auth_headers):
+    admin_headers = {
+        "X-Dev-Auth": "test-token",
+        "X-Dev-Role": "superadmin",
+        "X-Dev-User": "admin-test",
+    }
+    foreign_area = client.post(
+        "/api/v1/areas",
+        json={"branch_id": tenant["other_branch_id"], "name": "Área externa"},
+        headers=admin_headers,
+    )
+    assert foreign_area.status_code == 201, foreign_area.text
+
+    response = client.post(
+        "/api/v1/tables",
+        json={
+            "branch_id": tenant["branch_id"],
+            "area_id": foreign_area.json()["id"],
+            "code": "MESA-AJENA",
+            "name": "Mesa ajena",
+            "capacity": 4,
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 422
+    assert "does not belong" in response.json()["detail"]
+
+
+def test_cash_payment_requires_an_open_cash_session(client, tenant, auth_headers):
+    created = client.post(
+        "/api/v1/orders",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "counter",
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
+        },
+        headers={**auth_headers, "Idempotency-Key": "cash-session-required-order"},
+    )
+    assert created.status_code == 201, created.text
+
+    payment = client.post(
+        f"/api/v1/orders/{created.json()['id']}/payments",
+        json={"method": "cash", "amount": 20},
+        headers={**auth_headers, "Idempotency-Key": "cash-session-required-payment"},
+    )
+    assert payment.status_code == 422
+    assert "cash session" in payment.json()["detail"].lower()
 
 
 def test_cross_business_branch_is_denied(client, tenant, auth_headers):
@@ -263,7 +388,13 @@ def test_integration_order_requires_service_token_and_is_idempotent(client, tena
 
 
 def test_legacy_contract_remains_available_but_dynamic_crud_is_disabled(client, tenant):
-    businesses = client.get("/api/datos/negocios")
+    anonymous = client.get("/api/datos/negocios")
+    assert anonymous.status_code == 401
+
+    businesses = client.get(
+        "/api/datos/negocios",
+        headers={"X-Integration-Token": "test-integration-token"},
+    )
     assert businesses.status_code == 200
     assert any(item["id"] == tenant["business_id"] for item in businesses.json())
     assert client.post("/api/tablas/arbitrary", json={"secret": "TEXT"}).status_code == 410

@@ -60,6 +60,30 @@ async def load_private_file(storage_path: str) -> tuple[bytes, str]:
     return target.read_bytes(), mimetypes.guess_type(target.name)[0] or "application/octet-stream"
 
 
+async def delete_private_file(storage_path: str) -> None:
+    settings = get_settings()
+    if storage_path.startswith("supabase://impulsa-private/"):
+        if not settings.supabase_url or not settings.supabase_service_role_key:
+            raise FileNotFoundError("Private storage is not configured")
+        path = storage_path.removeprefix("supabase://impulsa-private/")
+        url = f"{settings.supabase_url.rstrip('/')}/storage/v1/object/impulsa-private/{path}"
+        headers = {
+            "Authorization": f"Bearer {settings.supabase_service_role_key}",
+            "apikey": settings.supabase_service_role_key,
+        }
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.delete(url, headers=headers)
+            if response.status_code not in {200, 204, 404}:
+                response.raise_for_status()
+        return
+
+    target = Path(storage_path).resolve()
+    upload_root = settings.upload_dir.resolve()
+    if upload_root not in target.parents:
+        raise FileNotFoundError("Private file not found")
+    target.unlink(missing_ok=True)
+
+
 async def analyze_payment_image(data: bytes, content_type: str) -> dict:
     settings = get_settings()
     if not settings.openai_api_key:

@@ -10,11 +10,13 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
+from pydantic import ValidationError
 
 from .auth import (
     AuthContext,
@@ -30,6 +32,7 @@ from .auth import (
 )
 from .config import get_settings
 from .database import get_db
+from .errors import CodedHTTPException
 from .models import (
     AuditEvent,
     Branch,
@@ -38,6 +41,7 @@ from .models import (
     CashRegister,
     CashSession,
     Category,
+    ComboItem,
     Courier,
     DeliveryAssignment,
     DiningArea,
@@ -59,6 +63,8 @@ from .models import (
     Product,
     ProductModifierGroup,
     ProductVariant,
+    Promotion,
+    PromotionTarget,
     RecipeItem,
     Reservation,
     ReservationTable,
@@ -78,10 +84,15 @@ from .schemas import (
     CashSessionClose,
     CashSessionOpen,
     CategoryCreate,
+    CategoryOrderUpdate,
+    CategoryUpdate,
+    ComboReplace,
     CourierCreate,
     DeliveryAssign,
     DeliveryTransition,
     EvidenceReview,
+    IngredientCreate,
+    IngredientUpdate,
     InventoryItemCreate,
     IntegrationEvidenceCreate,
     IntegrationCredentialCreate,
@@ -89,12 +100,26 @@ from .schemas import (
     InvitationCreate,
     LegacyDraftCreate,
     MembershipUpdate,
+    ModifierCreate,
+    ModifierGroupCreate,
+    ModifierGroupOrderUpdate,
+    ModifierGroupUpdate,
+    ModifierUpdate,
+    OrderCommand,
     OrderCreate,
+    OrderItemBatch,
     OrderPatch,
     OrderTransition,
     PaymentCreate,
     ProductCreate,
+    ProductAvailabilityUpdate,
+    ProductModifierGroupsReplace,
+    ProductOrderUpdate,
     ProductUpdate,
+    ProductVariantCreate,
+    ProductVariantUpdate,
+    PromotionCreate,
+    PromotionUpdate,
     PublicOrderCreate,
     PublicReservationCreate,
     RecipeReplace,
@@ -111,6 +136,7 @@ from .schemas import (
 from .services import (
     add_order_item,
     add_payment,
+    append_order_item_batch,
     assert_version,
     audit,
     available_tables,
@@ -125,6 +151,7 @@ from .services import (
     money,
     parse_legacy_items,
     product_capacity,
+    promotion_is_active,
     reverse_order_stock,
     recalculate_order,
     save_idempotent_response,
@@ -133,15 +160,130 @@ from .services import (
     split_amounts,
     transition_order,
 )
-from .storage import analyze_payment_image, load_private_file, store_private_file
+from .storage import analyze_payment_image, delete_private_file, load_private_file, store_private_file
 import httpx
+from PIL import Image, UnidentifiedImageError
 
 
 api = APIRouter(prefix="/api/v1")
 legacy = APIRouter(prefix="/api")
 
 
+def catalog_error(status_code: int, detail: str, code: str) -> CodedHTTPException:
+    return CodedHTTPException(status_code=status_code, detail=detail, code=code)
+
+
+def scoped_catalog_entity(db: Session, user: AuthContext, model, entity_id: int):
+    statement = select(model).where(model.id == entity_id)
+    if not user.is_superadmin:
+        statement = statement.where(model.business_id == user.business_id)
+        if user.branch_id is not None:
+            statement = statement.where(model.branch_id == user.branch_id)
+    return db.scalar(statement)
+
+
+def scoped_order_for_user(
+    db: Session,
+    user: AuthContext,
+    order_id: int,
+    *,
+    for_update: bool = False,
+) -> Order:
+    statement = (
+        select(Order)
+        .where(Order.id == order_id)
+        .options(selectinload(Order.items))
+    )
+    if not user.is_superadmin:
+        statement = statement.where(Order.business_id == user.business_id)
+        if user.branch_id is not None:
+            statement = statement.where(Order.branch_id == user.branch_id)
+    if for_update:
+        statement = statement.with_for_update()
+    order = db.scalar(statement)
+    if not order:
+        raise CodedHTTPException(404, "Order not found", "ORDER_NOT_FOUND")
+    return order
+
+
+def scoped_payment_evidence_for_user(
+    db: Session,
+    user: AuthContext,
+    evidence_id: int,
+    *,
+    for_update: bool = False,
+) -> PaymentEvidence:
+    statement = (
+        select(PaymentEvidence)
+        .join(Order, Order.id == PaymentEvidence.order_id)
+        .where(PaymentEvidence.id == evidence_id)
+    )
+    if not user.is_superadmin:
+        statement = statement.where(Order.business_id == user.business_id)
+        if user.branch_id is not None:
+            statement = statement.where(Order.branch_id == user.branch_id)
+    if for_update:
+        statement = statement.with_for_update()
+    evidence = db.scalar(statement)
+    if not evidence:
+        raise CodedHTTPException(
+            404,
+            "Payment evidence not found",
+            "PAYMENT_EVIDENCE_NOT_FOUND",
+        )
+    return evidence
+
+
+def scoped_branch_for_user(db: Session, user: AuthContext, branch_id: int) -> Branch:
+    statement = select(Branch).where(Branch.id == branch_id, Branch.active.is_(True))
+    if not user.is_superadmin:
+        statement = statement.where(Branch.business_id == user.business_id)
+        if user.branch_id is not None:
+            statement = statement.where(Branch.id == user.branch_id)
+    branch = db.scalar(statement)
+    if not branch:
+        raise CodedHTTPException(404, "Branch not found", "BRANCH_NOT_FOUND")
+    return branch
+
+
 MODULES = ["pos", "tables", "kds", "inventory", "cash", "delivery", "reservations", "whatsapp"]
+
+PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+PRODUCT_IMAGE_MIME_BY_FORMAT = {
+    "JPEG": "image/jpeg",
+    "PNG": "image/png",
+    "WEBP": "image/webp",
+}
+
+
+def product_image_url(product: Product) -> str | None:
+    if product.image_storage_path:
+        version = int(product.updated_at.timestamp()) if product.updated_at else product.id
+        return f"/api/v1/public/catalog/products/{product.id}/image?v={version}"
+    return product.image_url
+
+
+def validate_product_image(data: bytes, declared_content_type: str | None) -> tuple[str, str]:
+    if declared_content_type not in PRODUCT_IMAGE_MIME_BY_FORMAT.values():
+        raise HTTPException(status_code=415, detail="Usa una imagen JPEG, PNG o WebP")
+    if not data:
+        raise HTTPException(status_code=422, detail="La imagen está vacía")
+    if len(data) > PRODUCT_IMAGE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="La imagen no puede superar 5 MB")
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            detected_format = image.format
+            width, height = image.size
+            image.verify()
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="El archivo no contiene una imagen válida") from exc
+    detected_mime = PRODUCT_IMAGE_MIME_BY_FORMAT.get(detected_format or "")
+    if not detected_mime or detected_mime != declared_content_type:
+        raise HTTPException(status_code=422, detail="El contenido de la imagen no coincide con su formato")
+    if width < 64 or height < 64:
+        raise HTTPException(status_code=422, detail="La imagen debe medir al menos 64 x 64 píxeles")
+    extension = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}[detected_mime]
+    return detected_mime, extension
 
 
 def serialize_business(db: Session, business: Business) -> dict:
@@ -274,7 +416,9 @@ def serialize_branch(branch: Branch) -> dict:
         "plin_number": branch.plin_number,
         "payment_recipient_name": branch.payment_recipient_name,
         "maps_url": branch.maps_url,
-        "yape_qr_storage_path": branch.yape_qr_storage_path,
+        "yape_qr_configured": bool(branch.yape_qr_storage_path),
+        "menu_card_configured": bool(branch.menu_card_storage_path),
+        "agent_context_notes": branch.agent_context_notes,
         "active": branch.active,
     }
 
@@ -310,6 +454,319 @@ def serialize_inventory(item: InventoryItem) -> dict:
         "low_stock": item.quantity <= item.minimum_stock,
         "active": item.active,
         "version": item.version,
+    }
+
+
+def serialize_promotion(promotion: Promotion) -> dict:
+    target_ids = [
+        target.product_id if promotion.target_scope == "products" else target.category_id
+        for target in promotion.targets
+    ]
+    return {
+        "id": promotion.id,
+        "business_id": promotion.business_id,
+        "branch_id": promotion.branch_id,
+        "name": promotion.name,
+        "promotion_type": promotion.promotion_type,
+        "discount_type": promotion.discount_type,
+        "discount_value": float(promotion.discount_value) if promotion.discount_value is not None else None,
+        "receive_quantity": promotion.receive_quantity,
+        "pay_quantity": promotion.pay_quantity,
+        "target_scope": promotion.target_scope,
+        "target_ids": [target_id for target_id in target_ids if target_id is not None],
+        "starts_on": promotion.starts_on,
+        "ends_on": promotion.ends_on,
+        "weekdays": promotion.weekdays or [],
+        "service_channels": promotion.service_channels or [],
+        "active": promotion.active,
+        "sort_order": promotion.sort_order,
+        "archived_at": promotion.archived_at,
+        "version": promotion.version,
+        "created_at": promotion.created_at,
+        "updated_at": promotion.updated_at,
+    }
+
+
+def _validate_promotion_targets(
+    db: Session,
+    branch: Branch,
+    target_scope: str,
+    target_ids: list[int],
+) -> None:
+    model = Product if target_scope == "products" else Category
+    found_ids = set(
+        db.scalars(
+            select(model.id).where(
+                model.branch_id == branch.id,
+                model.id.in_(target_ids),
+            )
+        )
+    )
+    if found_ids != set(target_ids):
+        label = "productos" if target_scope == "products" else "categorías"
+        raise HTTPException(status_code=422, detail=f"Hay {label} que no pertenecen a esta sucursal")
+
+
+def _replace_promotion_targets(
+    promotion: Promotion,
+    target_scope: str,
+    target_ids: list[int],
+) -> None:
+    promotion.targets.clear()
+    for target_id in target_ids:
+        promotion.targets.append(
+            PromotionTarget(
+                product_id=target_id if target_scope == "products" else None,
+                category_id=target_id if target_scope == "categories" else None,
+            )
+        )
+
+
+def serialize_catalog(db: Session, branch: Branch, *, available_only: bool = False) -> dict:
+    category_query = (
+        select(Category)
+        .where(Category.branch_id == branch.id)
+        .order_by(Category.sort_order, Category.name)
+    )
+    product_query = select(Product).where(Product.branch_id == branch.id)
+    if available_only:
+        category_query = category_query.where(Category.active.is_(True))
+        active_category_ids = select(Category.id).where(
+            Category.branch_id == branch.id,
+            Category.active.is_(True),
+        )
+        product_query = product_query.where(
+            Product.available.is_(True),
+            or_(
+                Product.category_id.is_(None),
+                Product.category_id.in_(active_category_ids),
+            ),
+        )
+    products = list(db.scalars(product_query.order_by(Product.sort_order, Product.name)))
+    categories = list(db.scalars(category_query))
+    product_ids = [product.id for product in products]
+
+    variants = (
+        list(
+            db.scalars(
+                select(ProductVariant)
+                .where(ProductVariant.product_id.in_(product_ids))
+                .order_by(ProductVariant.product_id, ProductVariant.id)
+            )
+        )
+        if product_ids
+        else []
+    )
+    links = (
+        list(
+            db.execute(
+                select(ProductModifierGroup.product_id, ProductModifierGroup.group_id).where(
+                    ProductModifierGroup.product_id.in_(product_ids)
+                )
+            )
+        )
+        if product_ids
+        else []
+    )
+    groups = list(
+        db.scalars(
+            select(ModifierGroup)
+            .where(
+                ModifierGroup.business_id == branch.business_id,
+                ModifierGroup.branch_id == branch.id,
+            )
+            .order_by(ModifierGroup.sort_order, ModifierGroup.name, ModifierGroup.id)
+        )
+    )
+    group_ids = [group.id for group in groups]
+    modifiers = (
+        list(
+            db.scalars(
+                select(Modifier)
+                .where(Modifier.group_id.in_(group_ids))
+                .order_by(Modifier.group_id, Modifier.sort_order, Modifier.name, Modifier.id)
+            )
+        )
+        if group_ids
+        else []
+    )
+    recipe_items = (
+        list(db.scalars(select(RecipeItem).where(RecipeItem.product_id.in_(product_ids))))
+        if product_ids
+        else []
+    )
+    inventory_ids = {component.inventory_item_id for component in recipe_items}
+    inventory_by_id = (
+        {
+            item.id: item
+            for item in db.scalars(
+                select(InventoryItem).where(
+                    InventoryItem.id.in_(inventory_ids),
+                    InventoryItem.branch_id == branch.id,
+                )
+            )
+        }
+        if inventory_ids
+        else {}
+    )
+    ingredients = list(
+        db.scalars(
+            select(InventoryItem)
+            .where(InventoryItem.branch_id == branch.id)
+            .order_by(InventoryItem.name, InventoryItem.id)
+        )
+    )
+    combo_items = (
+        list(
+            db.scalars(
+                select(ComboItem)
+                .where(ComboItem.product_id.in_(product_ids))
+                .order_by(ComboItem.product_id, ComboItem.sort_order, ComboItem.id)
+            )
+        )
+        if product_ids
+        else []
+    )
+    component_ids = {component.component_product_id for component in combo_items}
+    component_by_id = (
+        {
+            product.id: product
+            for product in db.scalars(
+                select(Product).where(
+                    Product.id.in_(component_ids),
+                    Product.branch_id == branch.id,
+                )
+            )
+        }
+        if component_ids
+        else {}
+    )
+    promotions = list(
+        db.scalars(
+            select(Promotion)
+            .where(
+                Promotion.branch_id == branch.id,
+                Promotion.archived_at.is_(None),
+            )
+            .options(selectinload(Promotion.targets))
+            .order_by(Promotion.sort_order, Promotion.name, Promotion.id)
+        )
+    )
+    if available_only:
+        promotions = [
+            promotion
+            for promotion in promotions
+            if promotion_is_active(promotion)
+            and any(channel.startswith("digital_") for channel in promotion.service_channels)
+        ]
+
+    group_payloads = {
+        group.id: {
+            "id": group.id,
+            "branch_id": group.branch_id,
+            "name": group.name,
+            "internal_label": group.internal_label,
+            "minimum": group.minimum,
+            "maximum": group.maximum,
+            "required": group.required,
+            "allow_repeats": group.allow_repeats,
+            "max_per_option": group.max_per_option,
+            "sort_order": group.sort_order,
+            "modifiers": [
+                {
+                    "id": modifier.id,
+                    "name": modifier.name,
+                    "price_delta": float(modifier.price_delta),
+                    "active": modifier.active,
+                    "sort_order": modifier.sort_order,
+                }
+                for modifier in modifiers
+                if modifier.group_id == group.id and (modifier.active or not available_only)
+            ],
+        }
+        for group in groups
+    }
+
+    return {
+        "branch": serialize_branch(branch),
+        "categories": [
+            {
+                "id": category.id,
+                "name": category.name,
+                "color": category.color,
+                "sort_order": category.sort_order,
+                "active": category.active,
+            }
+            for category in categories
+        ],
+        "modifier_groups": list(group_payloads.values()),
+        "ingredients": [
+            {
+                "id": ingredient.id,
+                "sku": ingredient.sku,
+                "name": ingredient.name,
+                "unit": ingredient.unit,
+                "active": ingredient.active,
+            }
+            for ingredient in ingredients
+            if ingredient.active or not available_only
+        ],
+        "products": [
+            {
+                "id": product.id,
+                "category_id": product.category_id,
+                "sku": product.sku,
+                "name": product.name,
+                "description": product.description,
+                "price": float(product.price),
+                "image_url": product_image_url(product),
+                "service_channels": product.service_channels,
+                "product_type": product.product_type,
+                "available": product.available,
+                "track_stock": product.track_stock,
+                "preparation_station": product.preparation_station,
+                "sort_order": product.sort_order,
+                "variants": [
+                    {
+                        "id": variant.id,
+                        "name": variant.name,
+                        "price_delta": float(variant.price_delta),
+                        "active": variant.active,
+                    }
+                    for variant in variants
+                    if variant.product_id == product.id and (variant.active or not available_only)
+                ],
+                "modifier_groups": [
+                    group_payloads[link.group_id]
+                    for link in links
+                    if link.product_id == product.id and link.group_id in group_payloads
+                ],
+                "recipe": [
+                    {
+                        "inventory_item_id": component.inventory_item_id,
+                        "name": inventory_by_id[component.inventory_item_id].name,
+                        "unit": inventory_by_id[component.inventory_item_id].unit,
+                        "quantity": float(component.quantity),
+                    }
+                    for component in recipe_items
+                    if component.product_id == product.id
+                    and component.inventory_item_id in inventory_by_id
+                ],
+                "combo_components": [
+                    {
+                        "product_id": component.component_product_id,
+                        "name": component_by_id[component.component_product_id].name,
+                        "quantity": float(component.quantity),
+                        "sort_order": component.sort_order,
+                    }
+                    for component in combo_items
+                    if component.product_id == product.id
+                    and component.component_product_id in component_by_id
+                ],
+            }
+            for product in products
+        ],
+        "promotions": [serialize_promotion(promotion) for promotion in promotions],
     }
 
 
@@ -370,6 +827,43 @@ def serialize_ticket(ticket: KitchenTicket) -> dict:
         "started_at": ticket.started_at,
         "ready_at": ticket.ready_at,
         "print_count": ticket.print_count,
+    }
+
+
+ORDER_REVIEW_EVIDENCE_STATUSES = {"evidence_received", "under_review"}
+
+
+def serialize_order_summary(order: Order, *, requires_review: bool) -> dict:
+    return {
+        "id": order.id,
+        "number": order.number,
+        "customer_name": order.customer_name,
+        "customer_phone": order.customer_phone,
+        "channel": order.channel,
+        "source": order.source,
+        "created_at": order.created_at,
+        "payment_status": order.payment_status,
+        "status": order.status,
+        "total": float(order.total or 0),
+        "delivery_fee": float(order.delivery_fee or 0),
+        "requires_review": requires_review,
+        "item_count": len(order.items),
+        "version": order.version,
+    }
+
+
+def serialize_payment(payment: Payment) -> dict:
+    return {
+        "id": payment.id,
+        "order_id": payment.order_id,
+        "cash_session_id": payment.cash_session_id,
+        "method": payment.method,
+        "status": payment.status,
+        "amount": float(payment.amount),
+        "external_reference": payment.external_reference,
+        "note": payment.note,
+        "received_at": payment.received_at,
+        "created_by": payment.created_by,
     }
 
 
@@ -1057,9 +1551,14 @@ async def onboard_restaurant(
             "endpoints": {
                 "restaurant_context": {"method": "GET", "url": f"{integration_base}/context"},
                 "yape_qr": {"method": "GET", "url": f"{integration_base}/context/yape-qr"},
+                "menu_card_image": {"method": "GET", "url": f"{integration_base}/context/menu-card"},
                 "menu": {"method": "GET", "url": f"{integration_base}/context/menu"},
                 "inventory": {"method": "GET", "url": f"{integration_base}/context/inventory"},
                 "adjust_inventory": {"method": "POST", "url": f"{integration_base}/inventory/{{item_id}}/adjust"},
+                "set_product_availability": {
+                    "method": "PATCH",
+                    "url": f"{integration_base}/context/menu/{{product_id}}/availability",
+                },
                 "tables": {"method": "GET", "url": f"{integration_base}/context/tables"},
                 "reservation_availability": {"method": "GET", "url": f"{integration_base}/context/availability"},
                 "create_order_draft": {"method": "POST", "url": f"{integration_base}/orders/draft"},
@@ -1201,6 +1700,47 @@ async def upload_branch_yape_qr(
     return serialize_branch(branch)
 
 
+@api.post("/branches/{branch_id}/menu-card", tags=["branches"])
+async def upload_branch_menu_card(
+    branch_id: int,
+    file: UploadFile = File(...),
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    branch = branch_for_user(db, user, branch_id)
+    content_type = file.content_type or "application/octet-stream"
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=422, detail="La carta debe ser una imagen")
+    data = await file.read()
+    if not data or len(data) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=422, detail="La imagen de la carta debe pesar entre 1 byte y 10 MB")
+    branch.menu_card_storage_path = await store_private_file(
+        data,
+        file.filename or "carta.png",
+        content_type,
+        "branch-menu-card",
+    )
+    audit(db, user, "branch.menu_card_updated", "branch", branch.id, branch.business_id)
+    db.commit()
+    return serialize_branch(branch)
+
+
+@api.get("/branches/{branch_id}/menu-card", tags=["branches"])
+async def get_branch_menu_card(
+    branch_id: int,
+    user: AuthContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    branch = branch_for_user(db, user, branch_id)
+    if not branch.menu_card_storage_path:
+        raise HTTPException(status_code=404, detail="La carta no está configurada")
+    try:
+        data, content_type = await load_private_file(branch.menu_card_storage_path)
+    except (FileNotFoundError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=404, detail="No se encontró la imagen de la carta") from exc
+    return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, no-store"})
+
+
 @api.get("/catalog", tags=["catalog"])
 def get_catalog(
     branch_id: int,
@@ -1208,76 +1748,166 @@ def get_catalog(
     db: Session = Depends(get_db),
 ):
     branch = branch_for_user(db, user, branch_id)
-    categories = list(
-        db.scalars(
-            select(Category)
-            .where(Category.branch_id == branch.id, Category.active.is_(True))
-            .order_by(Category.sort_order, Category.name)
+    return serialize_catalog(db, branch)
+
+
+@api.get("/catalog/promotions", tags=["catalog"])
+def list_promotions(
+    branch_id: int,
+    include_archived: bool = False,
+    user: AuthContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    branch = branch_for_user(db, user, branch_id)
+    statement = (
+        select(Promotion)
+        .where(Promotion.branch_id == branch.id)
+        .options(selectinload(Promotion.targets))
+        .order_by(Promotion.sort_order, Promotion.name, Promotion.id)
+    )
+    if not include_archived:
+        statement = statement.where(Promotion.archived_at.is_(None))
+    return [serialize_promotion(promotion) for promotion in db.scalars(statement)]
+
+
+@api.post("/catalog/promotions", status_code=201, tags=["catalog"])
+def create_promotion(
+    payload: PromotionCreate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    branch = branch_for_user(db, user, payload.branch_id)
+    name = payload.name.strip()
+    duplicate = db.scalar(
+        select(Promotion).where(
+            Promotion.branch_id == branch.id,
+            Promotion.archived_at.is_(None),
+            func.lower(Promotion.name) == name.lower(),
         )
     )
-    products = list(
-        db.scalars(
-            select(Product)
-            .where(Product.branch_id == branch.id)
-            .order_by(Product.sort_order, Product.name)
-        )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Ya existe una promoción con ese nombre")
+    _validate_promotion_targets(db, branch, payload.target_scope, payload.target_ids)
+    data = payload.model_dump(exclude={"target_ids"})
+    data["name"] = name
+    promotion = Promotion(business_id=branch.business_id, **data)
+    _replace_promotion_targets(promotion, payload.target_scope, payload.target_ids)
+    db.add(promotion)
+    db.flush()
+    audit(db, user, "promotion.created", "promotion", promotion.id, branch.business_id)
+    db.commit()
+    db.refresh(promotion)
+    return serialize_promotion(promotion)
+
+
+@api.patch("/catalog/promotions/{promotion_id}", tags=["catalog"])
+def update_promotion(
+    promotion_id: int,
+    payload: PromotionUpdate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    promotion = db.scalar(
+        select(Promotion)
+        .where(Promotion.id == promotion_id)
+        .options(selectinload(Promotion.targets))
     )
-    variants = list(
-        db.scalars(select(ProductVariant).where(ProductVariant.product_id.in_([item.id for item in products])))
-    ) if products else []
-    links = list(
-        db.execute(
-            select(ProductModifierGroup.product_id, ProductModifierGroup.group_id).where(
-                ProductModifierGroup.product_id.in_([item.id for item in products])
-            )
-        )
-    ) if products else []
-    group_ids = {row.group_id for row in links}
-    groups = list(db.scalars(select(ModifierGroup).where(ModifierGroup.id.in_(group_ids)))) if group_ids else []
-    modifiers = list(db.scalars(select(Modifier).where(Modifier.group_id.in_(group_ids)))) if group_ids else []
-    return {
-        "branch": serialize_branch(branch),
-        "categories": [
-            {"id": item.id, "name": item.name, "color": item.color, "sort_order": item.sort_order}
-            for item in categories
-        ],
-        "products": [
-            {
-                "id": item.id,
-                "category_id": item.category_id,
-                "sku": item.sku,
-                "name": item.name,
-                "description": item.description,
-                "price": float(item.price),
-                "image_url": item.image_url,
-                "available": item.available,
-                "track_stock": item.track_stock,
-                "preparation_station": item.preparation_station,
-                "variants": [
-                    {"id": variant.id, "name": variant.name, "price_delta": float(variant.price_delta)}
-                    for variant in variants
-                    if variant.product_id == item.id and variant.active
-                ],
-                "modifier_groups": [
-                    {
-                        "id": group.id,
-                        "name": group.name,
-                        "minimum": group.minimum,
-                        "maximum": group.maximum,
-                        "required": group.required,
-                        "modifiers": [
-                            {"id": modifier.id, "name": modifier.name, "price_delta": float(modifier.price_delta)}
-                            for modifier in modifiers
-                            if modifier.group_id == group.id and modifier.active
-                        ],
-                    }
-                    for group in groups
-                    if any(link.product_id == item.id and link.group_id == group.id for link in links)
-                ],
-            }
-            for item in products
-        ],
+    if not promotion:
+        raise HTTPException(status_code=404, detail="No encontramos esa promoción")
+    branch = branch_for_user(db, user, promotion.branch_id)
+    changes = payload.model_dump(exclude_unset=True)
+    expected_version = changes.pop("expected_version", None)
+    assert_version(promotion.version, expected_version)
+    current = serialize_promotion(promotion)
+    merged = {
+        "branch_id": promotion.branch_id,
+        "name": current["name"],
+        "promotion_type": current["promotion_type"],
+        "discount_type": current["discount_type"],
+        "discount_value": current["discount_value"],
+        "receive_quantity": current["receive_quantity"],
+        "pay_quantity": current["pay_quantity"],
+        "target_scope": current["target_scope"],
+        "target_ids": current["target_ids"],
+        "starts_on": current["starts_on"],
+        "ends_on": current["ends_on"],
+        "weekdays": current["weekdays"],
+        "service_channels": current["service_channels"],
+        "active": current["active"],
+        "sort_order": current["sort_order"],
+        **changes,
     }
+    try:
+        validated = PromotionCreate.model_validate(merged)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
+    name = validated.name.strip()
+    duplicate = db.scalar(
+        select(Promotion).where(
+            Promotion.branch_id == branch.id,
+            Promotion.id != promotion.id,
+            Promotion.archived_at.is_(None),
+            func.lower(Promotion.name) == name.lower(),
+        )
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Ya existe una promoción con ese nombre")
+    _validate_promotion_targets(db, branch, validated.target_scope, validated.target_ids)
+    data = validated.model_dump(exclude={"branch_id", "target_ids"})
+    data["name"] = name
+    for key, value in data.items():
+        setattr(promotion, key, value)
+    _replace_promotion_targets(promotion, validated.target_scope, validated.target_ids)
+    promotion.version += 1
+    audit(db, user, "promotion.updated", "promotion", promotion.id, promotion.business_id)
+    db.commit()
+    return serialize_promotion(promotion)
+
+
+@api.post("/catalog/promotions/{promotion_id}/archive", tags=["catalog"])
+def archive_promotion(
+    promotion_id: int,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    promotion = db.scalar(
+        select(Promotion)
+        .where(Promotion.id == promotion_id)
+        .options(selectinload(Promotion.targets))
+    )
+    if not promotion:
+        raise HTTPException(status_code=404, detail="No encontramos esa promoción")
+    branch_for_user(db, user, promotion.branch_id)
+    if promotion.archived_at is None:
+        promotion.archived_at = utcnow()
+        promotion.active = False
+        promotion.version += 1
+        audit(db, user, "promotion.archived", "promotion", promotion.id, promotion.business_id)
+        db.commit()
+    return serialize_promotion(promotion)
+
+
+@api.post("/catalog/promotions/{promotion_id}/restore", tags=["catalog"])
+def restore_promotion(
+    promotion_id: int,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    promotion = db.scalar(
+        select(Promotion)
+        .where(Promotion.id == promotion_id)
+        .options(selectinload(Promotion.targets))
+    )
+    if not promotion:
+        raise HTTPException(status_code=404, detail="No encontramos esa promoción")
+    branch_for_user(db, user, promotion.branch_id)
+    if promotion.archived_at is not None:
+        promotion.archived_at = None
+        promotion.active = False
+        promotion.version += 1
+        audit(db, user, "promotion.restored", "promotion", promotion.id, promotion.business_id)
+        db.commit()
+    return serialize_promotion(promotion)
 
 
 @api.post("/catalog/categories", status_code=201, tags=["catalog"])
@@ -1287,11 +1917,144 @@ def create_category(
     db: Session = Depends(get_db),
 ):
     branch = branch_for_user(db, user, payload.branch_id)
-    category = Category(business_id=branch.business_id, **payload.model_dump())
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Escribe el nombre de la categoría")
+    duplicate = db.scalar(
+        select(Category).where(
+            Category.branch_id == branch.id,
+            Category.active.is_(True),
+            func.lower(Category.name) == name.lower(),
+        )
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Ya existe una categoría con ese nombre")
+    category_data = payload.model_dump()
+    category_data["name"] = name
+    category = Category(business_id=branch.business_id, **category_data)
     db.add(category)
+    db.flush()
+    audit(db, user, "category.created", "category", category.id, category.business_id)
     db.commit()
-    db.refresh(category)
-    return {"id": category.id, "name": category.name, "color": category.color, "sort_order": category.sort_order}
+    return {
+        "id": category.id,
+        "name": category.name,
+        "color": category.color,
+        "sort_order": category.sort_order,
+        "active": category.active,
+    }
+
+
+@api.put("/catalog/categories/order", tags=["catalog"])
+def update_category_order(
+    payload: CategoryOrderUpdate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    branch = branch_for_user(db, user, payload.branch_id)
+    categories = list(
+        db.scalars(
+            select(Category).where(
+                Category.branch_id == branch.id,
+                Category.active.is_(True),
+            )
+        )
+    )
+    categories_by_id = {category.id: category for category in categories}
+    if len(payload.category_ids) != len(set(payload.category_ids)):
+        raise HTTPException(status_code=422, detail="Una categoría aparece más de una vez")
+    if set(payload.category_ids) != set(categories_by_id):
+        raise HTTPException(status_code=422, detail="El orden debe incluir todas las categorías activas")
+    for sort_order, category_id in enumerate(payload.category_ids):
+        categories_by_id[category_id].sort_order = sort_order
+    audit(
+        db,
+        user,
+        "category.reordered",
+        "branch",
+        branch.id,
+        branch.business_id,
+        {"category_ids": payload.category_ids},
+    )
+    db.commit()
+    return {
+        "category_ids": payload.category_ids,
+        "updated": len(payload.category_ids),
+    }
+
+
+@api.patch("/catalog/categories/{category_id}", tags=["catalog"])
+async def update_category(
+    category_id: int,
+    payload: CategoryUpdate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    category = scoped_catalog_entity(db, user, Category, category_id)
+    if not category:
+        raise catalog_error(
+            404,
+            "No encontramos esa categoría",
+            "CATALOG_RESOURCE_NOT_FOUND",
+        )
+    changes = payload.model_dump(exclude_unset=True)
+    if "name" in changes and changes["name"] is not None:
+        changes["name"] = changes["name"].strip()
+        if not changes["name"]:
+            raise HTTPException(status_code=422, detail="Escribe el nombre de la categoría")
+        duplicate = db.scalar(
+            select(Category).where(
+                Category.branch_id == category.branch_id,
+                Category.id != category.id,
+                Category.active.is_(True),
+                func.lower(Category.name) == changes["name"].lower(),
+            )
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail="Ya existe una categoría con ese nombre")
+    if changes.get("active") is False and category.active:
+        category_product_count = db.scalar(
+            select(func.count(Product.id)).where(
+                Product.branch_id == category.branch_id,
+                Product.category_id == category.id,
+                Product.available.is_(True),
+            )
+        ) or 0
+        other_active_category_ids = select(Category.id).where(
+            Category.branch_id == category.branch_id,
+            Category.id != category.id,
+            Category.active.is_(True),
+        )
+        remaining_product_count = db.scalar(
+            select(func.count(Product.id)).where(
+                Product.branch_id == category.branch_id,
+                Product.available.is_(True),
+                or_(
+                    Product.category_id.is_(None),
+                    Product.category_id.in_(other_active_category_ids),
+                ),
+            )
+        ) or 0
+        if category_product_count > 0 and remaining_product_count == 0:
+            raise catalog_error(
+                409,
+                "No puedes borrar esta categoría porque contiene los últimos productos del restaurante",
+                "CATEGORY_LAST_VISIBLE_PRODUCTS",
+            )
+    for key, value in changes.items():
+        setattr(category, key, value)
+    audit(db, user, "category.updated", "category", category.id, category.business_id)
+    db.commit()
+    result = {
+        "id": category.id,
+        "branch_id": category.branch_id,
+        "name": category.name,
+        "color": category.color,
+        "sort_order": category.sort_order,
+        "active": category.active,
+    }
+    await hub.broadcast(category.branch_id, "catalog.category_updated", result)
+    return result
 
 
 @api.post("/catalog/products", status_code=201, tags=["catalog"])
@@ -1313,6 +2076,42 @@ def create_product(
     return {"id": product.id, "name": product.name, "price": float(product.price), "available": product.available}
 
 
+@api.put("/catalog/products/order", tags=["catalog"])
+def update_product_order(
+    payload: ProductOrderUpdate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    branch = branch_for_user(db, user, payload.branch_id)
+    product_scope = [Product.branch_id == branch.id]
+    if payload.category_id is None:
+        product_scope.append(Product.category_id.is_(None))
+    else:
+        category = db.get(Category, payload.category_id)
+        if not category or category.branch_id != branch.id:
+            raise HTTPException(status_code=422, detail="La categoría no pertenece a esta sucursal")
+        product_scope.append(Product.category_id == payload.category_id)
+    products = list(db.scalars(select(Product).where(*product_scope)))
+    products_by_id = {product.id: product for product in products}
+    if len(payload.product_ids) != len(set(payload.product_ids)):
+        raise HTTPException(status_code=422, detail="Un producto aparece más de una vez")
+    if set(payload.product_ids) != set(products_by_id):
+        raise HTTPException(status_code=422, detail="El orden debe incluir todos los productos de la categoría")
+    for sort_order, product_id in enumerate(payload.product_ids):
+        products_by_id[product_id].sort_order = sort_order
+    audit(
+        db,
+        user,
+        "product.reordered",
+        "branch",
+        branch.id,
+        branch.business_id,
+        {"category_id": payload.category_id, "product_ids": payload.product_ids},
+    )
+    db.commit()
+    return {"product_ids": payload.product_ids, "updated": len(payload.product_ids)}
+
+
 @api.patch("/catalog/products/{product_id}", tags=["catalog"])
 def update_product(
     product_id: int,
@@ -1320,15 +2119,605 @@ def update_product(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
     db: Session = Depends(get_db),
 ):
+    product = scoped_catalog_entity(db, user, Product, product_id)
+    if not product:
+        raise catalog_error(
+            404,
+            "No encontramos ese producto",
+            "CATALOG_RESOURCE_NOT_FOUND",
+        )
+    changes = payload.model_dump(exclude_unset=True)
+    if "category_id" in changes and changes["category_id"] is not None:
+        category = db.get(Category, changes["category_id"])
+        if not category or category.branch_id != product.branch_id:
+            raise HTTPException(status_code=422, detail="Category does not belong to branch")
+    for key, value in changes.items():
+        setattr(product, key, value)
+    audit(db, user, "product.updated", "product", product.id, product.business_id)
+    db.commit()
+    return {
+        "id": product.id,
+        "name": product.name,
+        "price": float(product.price),
+        "product_type": product.product_type,
+        "available": product.available,
+        "service_channels": product.service_channels,
+    }
+
+
+@api.post("/catalog/products/{product_id}/image", tags=["catalog"])
+async def upload_product_image(
+    product_id: int,
+    file: UploadFile = File(...),
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    product = scoped_catalog_entity(db, user, Product, product_id)
+    if not product:
+        raise catalog_error(404, "No encontramos ese producto", "CATALOG_RESOURCE_NOT_FOUND")
+    data = await file.read(PRODUCT_IMAGE_MAX_BYTES + 1)
+    await file.close()
+    content_type, extension = validate_product_image(data, file.content_type)
+    old_storage_path = product.image_storage_path
+    product.image_storage_path = await store_private_file(
+        data,
+        f"product-{product.id}.{extension}",
+        content_type,
+        category="product-images",
+    )
+    product.image_url = None
+    audit(db, user, "product.image_updated", "product", product.id, product.business_id)
+    db.commit()
+    db.refresh(product)
+    if old_storage_path:
+        try:
+            await delete_private_file(old_storage_path)
+        except (FileNotFoundError, httpx.HTTPError, OSError):
+            pass
+    return {"id": product.id, "image_url": product_image_url(product)}
+
+
+@api.delete("/catalog/products/{product_id}/image", status_code=204, tags=["catalog"])
+async def delete_product_image(
+    product_id: int,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    product = scoped_catalog_entity(db, user, Product, product_id)
+    if not product:
+        raise catalog_error(404, "No encontramos ese producto", "CATALOG_RESOURCE_NOT_FOUND")
+    old_storage_path = product.image_storage_path
+    product.image_storage_path = None
+    product.image_url = None
+    audit(db, user, "product.image_deleted", "product", product.id, product.business_id)
+    db.commit()
+    if old_storage_path:
+        try:
+            await delete_private_file(old_storage_path)
+        except (FileNotFoundError, httpx.HTTPError, OSError):
+            pass
+    return Response(status_code=204)
+
+
+@api.post("/catalog/products/{product_id}/variants", status_code=201, tags=["catalog"])
+def create_product_variant(
+    product_id: int,
+    payload: ProductVariantCreate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
     product = db.get(Product, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     branch_for_user(db, user, product.branch_id)
-    for key, value in payload.model_dump(exclude_unset=True).items():
-        setattr(product, key, value)
-    audit(db, user, "product.updated", "product", product.id, product.business_id)
+    duplicate = db.scalar(
+        select(ProductVariant).where(
+            ProductVariant.product_id == product.id,
+            func.lower(ProductVariant.name) == payload.name.strip().lower(),
+        )
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="A variant with that name already exists")
+    variant = ProductVariant(product_id=product.id, **payload.model_dump())
+    db.add(variant)
+    db.flush()
+    audit(db, user, "product.variant_created", "product_variant", variant.id, product.business_id)
     db.commit()
-    return {"id": product.id, "name": product.name, "price": float(product.price), "available": product.available}
+    return {
+        "id": variant.id,
+        "name": variant.name,
+        "price_delta": float(variant.price_delta),
+        "active": variant.active,
+    }
+
+
+@api.patch("/catalog/variants/{variant_id}", tags=["catalog"])
+def update_product_variant(
+    variant_id: int,
+    payload: ProductVariantUpdate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    variant = db.get(ProductVariant, variant_id)
+    if not variant:
+        raise HTTPException(status_code=404, detail="Variant not found")
+    product = db.get(Product, variant.product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    branch_for_user(db, user, product.branch_id)
+    changes = payload.model_dump(exclude_unset=True)
+    if changes.get("name"):
+        duplicate = db.scalar(
+            select(ProductVariant).where(
+                ProductVariant.product_id == product.id,
+                ProductVariant.id != variant.id,
+                func.lower(ProductVariant.name) == changes["name"].strip().lower(),
+            )
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail="A variant with that name already exists")
+    for key, value in changes.items():
+        setattr(variant, key, value)
+    audit(db, user, "product.variant_updated", "product_variant", variant.id, product.business_id)
+    db.commit()
+    return {
+        "id": variant.id,
+        "name": variant.name,
+        "price_delta": float(variant.price_delta),
+        "active": variant.active,
+    }
+
+
+@api.delete("/catalog/variants/{variant_id}", status_code=204, tags=["catalog"])
+def archive_product_variant(
+    variant_id: int,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    variant = db.get(ProductVariant, variant_id)
+    if not variant:
+        raise HTTPException(status_code=404, detail="Variant not found")
+    product = db.get(Product, variant.product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    branch_for_user(db, user, product.branch_id)
+    variant.active = False
+    audit(db, user, "product.variant_archived", "product_variant", variant.id, product.business_id)
+    db.commit()
+    return Response(status_code=204)
+
+
+def _serialize_modifier_group(db: Session, group: ModifierGroup) -> dict:
+    modifiers = list(
+        db.scalars(
+            select(Modifier)
+            .where(Modifier.group_id == group.id)
+            .order_by(Modifier.sort_order, Modifier.name, Modifier.id)
+        )
+    )
+    return {
+        "id": group.id,
+        "branch_id": group.branch_id,
+        "name": group.name,
+        "internal_label": group.internal_label,
+        "minimum": group.minimum,
+        "maximum": group.maximum,
+        "required": group.required,
+        "allow_repeats": group.allow_repeats,
+        "max_per_option": group.max_per_option,
+        "sort_order": group.sort_order,
+        "modifiers": [
+            {
+                "id": modifier.id,
+                "name": modifier.name,
+                "price_delta": float(modifier.price_delta),
+                "active": modifier.active,
+                "sort_order": modifier.sort_order,
+            }
+            for modifier in modifiers
+        ],
+    }
+
+
+def _sync_modifier_options(db: Session, group: ModifierGroup, options: list) -> None:
+    normalized_names: set[str] = set()
+    for option in options:
+        normalized = option.name.strip().casefold()
+        if not normalized:
+            raise HTTPException(status_code=422, detail="Completa el nombre de todas las opciones")
+        if normalized in normalized_names:
+            raise HTTPException(status_code=422, detail="Las opciones deben tener nombres diferentes")
+        normalized_names.add(normalized)
+
+    existing = list(db.scalars(select(Modifier).where(Modifier.group_id == group.id)))
+    existing_by_id = {modifier.id: modifier for modifier in existing}
+    existing_by_name = {modifier.name.strip().casefold(): modifier for modifier in existing}
+    retained_ids: set[int] = set()
+
+    for index, option in enumerate(options):
+        modifier = None
+        if option.id is not None:
+            modifier = existing_by_id.get(option.id)
+            if modifier is None:
+                raise HTTPException(status_code=422, detail="Una opción no pertenece a esta personalización")
+        if modifier is None:
+            modifier = existing_by_name.get(option.name.strip().casefold())
+        if modifier is None:
+            modifier = Modifier(group_id=group.id, name=option.name.strip())
+            db.add(modifier)
+            db.flush()
+
+        modifier.name = option.name.strip()
+        modifier.price_delta = option.price_delta
+        modifier.active = option.active
+        modifier.sort_order = option.sort_order if option.sort_order is not None else index
+        retained_ids.add(modifier.id)
+
+    for modifier in existing:
+        if modifier.id not in retained_ids:
+            modifier.active = False
+    db.flush()
+
+
+def _validate_modifier_group_configuration(
+    *,
+    name: str,
+    minimum: int,
+    maximum: int | None,
+    allow_repeats: bool,
+    max_per_option: int | None,
+    active_option_count: int | None = None,
+) -> str:
+    normalized_name = name.strip()
+    if not normalized_name:
+        raise HTTPException(status_code=422, detail="Escribe el nombre de la personalización")
+    if maximum is not None and maximum < minimum:
+        raise HTTPException(status_code=422, detail="El máximo no puede ser menor que el mínimo")
+    if active_option_count is not None:
+        if active_option_count == 0:
+            raise HTTPException(status_code=422, detail="Agrega al menos una opción activa")
+        if not allow_repeats and minimum > active_option_count:
+            raise HTTPException(
+                status_code=422,
+                detail="El mínimo no puede superar la cantidad de opciones activas",
+            )
+        if allow_repeats and max_per_option is not None and minimum > active_option_count * max_per_option:
+            raise HTTPException(
+                status_code=422,
+                detail="El mínimo no puede alcanzarse con el máximo permitido por opción",
+            )
+    return normalized_name
+
+
+@api.put("/catalog/modifier-groups/order", tags=["catalog"])
+def update_modifier_group_order(
+    payload: ModifierGroupOrderUpdate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    branch = branch_for_user(db, user, payload.branch_id)
+    groups = list(
+        db.scalars(
+            select(ModifierGroup).where(
+                ModifierGroup.business_id == branch.business_id,
+                ModifierGroup.branch_id == branch.id,
+            )
+        )
+    )
+    groups_by_id = {group.id: group for group in groups}
+    if len(payload.group_ids) != len(set(payload.group_ids)):
+        raise HTTPException(status_code=422, detail="Una personalización aparece más de una vez")
+    if set(payload.group_ids) != set(groups_by_id):
+        raise HTTPException(status_code=422, detail="El orden debe incluir todas las personalizaciones")
+    for sort_order, group_id in enumerate(payload.group_ids):
+        groups_by_id[group_id].sort_order = sort_order
+    audit(
+        db,
+        user,
+        "modifier_group.reordered",
+        "branch",
+        branch.id,
+        branch.business_id,
+        {"group_ids": payload.group_ids},
+    )
+    db.commit()
+    return {"group_ids": payload.group_ids, "updated": len(payload.group_ids)}
+
+
+@api.post("/catalog/modifier-groups", status_code=201, tags=["catalog"])
+def create_modifier_group(
+    payload: ModifierGroupCreate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    branch = branch_for_user(db, user, payload.branch_id)
+    minimum = max(payload.minimum, 1 if payload.required else 0)
+    max_per_option = payload.max_per_option if payload.allow_repeats else None
+    active_option_count = (
+        sum(1 for option in payload.modifiers if option.active)
+        if payload.modifiers is not None
+        else None
+    )
+    name = _validate_modifier_group_configuration(
+        name=payload.name,
+        minimum=minimum,
+        maximum=payload.maximum,
+        allow_repeats=payload.allow_repeats,
+        max_per_option=max_per_option,
+        active_option_count=active_option_count,
+    )
+    duplicate = db.scalar(
+        select(ModifierGroup).where(
+            ModifierGroup.branch_id == branch.id,
+            func.lower(ModifierGroup.name) == name.lower(),
+        )
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Ya existe una personalización con ese nombre")
+    group_data = payload.model_dump(exclude={"modifiers"})
+    group_data["name"] = name
+    group_data["minimum"] = minimum
+    group_data["required"] = minimum > 0
+    group_data["max_per_option"] = max_per_option
+    if group_data.get("internal_label") is not None:
+        group_data["internal_label"] = group_data["internal_label"].strip() or None
+    group = ModifierGroup(
+        business_id=branch.business_id,
+        **group_data,
+    )
+    db.add(group)
+    db.flush()
+    if payload.modifiers is not None:
+        _sync_modifier_options(db, group, payload.modifiers)
+    audit(db, user, "modifier_group.created", "modifier_group", group.id, branch.business_id)
+    db.commit()
+    return _serialize_modifier_group(db, group)
+
+
+@api.patch("/catalog/modifier-groups/{group_id}", tags=["catalog"])
+def update_modifier_group(
+    group_id: int,
+    payload: ModifierGroupUpdate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    group = db.get(ModifierGroup, group_id)
+    if not group or group.branch_id is None:
+        raise HTTPException(status_code=404, detail="No encontramos esa personalización")
+    branch_for_user(db, user, group.branch_id)
+    options = payload.modifiers if "modifiers" in payload.model_fields_set else None
+    changes = payload.model_dump(exclude_unset=True, exclude={"modifiers"})
+    minimum = changes.get("minimum", group.minimum)
+    maximum = changes.get("maximum", group.maximum)
+    required = changes.get("required", group.required)
+    allow_repeats = changes.get("allow_repeats", group.allow_repeats)
+    max_per_option = changes.get("max_per_option", group.max_per_option) if allow_repeats else None
+    minimum = max(minimum, 1 if required else 0)
+    active_option_count = None
+    if options is not None:
+        active_option_count = sum(1 for option in options if option.active)
+    elif {"minimum", "maximum", "required", "allow_repeats", "max_per_option"}.intersection(changes):
+        active_option_count = db.scalar(
+            select(func.count(Modifier.id)).where(
+                Modifier.group_id == group.id,
+                Modifier.active.is_(True),
+            )
+        )
+    name = _validate_modifier_group_configuration(
+        name=changes.get("name", group.name),
+        minimum=minimum,
+        maximum=maximum,
+        allow_repeats=allow_repeats,
+        max_per_option=max_per_option,
+        active_option_count=active_option_count,
+    )
+    changes["minimum"] = minimum
+    changes["required"] = minimum > 0
+    changes["max_per_option"] = max_per_option
+    if "name" in changes:
+        changes["name"] = name
+        duplicate = db.scalar(
+            select(ModifierGroup).where(
+                ModifierGroup.branch_id == group.branch_id,
+                ModifierGroup.id != group.id,
+                func.lower(ModifierGroup.name) == name.lower(),
+            )
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail="Ya existe una personalización con ese nombre")
+    if "internal_label" in changes and changes["internal_label"] is not None:
+        changes["internal_label"] = changes["internal_label"].strip() or None
+    for key, value in changes.items():
+        setattr(group, key, value)
+    if options is not None:
+        _sync_modifier_options(db, group, options)
+    audit(db, user, "modifier_group.updated", "modifier_group", group.id, group.business_id)
+    db.commit()
+    return _serialize_modifier_group(db, group)
+
+
+@api.delete("/catalog/modifier-groups/{group_id}", status_code=204, tags=["catalog"])
+def delete_modifier_group(
+    group_id: int,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    group = db.get(ModifierGroup, group_id)
+    if not group or group.branch_id is None:
+        raise HTTPException(status_code=404, detail="Modifier group not found")
+    branch_for_user(db, user, group.branch_id)
+    business_id = group.business_id
+    db.delete(group)
+    audit(db, user, "modifier_group.deleted", "modifier_group", group_id, business_id)
+    db.commit()
+    return Response(status_code=204)
+
+
+@api.post("/catalog/modifier-groups/{group_id}/modifiers", status_code=201, tags=["catalog"])
+def create_modifier(
+    group_id: int,
+    payload: ModifierCreate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    group = db.get(ModifierGroup, group_id)
+    if not group or group.branch_id is None:
+        raise HTTPException(status_code=404, detail="Modifier group not found")
+    branch_for_user(db, user, group.branch_id)
+    duplicate = db.scalar(
+        select(Modifier).where(
+            Modifier.group_id == group.id,
+            func.lower(Modifier.name) == payload.name.strip().lower(),
+        )
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="A modifier with that name already exists")
+    modifier = Modifier(group_id=group.id, **payload.model_dump())
+    db.add(modifier)
+    db.flush()
+    audit(db, user, "modifier.created", "modifier", modifier.id, group.business_id)
+    db.commit()
+    return {
+        "id": modifier.id,
+        "name": modifier.name,
+        "price_delta": float(modifier.price_delta),
+        "active": modifier.active,
+        "sort_order": modifier.sort_order,
+    }
+
+
+@api.patch("/catalog/modifiers/{modifier_id}", tags=["catalog"])
+def update_modifier(
+    modifier_id: int,
+    payload: ModifierUpdate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    modifier = db.get(Modifier, modifier_id)
+    group = db.get(ModifierGroup, modifier.group_id) if modifier else None
+    if not modifier or not group or group.branch_id is None:
+        raise HTTPException(status_code=404, detail="Modifier not found")
+    branch_for_user(db, user, group.branch_id)
+    changes = payload.model_dump(exclude_unset=True)
+    if changes.get("name"):
+        duplicate = db.scalar(
+            select(Modifier).where(
+                Modifier.group_id == group.id,
+                Modifier.id != modifier.id,
+                func.lower(Modifier.name) == changes["name"].strip().lower(),
+            )
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail="A modifier with that name already exists")
+    for key, value in changes.items():
+        setattr(modifier, key, value)
+    audit(db, user, "modifier.updated", "modifier", modifier.id, group.business_id)
+    db.commit()
+    return {
+        "id": modifier.id,
+        "name": modifier.name,
+        "price_delta": float(modifier.price_delta),
+        "active": modifier.active,
+        "sort_order": modifier.sort_order,
+    }
+
+
+@api.delete("/catalog/modifiers/{modifier_id}", status_code=204, tags=["catalog"])
+def archive_modifier(
+    modifier_id: int,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    modifier = db.get(Modifier, modifier_id)
+    group = db.get(ModifierGroup, modifier.group_id) if modifier else None
+    if not modifier or not group or group.branch_id is None:
+        raise HTTPException(status_code=404, detail="Modifier not found")
+    branch_for_user(db, user, group.branch_id)
+    modifier.active = False
+    audit(db, user, "modifier.archived", "modifier", modifier.id, group.business_id)
+    db.commit()
+    return Response(status_code=204)
+
+
+@api.put("/catalog/products/{product_id}/modifier-groups", tags=["catalog"])
+def replace_product_modifier_groups(
+    product_id: int,
+    payload: ProductModifierGroupsReplace,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    product = db.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    branch_for_user(db, user, product.branch_id)
+    group_ids = list(dict.fromkeys(payload.group_ids))
+    groups = (
+        list(db.scalars(select(ModifierGroup).where(ModifierGroup.id.in_(group_ids))))
+        if group_ids
+        else []
+    )
+    if len(groups) != len(group_ids) or any(
+        group.business_id != product.business_id or group.branch_id != product.branch_id
+        for group in groups
+    ):
+        raise HTTPException(status_code=422, detail="Every modifier group must belong to the product branch")
+    for link in db.scalars(
+        select(ProductModifierGroup).where(ProductModifierGroup.product_id == product.id)
+    ):
+        db.delete(link)
+    for group_id in group_ids:
+        db.add(ProductModifierGroup(product_id=product.id, group_id=group_id))
+    audit(
+        db,
+        user,
+        "product.modifier_groups_replaced",
+        "product",
+        product.id,
+        product.business_id,
+        {"group_ids": group_ids},
+    )
+    db.commit()
+    return {"product_id": product.id, "group_ids": group_ids}
+
+
+@api.patch("/catalog/products/{product_id}/availability", tags=["catalog"])
+async def update_product_availability(
+    product_id: int,
+    payload: ProductAvailabilityUpdate,
+    user: AuthContext = Depends(
+        require_roles("superadmin", "owner", "manager", "cashier", "kitchen")
+    ),
+    db: Session = Depends(get_db),
+):
+    product = scoped_catalog_entity(db, user, Product, product_id)
+    if not product:
+        raise catalog_error(
+            404,
+            "No encontramos ese producto",
+            "CATALOG_RESOURCE_NOT_FOUND",
+        )
+    previous = product.available
+    product.available = payload.available
+    result = {
+        "id": product.id,
+        "branch_id": product.branch_id,
+        "name": product.name,
+        "price": float(product.price),
+        "available": product.available,
+    }
+    if previous != product.available:
+        audit(
+            db,
+            user,
+            "product.availability_changed",
+            "product",
+            product.id,
+            product.business_id,
+            {"previous": previous, "available": product.available},
+        )
+    db.commit()
+    await hub.broadcast(product.branch_id, "catalog.availability_updated", result)
+    return result
 
 
 @api.post("/catalog/import-csv", tags=["catalog"])
@@ -1518,6 +2907,102 @@ async def import_catalog_csv(
     return {**preview, "dry_run": False, "created": created, "updated": updated}
 
 
+@api.get("/catalog/ingredients", tags=["catalog"])
+def list_catalog_ingredients(
+    branch_id: int,
+    user: AuthContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    branch_for_user(db, user, branch_id)
+    return [
+        {
+            "id": item.id,
+            "sku": item.sku,
+            "name": item.name,
+            "unit": item.unit,
+            "active": item.active,
+        }
+        for item in db.scalars(
+            select(InventoryItem)
+            .where(InventoryItem.branch_id == branch_id)
+            .order_by(InventoryItem.name, InventoryItem.id)
+        )
+    ]
+
+
+@api.post("/catalog/ingredients", status_code=201, tags=["catalog"])
+def create_catalog_ingredient(
+    payload: IngredientCreate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    branch = branch_for_user(db, user, payload.branch_id)
+    duplicate = db.scalar(
+        select(InventoryItem).where(
+            InventoryItem.branch_id == branch.id,
+            InventoryItem.sku == payload.sku,
+        )
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="An ingredient with that SKU already exists")
+    ingredient = InventoryItem(
+        business_id=branch.business_id,
+        branch_id=branch.id,
+        sku=payload.sku,
+        name=payload.name,
+        unit=payload.unit,
+        quantity=Decimal("0"),
+        minimum_stock=Decimal("0"),
+        unit_cost=Decimal("0"),
+    )
+    db.add(ingredient)
+    db.flush()
+    audit(db, user, "ingredient.created", "inventory_item", ingredient.id, branch.business_id)
+    db.commit()
+    return {
+        "id": ingredient.id,
+        "sku": ingredient.sku,
+        "name": ingredient.name,
+        "unit": ingredient.unit,
+        "active": ingredient.active,
+    }
+
+
+@api.patch("/catalog/ingredients/{ingredient_id}", tags=["catalog"])
+def update_catalog_ingredient(
+    ingredient_id: int,
+    payload: IngredientUpdate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    ingredient = db.get(InventoryItem, ingredient_id)
+    if not ingredient:
+        raise HTTPException(status_code=404, detail="Ingredient not found")
+    branch_for_user(db, user, ingredient.branch_id)
+    changes = payload.model_dump(exclude_unset=True)
+    if changes.get("sku"):
+        duplicate = db.scalar(
+            select(InventoryItem).where(
+                InventoryItem.branch_id == ingredient.branch_id,
+                InventoryItem.id != ingredient.id,
+                InventoryItem.sku == changes["sku"],
+            )
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail="An ingredient with that SKU already exists")
+    for key, value in changes.items():
+        setattr(ingredient, key, value)
+    audit(db, user, "ingredient.updated", "inventory_item", ingredient.id, ingredient.business_id)
+    db.commit()
+    return {
+        "id": ingredient.id,
+        "sku": ingredient.sku,
+        "name": ingredient.name,
+        "unit": ingredient.unit,
+        "active": ingredient.active,
+    }
+
+
 @api.get("/inventory", tags=["inventory"])
 def list_inventory(
     branch_id: int,
@@ -1613,6 +3098,62 @@ def replace_recipe(
     return {"product_id": product.id, "components": payload.model_dump(mode="json")["components"]}
 
 
+@api.put("/catalog/products/{product_id}/combo", tags=["catalog"])
+def replace_combo(
+    product_id: int,
+    payload: ComboReplace,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    product = db.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    branch_for_user(db, user, product.branch_id)
+    component_ids = [component.product_id for component in payload.components]
+    if len(component_ids) != len(set(component_ids)):
+        raise HTTPException(status_code=422, detail="A combo cannot repeat the same component")
+    if product.id in component_ids:
+        raise HTTPException(status_code=422, detail="A product cannot contain itself")
+    components = (
+        list(db.scalars(select(Product).where(Product.id.in_(component_ids))))
+        if component_ids
+        else []
+    )
+    if len(components) != len(component_ids) or any(
+        component.branch_id != product.branch_id for component in components
+    ):
+        raise HTTPException(status_code=422, detail="Every combo component must belong to the product branch")
+    if any(component.product_type == "combo" for component in components):
+        raise HTTPException(status_code=422, detail="Nested combos are not supported")
+    for existing in db.scalars(select(ComboItem).where(ComboItem.product_id == product.id)):
+        db.delete(existing)
+    for component in payload.components:
+        db.add(
+            ComboItem(
+                product_id=product.id,
+                component_product_id=component.product_id,
+                quantity=component.quantity,
+                sort_order=component.sort_order,
+            )
+        )
+    product.product_type = "combo" if payload.components else "standard"
+    audit(
+        db,
+        user,
+        "product.combo_replaced",
+        "product",
+        product.id,
+        product.business_id,
+        {"component_ids": component_ids},
+    )
+    db.commit()
+    return {
+        "product_id": product.id,
+        "product_type": product.product_type,
+        "components": payload.model_dump(mode="json")["components"],
+    }
+
+
 @api.get("/areas", tags=["tables"])
 def list_areas(
     branch_id: int,
@@ -1633,8 +3174,24 @@ def create_area(
     db: Session = Depends(get_db),
 ):
     branch = branch_for_user(db, user, payload.branch_id)
-    area = DiningArea(business_id=branch.business_id, **payload.model_dump())
+    name = payload.name.strip()
+    duplicate = db.scalar(
+        select(DiningArea).where(
+            DiningArea.branch_id == branch.id,
+            func.lower(DiningArea.name) == name.lower(),
+        )
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="An area with this name already exists")
+    area = DiningArea(
+        business_id=branch.business_id,
+        branch_id=branch.id,
+        name=name,
+        sort_order=payload.sort_order,
+    )
     db.add(area)
+    db.flush()
+    audit(db, user, "area.created", "dining_area", area.id, branch.business_id, {"name": name})
     db.commit()
     db.refresh(area)
     return {"id": area.id, "branch_id": area.branch_id, "name": area.name, "sort_order": area.sort_order}
@@ -1657,8 +3214,38 @@ def create_table(
     db: Session = Depends(get_db),
 ):
     branch = branch_for_user(db, user, payload.branch_id)
-    table = RestaurantTable(business_id=branch.business_id, **payload.model_dump())
+    if payload.area_id is not None:
+        area = db.get(DiningArea, payload.area_id)
+        if not area or area.branch_id != branch.id:
+            raise HTTPException(status_code=422, detail="Area does not belong to branch")
+    code = payload.code.strip().upper()
+    name = payload.name.strip()
+    duplicate = db.scalar(
+        select(RestaurantTable).where(
+            RestaurantTable.branch_id == branch.id,
+            func.lower(RestaurantTable.code) == code.lower(),
+        )
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="A table with this code already exists")
+    values = payload.model_dump(exclude={"code", "name"})
+    table = RestaurantTable(
+        business_id=branch.business_id,
+        code=code,
+        name=name,
+        **values,
+    )
     db.add(table)
+    db.flush()
+    audit(
+        db,
+        user,
+        "table.created",
+        "table",
+        table.id,
+        branch.business_id,
+        {"name": table.name, "area_id": table.area_id, "capacity": table.capacity},
+    )
     db.commit()
     db.refresh(table)
     return serialize_table(table)
@@ -1677,6 +3264,10 @@ async def update_table(
     branch_for_user(db, user, table.branch_id)
     assert_version(table.version, payload.expected_version)
     values = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
+    if values.get("area_id") is not None:
+        area = db.get(DiningArea, values["area_id"])
+        if not area or area.branch_id != table.branch_id:
+            raise HTTPException(status_code=422, detail="Area does not belong to branch")
     for key, value in values.items():
         setattr(table, key, value)
     table.version += 1
@@ -1721,6 +3312,89 @@ def list_orders(
     return [serialize_order(item) for item in db.scalars(statement)]
 
 
+@api.get("/orders/workspace", tags=["orders"])
+def orders_workspace(
+    branch_id: int,
+    day: date | None = None,
+    search: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    user: AuthContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    scoped_branch_for_user(db, user, branch_id)
+    local_day = day or datetime.now(ZoneInfo("America/Lima")).date()
+    local_start = datetime.combine(local_day, time.min, tzinfo=ZoneInfo("America/Lima"))
+    start_utc = local_start.astimezone(timezone.utc)
+    end_utc = (local_start + timedelta(days=1)).astimezone(timezone.utc)
+    day_conditions = (
+        Order.branch_id == branch_id,
+        Order.created_at >= start_utc,
+        Order.created_at < end_utc,
+    )
+    evidence_requires_review = (
+        select(PaymentEvidence.id)
+        .where(
+            PaymentEvidence.order_id == Order.id,
+            PaymentEvidence.status.in_(ORDER_REVIEW_EVIDENCE_STATUSES),
+        )
+        .exists()
+    )
+    review_count = db.scalar(
+        select(func.count(Order.id)).where(
+            *day_conditions,
+            or_(Order.status == "pending_confirmation", evidence_requires_review),
+        )
+    ) or 0
+
+    filters = list(day_conditions)
+    if search and search.strip():
+        pattern = f"%{search.strip()}%"
+        filters.append(
+            or_(
+                Order.number.ilike(pattern),
+                Order.customer_name.ilike(pattern),
+                Order.customer_phone.ilike(pattern),
+            )
+        )
+    total = db.scalar(select(func.count(Order.id)).where(*filters)) or 0
+    orders = list(
+        db.scalars(
+            select(Order)
+            .where(*filters)
+            .options(selectinload(Order.items))
+            .order_by(Order.created_at.desc(), Order.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+    )
+    order_ids = [order.id for order in orders]
+    evidence_order_ids = set(
+        db.scalars(
+            select(PaymentEvidence.order_id).where(
+                PaymentEvidence.order_id.in_(order_ids),
+                PaymentEvidence.status.in_(ORDER_REVIEW_EVIDENCE_STATUSES),
+            )
+        )
+    ) if order_ids else set()
+    return {
+        "day": local_day.isoformat(),
+        "items": [
+            serialize_order_summary(
+                order,
+                requires_review=(
+                    order.status == "pending_confirmation" or order.id in evidence_order_ids
+                ),
+            )
+            for order in orders
+        ],
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "review_count": review_count,
+    }
+
+
 @api.post("/orders", status_code=201, tags=["orders"])
 async def create_order_endpoint(
     payload: OrderCreate,
@@ -1728,8 +3402,9 @@ async def create_order_endpoint(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier", "waiter")),
     db: Session = Depends(get_db),
 ):
+    branch = scoped_branch_for_user(db, user, payload.branch_id)
     scope = f"pos-order:{payload.branch_id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, branch.business_id)
     if existing:
         return existing
     order = create_order(db, user, payload)
@@ -1753,6 +3428,52 @@ def get_order_endpoint(
     return serialize_order(order)
 
 
+@api.get("/orders/{order_id}/detail", tags=["orders"])
+def get_order_detail(
+    order_id: int,
+    user: AuthContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    order = scoped_order_for_user(db, user, order_id)
+    payments = list(
+        db.scalars(
+            select(Payment)
+            .where(Payment.order_id == order.id)
+            .order_by(Payment.received_at, Payment.id)
+        )
+    )
+    evidence = list(
+        db.scalars(
+            select(PaymentEvidence)
+            .where(PaymentEvidence.order_id == order.id)
+            .order_by(PaymentEvidence.created_at.desc(), PaymentEvidence.id.desc())
+        )
+    )
+    tickets = list(
+        db.scalars(
+            select(KitchenTicket)
+            .where(KitchenTicket.order_id == order.id)
+            .order_by(KitchenTicket.fired_at, KitchenTicket.station, KitchenTicket.sequence)
+        )
+    )
+    paid_total = money(
+        sum(
+            (payment.amount for payment in payments if payment.status == "confirmed"),
+            Decimal("0"),
+        )
+    )
+    return {
+        "order": serialize_order(order),
+        "payments": [serialize_payment(payment) for payment in payments],
+        "payment_summary": {
+            "paid": float(paid_total),
+            "remaining": float(max(money(order.total) - paid_total, Decimal("0"))),
+        },
+        "payment_evidence": [serialize_payment_evidence(item) for item in evidence],
+        "tickets": [serialize_ticket(ticket) for ticket in tickets],
+    }
+
+
 @api.patch("/orders/{order_id}", tags=["orders"])
 async def patch_order_endpoint(
     order_id: int,
@@ -1767,8 +3488,11 @@ async def patch_order_endpoint(
     assert_version(order.version, payload.expected_version)
     values = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
     for key, value in values.items():
-        setattr(order, key, value)
-    recalculate_order(order)
+        if key == "discount":
+            order.manual_discount = money(value)
+        else:
+            setattr(order, key, value)
+    recalculate_order(db, order)
     order.version += 1
     audit(db, user, "order.updated", "order", order.id, order.business_id, values)
     db.commit()
@@ -1794,6 +3518,43 @@ async def add_order_item_endpoint(
     return result
 
 
+@api.post("/orders/{order_id}/item-batches", status_code=201, tags=["orders"])
+async def add_order_item_batch_endpoint(
+    order_id: int,
+    payload: OrderItemBatch,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: AuthContext = Depends(
+        require_roles("superadmin", "owner", "manager", "cashier", "waiter")
+    ),
+    db: Session = Depends(get_db),
+):
+    if not idempotency_key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key is required")
+    order = scoped_order_for_user(db, user, order_id, for_update=True)
+    scope = f"order-item-batch:{order.id}"
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
+    if existing:
+        return existing
+    assert_version(order.version, payload.expected_version)
+    new_items, tickets = append_order_item_batch(db, user, order, payload.items)
+    db.flush()
+    result = {
+        "order": serialize_order(order),
+        "tickets": [serialize_ticket(ticket) for ticket in tickets],
+        "appended_item_ids": [item.id for item in new_items],
+    }
+    save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
+    db.commit()
+    result = {
+        **result,
+        "order": serialize_order(scoped_order_for_user(db, user, order.id)),
+    }
+    await hub.broadcast(order.branch_id, "order.updated", result["order"])
+    if tickets:
+        await hub.broadcast(order.branch_id, "kitchen.ticket_created", result)
+    return result
+
+
 @api.delete("/orders/{order_id}/items/{item_id}", tags=["orders"])
 async def remove_order_item_endpoint(
     order_id: int,
@@ -1812,7 +3573,7 @@ async def remove_order_item_endpoint(
         raise HTTPException(status_code=404, detail="Order item not found")
     db.delete(item)
     order.items.remove(item)
-    recalculate_order(order)
+    recalculate_order(db, order)
     order.version += 1
     audit(db, user, "order.item_removed", "order", order.id, order.business_id, {"item_id": item_id})
     db.commit()
@@ -1828,12 +3589,11 @@ async def confirm_order_endpoint(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier", "waiter")),
     db: Session = Depends(get_db),
 ):
+    order = scoped_order_for_user(db, user, order_id, for_update=True)
     scope = f"confirm-order:{order_id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
         return existing
-    order = load_order(db, order_id, for_update=True)
-    ensure_branch_scope(user, order.business_id, order.branch_id)
     confirm_order(db, user, order)
     db.flush()
     result = serialize_order(order)
@@ -1844,6 +3604,43 @@ async def confirm_order_endpoint(
     return result
 
 
+@api.post("/orders/{order_id}/confirm-and-send", tags=["orders"])
+async def confirm_and_send_order_endpoint(
+    order_id: int,
+    payload: OrderCommand,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: AuthContext = Depends(
+        require_roles("superadmin", "owner", "manager", "cashier", "waiter")
+    ),
+    db: Session = Depends(get_db),
+):
+    if not idempotency_key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key is required")
+    order = scoped_order_for_user(db, user, order_id, for_update=True)
+    scope = f"confirm-send-order:{order.id}"
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
+    if existing:
+        return existing
+    assert_version(order.version, payload.expected_version)
+    if order.status in {"draft", "pending_confirmation"}:
+        confirm_order(db, user, order)
+    tickets = send_order_to_kitchen(db, user, order)
+    db.flush()
+    result = {
+        "order": serialize_order(order),
+        "tickets": [serialize_ticket(ticket) for ticket in tickets],
+    }
+    save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
+    db.commit()
+    result = {
+        **result,
+        "order": serialize_order(scoped_order_for_user(db, user, order.id)),
+    }
+    await hub.broadcast(order.branch_id, "order.updated", result["order"])
+    await hub.broadcast(order.branch_id, "kitchen.ticket_created", result)
+    return result
+
+
 @api.post("/orders/{order_id}/send-to-kitchen", tags=["orders"])
 async def send_to_kitchen_endpoint(
     order_id: int,
@@ -1851,12 +3648,11 @@ async def send_to_kitchen_endpoint(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier", "waiter")),
     db: Session = Depends(get_db),
 ):
+    order = scoped_order_for_user(db, user, order_id, for_update=True)
     scope = f"send-kitchen:{order_id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
         return existing
-    order = load_order(db, order_id, for_update=True)
-    ensure_branch_scope(user, order.business_id, order.branch_id)
     tickets = send_order_to_kitchen(db, user, order)
     db.flush()
     result = {"order": serialize_order(order), "tickets": [serialize_ticket(ticket) for ticket in tickets]}
@@ -1899,12 +3695,11 @@ async def create_payment_endpoint(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier")),
     db: Session = Depends(get_db),
 ):
+    order = scoped_order_for_user(db, user, order_id, for_update=True)
     scope = f"order-payment:{order_id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
         return existing
-    order = load_order(db, order_id, for_update=True)
-    ensure_branch_scope(user, order.business_id, order.branch_id)
     payment = add_payment(db, user, order, payload)
     db.flush()
     result = {
@@ -2195,8 +3990,9 @@ async def create_reservation_endpoint(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier", "waiter")),
     db: Session = Depends(get_db),
 ):
+    branch = scoped_branch_for_user(db, user, payload.branch_id)
     scope = f"reservation:{payload.branch_id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, branch.business_id)
     if existing:
         return existing
     reservation = create_reservation(db, user, payload)
@@ -2526,6 +4322,30 @@ def determine_evidence_status(db: Session, order: Order, values: dict) -> str:
     return "under_review"
 
 
+def ensure_payment_evidence_upload_allowed(db: Session, order: Order) -> None:
+    existing_status = db.scalar(
+        select(PaymentEvidence.status)
+        .where(
+            PaymentEvidence.order_id == order.id,
+            PaymentEvidence.status.in_([*ORDER_REVIEW_EVIDENCE_STATUSES, "paid"]),
+        )
+        .order_by(PaymentEvidence.created_at.desc(), PaymentEvidence.id.desc())
+        .limit(1)
+    )
+    if existing_status == "paid" or order.payment_status == "paid":
+        raise CodedHTTPException(
+            409,
+            "Payment was already approved for this order",
+            "PAYMENT_ALREADY_APPROVED",
+        )
+    if existing_status in ORDER_REVIEW_EVIDENCE_STATUSES:
+        raise CodedHTTPException(
+            409,
+            "Resolve the current payment evidence before uploading another image",
+            "PAYMENT_EVIDENCE_UNDER_REVIEW",
+        )
+
+
 def serialize_payment_evidence(evidence: PaymentEvidence) -> dict:
     return {
         "id": evidence.id,
@@ -2576,11 +4396,7 @@ async def get_payment_evidence_image(
     user: AuthContext = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    evidence = db.get(PaymentEvidence, evidence_id)
-    if not evidence:
-        raise HTTPException(status_code=404, detail="Payment evidence not found")
-    order = load_order(db, evidence.order_id)
-    ensure_branch_scope(user, order.business_id, order.branch_id)
+    evidence = scoped_payment_evidence_for_user(db, user, evidence_id)
     try:
         data, content_type = await load_private_file(evidence.storage_path)
     except (FileNotFoundError, httpx.HTTPError) as exc:
@@ -2604,6 +4420,7 @@ async def upload_payment_evidence(
 ):
     order = load_order(db, order_id, for_update=True)
     ensure_branch_scope(user, order.business_id, order.branch_id)
+    ensure_payment_evidence_upload_allowed(db, order)
     content_type = file.content_type or "application/octet-stream"
     if not content_type.startswith("image/"):
         raise HTTPException(status_code=422, detail="Payment evidence must be an image")
@@ -2638,6 +4455,20 @@ async def upload_payment_evidence(
         db.flush()
     except IntegrityError as exc:
         db.rollback()
+        try:
+            await delete_private_file(storage_path)
+        except (FileNotFoundError, httpx.HTTPError, OSError):
+            pass
+        integrity_detail = str(exc.orig).lower()
+        if (
+            "uq_payment_evidence_one_open_per_order" in integrity_detail
+            or "payment_evidence.order_id" in integrity_detail
+        ):
+            raise CodedHTTPException(
+                409,
+                "Resolve the current payment evidence before uploading another image",
+                "PAYMENT_EVIDENCE_UNDER_REVIEW",
+            ) from exc
         raise HTTPException(status_code=409, detail="Payment operation number was already used") from exc
     if order.status in {"draft", "pending_confirmation"}:
         confirm_order(db, user, order)
@@ -2659,15 +4490,74 @@ async def review_payment_evidence(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier")),
     db: Session = Depends(get_db),
 ):
-    evidence = db.scalar(select(PaymentEvidence).where(PaymentEvidence.id == evidence_id).with_for_update())
-    if not evidence:
-        raise HTTPException(status_code=404, detail="Payment evidence not found")
-    order = load_order(db, evidence.order_id, for_update=True)
-    ensure_branch_scope(user, order.business_id, order.branch_id)
-    if evidence.status in {"paid", "rejected"}:
-        return {"id": evidence.id, "status": evidence.status, "order": serialize_order(order)}
+    evidence = scoped_payment_evidence_for_user(
+        db,
+        user,
+        evidence_id,
+        for_update=True,
+    )
+    order = scoped_order_for_user(db, user, evidence.order_id, for_update=True)
+    recipient_available = bool(order.whatsapp_chat_id or order.customer_phone)
+    other_paid_evidence = db.scalar(
+        select(PaymentEvidence.id).where(
+            PaymentEvidence.order_id == order.id,
+            PaymentEvidence.id != evidence.id,
+            PaymentEvidence.status == "paid",
+        ).limit(1)
+    )
+    if evidence.status in ORDER_REVIEW_EVIDENCE_STATUSES and (
+        other_paid_evidence is not None or order.payment_status == "paid"
+    ):
+        evidence.status = "superseded"
+        evidence.rejection_reason = "Another payment was already approved"
+        evidence.reviewed_by = user.user_id
+        evidence.reviewed_at = utcnow()
+        audit(
+            db,
+            user,
+            "payment_evidence.superseded",
+            "payment_evidence",
+            evidence.id,
+            evidence.business_id,
+        )
+        db.commit()
+    if evidence.status in {"paid", "rejected", "superseded"}:
+        event_type = {
+            "paid": "payment.approved",
+            "rejected": "payment.rejected",
+        }.get(evidence.status)
+        notification_event = (
+            db.scalar(
+                select(IntegrationEvent)
+                .where(
+                    IntegrationEvent.branch_id == order.branch_id,
+                    IntegrationEvent.aggregate_type == "order",
+                    IntegrationEvent.aggregate_id == str(order.id),
+                    IntegrationEvent.event_type == event_type,
+                )
+                .order_by(IntegrationEvent.created_at.desc())
+            )
+            if event_type
+            else None
+        )
+        return {
+            "evidence": serialize_payment_evidence(evidence),
+            "order": serialize_order(order),
+            "notification": {
+                "event_id": notification_event.id if notification_event else None,
+                "event_type": event_type,
+                "recipient_available": recipient_available,
+                "queued": bool(
+                    notification_event
+                    and recipient_available
+                    and notification_event.acknowledged_at is None
+                ),
+                "acknowledged": bool(notification_event and notification_event.acknowledged_at),
+            },
+        }
     evidence.reviewed_by = user.user_id
     evidence.reviewed_at = utcnow()
+    notification_event: IntegrationEvent | None = None
     if not payload.approve:
         evidence.status = "rejected"
         evidence.rejection_reason = payload.note or "Rejected by cashier"
@@ -2677,12 +4567,13 @@ async def review_payment_evidence(
                 reverse_order_stock(db, user, order)
             order.status = "cancelled"
             order.version += 1
-        create_integration_event(
-            db,
-            order,
-            "payment.rejected",
-            {"evidence_id": evidence.id, "reason": evidence.rejection_reason},
-        )
+        if recipient_available:
+            notification_event = create_integration_event(
+                db,
+                order,
+                "payment.rejected",
+                {"evidence_id": evidence.id, "reason": evidence.rejection_reason},
+            )
     else:
         if not evidence.image_sha256 or not evidence.storage_path:
             raise HTTPException(status_code=409, detail="Payment evidence has no persisted image")
@@ -2710,26 +4601,59 @@ async def review_payment_evidence(
             ),
         )
         evidence.status = "paid"
-        tickets = send_order_to_kitchen(db, user, order)
-        create_integration_event(
-            db,
-            order,
-            "payment.approved",
-            {
-                "evidence_id": evidence.id,
-                "payment_id": payment.id,
-                "status": order.status,
-                "message": (
-                    f"¡Pago confirmado! Tu pedido #{order.number} fue aprobado y ya está en preparación. "
-                    "Te avisaremos cuando esté listo. 🍕"
-                ),
-            },
+        superseded_at = utcnow()
+        other_pending_evidence = list(
+            db.scalars(
+                select(PaymentEvidence)
+                .where(
+                    PaymentEvidence.order_id == order.id,
+                    PaymentEvidence.id != evidence.id,
+                    PaymentEvidence.status.in_(ORDER_REVIEW_EVIDENCE_STATUSES),
+                )
+                .with_for_update()
+            )
         )
+        for other_evidence in other_pending_evidence:
+            other_evidence.status = "superseded"
+            other_evidence.rejection_reason = "Another payment evidence was approved"
+            other_evidence.reviewed_by = user.user_id
+            other_evidence.reviewed_at = superseded_at
+        tickets = send_order_to_kitchen(db, user, order)
+        if recipient_available:
+            notification_event = create_integration_event(
+                db,
+                order,
+                "payment.approved",
+                {
+                    "evidence_id": evidence.id,
+                    "payment_id": payment.id,
+                    "status": order.status,
+                    "message": (
+                        "¡Pago confirmado! Tu pedido fue aprobado y ya está en preparación. "
+                        + (
+                            "Te avisaremos cuando salga con nuestro repartidor. 🍕"
+                            if order.channel == "delivery"
+                            else "Te avisaremos cuando esté listo para que puedas venir al local. 🍕"
+                        )
+                    ),
+                },
+            )
     audit(db, user, f"payment_evidence.{evidence.status}", "payment_evidence", evidence.id, evidence.business_id)
     db.commit()
     result = {
         "evidence": serialize_payment_evidence(evidence),
         "order": serialize_order(load_order(db, order.id)),
+        "notification": {
+            "event_id": notification_event.id if notification_event else None,
+            "event_type": notification_event.event_type if notification_event else None,
+            "recipient_available": recipient_available,
+            "queued": bool(
+                notification_event
+                and recipient_available
+                and notification_event.acknowledged_at is None
+            ),
+            "acknowledged": bool(notification_event and notification_event.acknowledged_at),
+        },
     }
     await hub.broadcast(order.branch_id, "payment_evidence.reviewed", result)
     return result
@@ -2750,12 +4674,44 @@ def public_menu(
     branch = db.scalar(branch_statement.order_by(Branch.id))
     if not branch:
         raise HTTPException(status_code=404, detail="Restaurant branch not found")
-    categories = list(db.scalars(select(Category).where(Category.branch_id == branch.id, Category.active.is_(True))))
+    categories = list(
+        db.scalars(
+            select(Category)
+            .where(Category.branch_id == branch.id, Category.active.is_(True))
+            .order_by(Category.sort_order, Category.name)
+        )
+    )
+    active_category_ids = {category.id for category in categories}
     products = list(
         db.scalars(
             select(Product).where(Product.branch_id == branch.id, Product.available.is_(True)).order_by(Product.sort_order, Product.name)
         )
     )
+    products = [
+        product
+        for product in products
+        if (product.category_id is None or product.category_id in active_category_ids)
+        and any(channel.startswith("digital_") for channel in product.service_channels)
+    ]
+    promotions = list(
+        db.scalars(
+            select(Promotion)
+            .where(
+                Promotion.business_id == business.id,
+                Promotion.branch_id == branch.id,
+                Promotion.active.is_(True),
+                Promotion.archived_at.is_(None),
+            )
+            .options(selectinload(Promotion.targets))
+            .order_by(Promotion.sort_order, Promotion.name, Promotion.id)
+        )
+    )
+    promotions = [
+        promotion
+        for promotion in promotions
+        if promotion_is_active(promotion)
+        and any(channel.startswith("digital_") for channel in promotion.service_channels)
+    ]
     return {
         "business": {"id": business.id, "slug": business.slug, "name": business.name, "logo_url": business.logo_url},
         "branch": serialize_branch(branch),
@@ -2767,11 +4723,72 @@ def public_menu(
                 "name": item.name,
                 "description": item.description,
                 "price": float(item.price),
-                "image_url": item.image_url,
+                "image_url": product_image_url(item),
+                "service_channels": item.service_channels,
+                "variants": [
+                    {
+                        "id": variant.id,
+                        "name": variant.name,
+                        "price_delta": float(variant.price_delta),
+                    }
+                    for variant in db.scalars(
+                        select(ProductVariant)
+                        .where(
+                            ProductVariant.product_id == item.id,
+                            ProductVariant.active.is_(True),
+                        )
+                        .order_by(ProductVariant.id)
+                    )
+                ],
             }
             for item in products
         ],
+        "promotions": [serialize_promotion(promotion) for promotion in promotions],
     }
+
+
+@api.get("/public/catalog/products/{product_id}/image", tags=["public"])
+async def get_public_product_image(
+    product_id: int,
+    db: Session = Depends(get_db),
+):
+    product = db.get(Product, product_id)
+    branch = db.get(Branch, product.branch_id) if product else None
+    business = db.get(Business, product.business_id) if product else None
+    category_is_visible = bool(
+        product
+        and (
+            product.category_id is None
+            or db.scalar(
+                select(Category.id).where(
+                    Category.id == product.category_id,
+                    Category.branch_id == product.branch_id,
+                    Category.active.is_(True),
+                )
+            )
+        )
+    )
+    if (
+        not product
+        or not branch
+        or not business
+        or not category_is_visible
+        or not branch.active
+        or business.status != "active"
+        or not product.available
+        or not any(channel.startswith("digital_") for channel in product.service_channels)
+        or not product.image_storage_path
+    ):
+        raise HTTPException(status_code=404, detail="Product image not found")
+    try:
+        data, content_type = await load_private_file(product.image_storage_path)
+    except (FileNotFoundError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=404, detail="Product image not found") from exc
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @api.get("/public/{business_slug}/reservations/availability", tags=["public"])
@@ -2810,8 +4827,28 @@ async def public_create_order(
         raise HTTPException(status_code=422, detail="Delivery address is required")
     if any(item.product_id is None for item in payload.items):
         raise HTTPException(status_code=422, detail="Public orders only accept catalog products")
+    requested_product_ids = {item.product_id for item in payload.items if item.product_id is not None}
+    requested_products = db.scalars(
+        select(Product).where(
+            Product.branch_id == branch.id,
+            Product.id.in_(requested_product_ids),
+        )
+    ).all()
+    if len(requested_products) != len(requested_product_ids):
+        raise HTTPException(status_code=404, detail="One or more products were not found")
+    required_channel = "digital_delivery" if payload.fulfillment == "delivery" else "digital_takeaway"
+    blocked_products = [
+        product.name
+        for product in requested_products
+        if required_channel not in (product.service_channels or [])
+    ]
+    if blocked_products:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Products unavailable for this service: {', '.join(blocked_products)}",
+        )
     scope = f"public-order:{business.id}:{branch.id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, business.id)
     if existing:
         return existing
     system_user = AuthContext("public-store", "owner", business.id, branch.id)
@@ -2852,7 +4889,7 @@ async def public_create_reservation(
     if not business or not branch or branch.business_id != business.id:
         raise HTTPException(status_code=404, detail="Restaurant branch not found")
     scope = f"public-reservation:{business.id}:{branch.id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, business.id)
     if existing:
         return existing
     candidates = available_tables(db, branch.id, payload.start_at, 90, payload.party_size)
@@ -2920,7 +4957,6 @@ def integration_context(
     _, branch = integration_branch_from_auth(db, integration, branch_id)
     business = db.get(Business, branch.business_id)
     branch_payload = serialize_branch(branch)
-    branch_payload.pop("yape_qr_storage_path", None)
     return {
         "business": {
             "id": business.id,
@@ -2933,6 +4969,7 @@ def integration_context(
         "branch": {
             **branch_payload,
             "yape_qr_configured": bool(branch.yape_qr_storage_path),
+            "menu_card_configured": bool(branch.menu_card_storage_path),
             "yape_qr_url": (
                 f"/api/v1/public/{business.slug}/{branch.slug}/yape-qr"
                 if branch.yape_qr_storage_path
@@ -2955,6 +4992,22 @@ async def integration_yape_qr(
         data, content_type = await load_private_file(branch.yape_qr_storage_path)
     except (FileNotFoundError, httpx.HTTPError) as exc:
         raise HTTPException(status_code=404, detail="Yape QR image not found") from exc
+    return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, no-store"})
+
+
+@api.get("/integrations/context/menu-card", tags=["integrations"])
+async def integration_menu_card(
+    branch_id: int | None = None,
+    integration: IntegrationAuthContext = Depends(require_integration_scope("menu:read")),
+    db: Session = Depends(get_db),
+):
+    _, branch = integration_branch_from_auth(db, integration, branch_id)
+    if not branch.menu_card_storage_path:
+        raise HTTPException(status_code=404, detail="La carta no está configurada")
+    try:
+        data, content_type = await load_private_file(branch.menu_card_storage_path)
+    except (FileNotFoundError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=404, detail="No se encontró la imagen de la carta") from exc
     return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, no-store"})
 
 
@@ -3027,7 +5080,7 @@ async def integration_adjust_inventory(
         raise HTTPException(status_code=404, detail="Inventory item not found")
     integration_branch_from_auth(db, integration, item.branch_id)
     scope = f"integration-inventory-adjust:{item.id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, item.business_id)
     if existing:
         return existing
     assert_version(item.version, payload.expected_version)
@@ -3081,72 +5134,54 @@ def integration_menu(
     db: Session = Depends(get_db),
 ):
     _, branch = integration_branch_from_auth(db, integration, branch_id)
-    products = list(
-        db.scalars(
-            select(Product).where(Product.branch_id == branch.id, Product.available.is_(True)).order_by(Product.name)
-        )
+    return {"business_id": branch.business_id, **serialize_catalog(db, branch, available_only=True)}
+
+
+@api.patch("/integrations/context/menu/{product_id}/availability", tags=["integrations"])
+async def integration_product_availability(
+    product_id: int,
+    payload: ProductAvailabilityUpdate,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    integration: IntegrationAuthContext = Depends(require_integration_scope("inventory:write")),
+    db: Session = Depends(get_db),
+):
+    if not idempotency_key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key is required")
+    _, branch = integration_branch_from_auth(db, integration, None)
+    product = db.scalar(
+        select(Product).where(Product.id == product_id, Product.branch_id == branch.id).with_for_update()
     )
-    product_ids = [product.id for product in products]
-    variants = list(
-        db.scalars(select(ProductVariant).where(ProductVariant.product_id.in_(product_ids)))
-    ) if product_ids else []
-    links = list(
-        db.execute(
-            select(ProductModifierGroup.product_id, ProductModifierGroup.group_id).where(
-                ProductModifierGroup.product_id.in_(product_ids)
-            )
-        )
-    ) if product_ids else []
-    group_ids = {row.group_id for row in links}
-    groups = list(db.scalars(select(ModifierGroup).where(ModifierGroup.id.in_(group_ids)))) if group_ids else []
-    modifiers = list(db.scalars(select(Modifier).where(Modifier.group_id.in_(group_ids)))) if group_ids else []
-    return {
-        "business_id": branch.business_id,
-        "branch": serialize_branch(branch),
-        "products": [
-            {
-                "id": product.id,
-                "sku": product.sku,
-                "name": product.name,
-                "description": product.description,
-                "price": float(product.price),
-                "image_url": product.image_url,
-                **product_capacity(db, product),
-                "track_stock": product.track_stock,
-                "preparation_station": product.preparation_station,
-                "variants": [
-                    {
-                        "id": variant.id,
-                        "name": variant.name,
-                        "price_delta": float(variant.price_delta),
-                    }
-                    for variant in variants
-                    if variant.product_id == product.id and variant.active
-                ],
-                "modifier_groups": [
-                    {
-                        "id": group.id,
-                        "name": group.name,
-                        "minimum": group.minimum,
-                        "maximum": group.maximum,
-                        "required": group.required,
-                        "modifiers": [
-                            {
-                                "id": modifier.id,
-                                "name": modifier.name,
-                                "price_delta": float(modifier.price_delta),
-                            }
-                            for modifier in modifiers
-                            if modifier.group_id == group.id and modifier.active
-                        ],
-                    }
-                    for group in groups
-                    if any(link.product_id == product.id and link.group_id == group.id for link in links)
-                ],
-            }
-            for product in products
-        ],
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    scope = f"integration-product-availability:{branch.id}:{product.id}"
+    existing = get_idempotent_response(db, scope, idempotency_key, branch.business_id)
+    if existing:
+        return existing
+    previous = product.available
+    product.available = payload.available
+    result = {
+        "id": product.id,
+        "branch_id": product.branch_id,
+        "name": product.name,
+        "available": product.available,
     }
+    audit(
+        db,
+        None,
+        "integration.product_availability_changed",
+        "product",
+        product.id,
+        product.business_id,
+        {
+            "previous": previous,
+            "available": product.available,
+            "integration_credential_id": integration.credential_id,
+        },
+    )
+    save_idempotent_response(db, scope, idempotency_key, product.business_id, result)
+    db.commit()
+    await hub.broadcast(product.branch_id, "catalog.availability_updated", result)
+    return result
 
 
 @api.get(
@@ -3181,7 +5216,7 @@ async def integration_create_order(
         raise HTTPException(status_code=422, detail="Idempotency-Key is required")
     user, branch = integration_branch_from_auth(db, integration, payload.branch_id)
     scope = f"integration-order:{branch.id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, branch.business_id)
     if existing:
         return existing
     payload.source = payload.source or "integration"
@@ -3207,12 +5242,12 @@ async def integration_patch_order(
 ):
     if not idempotency_key:
         raise HTTPException(status_code=422, detail="Idempotency-Key is required")
-    scope = f"integration-order-patch:{order_id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
-    if existing:
-        return existing
     order = load_order(db, order_id, for_update=True)
     ensure_integration_order_scope(integration, order)
+    scope = f"integration-order-patch:{order_id}"
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
+    if existing:
+        return existing
     user = AuthContext("integration", "owner", order.business_id, order.branch_id)
     assert_version(order.version, payload.expected_version)
     changes = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
@@ -3228,7 +5263,7 @@ async def integration_patch_order(
             order.items.append(build_order_item(db, order.business_id, order.branch_id, line))
     for key, value in changes.items():
         setattr(order, key, value)
-    recalculate_order(order)
+    recalculate_order(db, order)
     order.version += 1
     audit(db, user, "integration.order_updated", "order", order.id, order.business_id)
     db.flush()
@@ -3255,7 +5290,7 @@ async def integration_confirm_order(
     ensure_integration_order_scope(integration, order)
     user = AuthContext("integration", "owner", order.business_id, order.branch_id)
     scope = f"integration-confirm:{order.id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
         return existing
     confirm_order(db, user, order)
@@ -3280,7 +5315,7 @@ async def integration_cash_confirm_order(
     order = load_order(db, order_id, for_update=True)
     ensure_integration_order_scope(integration, order)
     scope = f"integration-cash-confirm:{order.id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
         return existing
     user = AuthContext("integration", "owner", order.business_id, order.branch_id)
@@ -3319,7 +5354,7 @@ async def integration_request_human(
     order = load_order(db, order_id, for_update=True)
     ensure_integration_order_scope(integration, order)
     scope = f"integration-human-request:{order.id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
         return existing
     event = create_integration_event(db, order, "human.requested", {"reason": reason})
@@ -3360,9 +5395,10 @@ async def integration_upload_payment_evidence(
     order = load_order(db, order_id, for_update=True)
     ensure_integration_order_scope(integration, order)
     scope = f"integration-evidence-upload:{order.id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
         return existing
+    ensure_payment_evidence_upload_allowed(db, order)
     content_type = file.content_type or "application/octet-stream"
     if not content_type.startswith("image/"):
         raise HTTPException(status_code=422, detail="A real payment evidence image is required")
@@ -3455,6 +5491,20 @@ async def integration_upload_payment_evidence(
         db.flush()
     except IntegrityError as exc:
         db.rollback()
+        try:
+            await delete_private_file(storage_path)
+        except (FileNotFoundError, httpx.HTTPError, OSError):
+            pass
+        integrity_detail = str(exc.orig).lower()
+        if (
+            "uq_payment_evidence_one_open_per_order" in integrity_detail
+            or "payment_evidence.order_id" in integrity_detail
+        ):
+            raise CodedHTTPException(
+                409,
+                "Resolve the current payment evidence before uploading another image",
+                "PAYMENT_EVIDENCE_UNDER_REVIEW",
+            ) from exc
         raise HTTPException(status_code=409, detail="Payment operation number was already used") from exc
     user = AuthContext("integration", "owner", order.business_id, order.branch_id)
     order.payment_method = provider.lower()
@@ -3516,6 +5566,7 @@ def integration_order_status(
 def integration_events(
     branch_id: int | None = None,
     pending_only: bool = True,
+    created_after: datetime | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     integration: IntegrationAuthContext = Depends(require_integration_scope("events:read")),
     db: Session = Depends(get_db),
@@ -3532,6 +5583,8 @@ def integration_events(
     )
     if pending_only:
         statement = statement.where(IntegrationEvent.acknowledged_at.is_(None))
+    if created_after is not None:
+        statement = statement.where(IntegrationEvent.created_at >= created_after)
     events = list(db.scalars(statement))
     for event in events:
         event.delivery_attempts += 1
@@ -3567,7 +5620,7 @@ def acknowledge_integration_event(
     if integration.branch_id is not None and event.branch_id != integration.branch_id:
         raise HTTPException(status_code=403, detail="Integration credential cannot access another branch")
     scope = f"integration-event-ack:{event.id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, event.business_id)
     if existing:
         return existing
     event.acknowledged_at = event.acknowledged_at or utcnow()
@@ -3593,7 +5646,7 @@ async def integration_create_reservation(
         raise HTTPException(status_code=422, detail="Idempotency-Key is required")
     user, branch = integration_branch_from_auth(db, integration, payload.branch_id)
     scope = f"integration-reservation:{branch.id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, branch.business_id)
     if existing:
         return existing
     reservation = create_reservation(db, user, payload)
@@ -3629,7 +5682,7 @@ async def integration_payment_evidence(
     order = load_order(db, payload.order_id, for_update=True)
     ensure_integration_order_scope(integration, order)
     scope = f"integration-evidence:{order.id}"
-    existing = get_idempotent_response(db, scope, idempotency_key)
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
         return existing
     values = evidence_values(payload.model_dump(exclude={"order_id", "storage_path"}), {})
@@ -3658,9 +5711,15 @@ def allow_legacy_read() -> None:
 
 
 @legacy.get("/datos/negocios", tags=["legacy"])
-def legacy_businesses(db: Session = Depends(get_db)):
+def legacy_businesses(
+    integration: IntegrationAuthContext = Depends(require_integration_scope("menu:read")),
+    db: Session = Depends(get_db),
+):
     allow_legacy_read()
-    businesses = list(db.scalars(select(Business).order_by(Business.id)))
+    statement = select(Business)
+    if integration.business_id is not None:
+        statement = statement.where(Business.id == integration.business_id)
+    businesses = list(db.scalars(statement.order_by(Business.id)))
     return [
         {
             "id": business.id,
@@ -3674,12 +5733,21 @@ def legacy_businesses(db: Session = Depends(get_db)):
 
 
 @legacy.get("/datos/restaurantes_perfiles", tags=["legacy"])
-def legacy_profiles(db: Session = Depends(get_db)):
+def legacy_profiles(
+    integration: IntegrationAuthContext = Depends(require_integration_scope("menu:read")),
+    db: Session = Depends(get_db),
+):
     allow_legacy_read()
     profiles = []
-    for business in db.scalars(select(Business).order_by(Business.id)):
+    business_statement = select(Business)
+    if integration.business_id is not None:
+        business_statement = business_statement.where(Business.id == integration.business_id)
+    for business in db.scalars(business_statement.order_by(Business.id)):
         branches_payload = []
-        branches = list(db.scalars(select(Branch).where(Branch.business_id == business.id).order_by(Branch.id)))
+        branch_statement = select(Branch).where(Branch.business_id == business.id)
+        if integration.branch_id is not None:
+            branch_statement = branch_statement.where(Branch.id == integration.branch_id)
+        branches = list(db.scalars(branch_statement.order_by(Branch.id)))
         for branch in branches:
             products = list(db.scalars(select(Product).where(Product.branch_id == branch.id).order_by(Product.sort_order, Product.name)))
             branches_payload.append(
@@ -3716,41 +5784,93 @@ def legacy_profiles(db: Session = Depends(get_db)):
 
 
 @legacy.post("/datos/pedidos_draft", tags=["legacy"])
-async def legacy_create_draft(payload: LegacyDraftCreate, db: Session = Depends(get_db)):
+async def legacy_create_draft(
+    payload: LegacyDraftCreate,
+    integration: IntegrationAuthContext = Depends(require_integration_scope("orders:write")),
+    db: Session = Depends(get_db),
+):
+    branch = None
     business = None
-    if payload.negocio_id:
-        business = db.get(Business, payload.negocio_id)
-    if not business and payload.negocio_nombre:
-        business = db.scalar(select(Business).where(func.lower(Business.name) == payload.negocio_nombre.lower()))
+    if integration.branch_id is not None:
+        branch_statement = select(Branch).where(
+            Branch.id == integration.branch_id,
+            Branch.active.is_(True),
+        )
+        if integration.business_id is not None:
+            branch_statement = branch_statement.where(
+                Branch.business_id == integration.business_id,
+            )
+        branch = db.scalar(branch_statement)
+        business = db.get(Business, branch.business_id) if branch else None
+    elif integration.business_id is not None:
+        business = db.get(Business, integration.business_id)
+    else:
+        if payload.negocio_id:
+            business = db.get(Business, payload.negocio_id)
+        if not business and payload.negocio_nombre:
+            business = db.scalar(
+                select(Business).where(
+                    func.lower(Business.name) == payload.negocio_nombre.lower(),
+                )
+            )
+        if not business:
+            business = db.scalar(
+                select(Business).where(Business.slug == payload.tenant_id)
+            )
     if not business:
-        business = db.scalar(select(Business).where(Business.slug == payload.tenant_id))
-    if not business:
-        raise HTTPException(status_code=404, detail="Legacy business mapping was not found")
-    branch = db.scalar(select(Branch).where(Branch.business_id == business.id, Branch.active.is_(True)).order_by(Branch.id))
+        raise HTTPException(status_code=404, detail="Legacy restaurant was not found")
+    if branch is None:
+        branch = db.scalar(
+            select(Branch)
+            .where(
+                Branch.business_id == business.id,
+                Branch.active.is_(True),
+            )
+            .order_by(Branch.id)
+        )
     if not branch:
-        raise HTTPException(status_code=422, detail="Business has no active branch")
+        raise HTTPException(status_code=404, detail="Legacy restaurant was not found")
+    system_user, branch = integration_branch_from_auth(db, integration, branch.id)
     if payload.message_id:
         existing = db.scalar(
-            select(Order).where(Order.business_id == business.id, Order.external_reference == payload.message_id).options(selectinload(Order.items))
+            select(Order)
+            .where(
+                Order.business_id == business.id,
+                Order.external_reference == payload.message_id,
+            )
+            .options(selectinload(Order.items))
         )
         if existing:
+            if existing.branch_id != branch.id:
+                raise CodedHTTPException(
+                    409,
+                    "Message reference is already in use",
+                    "LEGACY_MESSAGE_ALREADY_USED",
+                )
             return {"mensaje": "Dato guardado con éxito", "dato_guardado": serialize_order(existing)}
-    system_user = AuthContext("legacy-n8n", "owner", business.id, branch.id)
     lines = parse_legacy_items(payload.items_json)
-    order = create_order(
-        db,
-        system_user,
-        OrderCreate(
-            branch_id=branch.id,
-            channel="whatsapp",
-            source=payload.source,
-            customer_name=payload.customer_name,
-            customer_phone=payload.customer_phone,
-            external_reference=payload.message_id,
-            notes=payload.notes,
-            items=lines,
-        ),
-    )
+    try:
+        order = create_order(
+            db,
+            system_user,
+            OrderCreate(
+                branch_id=branch.id,
+                channel="whatsapp",
+                source=payload.source,
+                customer_name=payload.customer_name,
+                customer_phone=payload.customer_phone,
+                external_reference=payload.message_id,
+                notes=payload.notes,
+                items=lines,
+            ),
+        )
+    except IntegrityError as exc:
+        db.rollback()
+        raise CodedHTTPException(
+            409,
+            "Message reference is already in use",
+            "LEGACY_MESSAGE_ALREADY_USED",
+        ) from exc
     db.commit()
     result = serialize_order(load_order(db, order.id))
     await hub.broadcast(branch.id, "order.created", result)
@@ -3758,12 +5878,23 @@ async def legacy_create_draft(payload: LegacyDraftCreate, db: Session = Depends(
 
 
 @legacy.get("/datos/pedidos_draft", tags=["legacy"])
-def legacy_list_drafts(db: Session = Depends(get_db)):
+def legacy_list_drafts(
+    integration: IntegrationAuthContext = Depends(require_integration_scope("orders:read")),
+    db: Session = Depends(get_db),
+):
     allow_legacy_read()
+    filters = [
+        Order.source == "whatsapp_agent",
+        Order.status.in_(["draft", "pending_confirmation"]),
+    ]
+    if integration.business_id is not None:
+        filters.append(Order.business_id == integration.business_id)
+    if integration.branch_id is not None:
+        filters.append(Order.branch_id == integration.branch_id)
     orders = list(
         db.scalars(
             select(Order)
-            .where(Order.source == "whatsapp_agent", Order.status.in_(["draft", "pending_confirmation"]))
+            .where(*filters)
             .options(selectinload(Order.items))
             .order_by(Order.created_at.desc())
             .limit(200)

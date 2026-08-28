@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -71,6 +73,8 @@ class Branch(Base, TimestampMixin):
     payment_recipient_name: Mapped[str | None] = mapped_column(String(180))
     maps_url: Mapped[str | None] = mapped_column(Text)
     yape_qr_storage_path: Mapped[str | None] = mapped_column(Text)
+    menu_card_storage_path: Mapped[str | None] = mapped_column(Text)
+    agent_context_notes: Mapped[str | None] = mapped_column(Text)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     business: Mapped[Business] = relationship(back_populates="branches")
@@ -196,6 +200,21 @@ class Product(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(Text)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     image_url: Mapped[str | None] = mapped_column(Text)
+    image_storage_path: Mapped[str | None] = mapped_column(Text)
+    service_channels: Mapped[list[str]] = mapped_column(
+        JSON,
+        default=lambda: [
+            "pos_tables",
+            "pos_counter",
+            "pos_takeaway",
+            "pos_delivery",
+            "digital_tables",
+            "digital_takeaway",
+            "digital_delivery",
+        ],
+        nullable=False,
+    )
+    product_type: Mapped[str] = mapped_column(String(20), default="standard")
     available: Mapped[bool] = mapped_column(Boolean, default=True)
     track_stock: Mapped[bool] = mapped_column(Boolean, default=False)
     preparation_station: Mapped[str] = mapped_column(String(80), default="kitchen")
@@ -212,15 +231,86 @@ class ProductVariant(Base, TimestampMixin):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class Promotion(Base, TimestampMixin):
+    __tablename__ = "promotions"
+    __table_args__ = (
+        CheckConstraint(
+            "promotion_type IN ('product_discount', 'buy_x_pay_y')",
+            name="ck_promotions_type",
+        ),
+        CheckConstraint(
+            "target_scope IN ('products', 'categories')",
+            name="ck_promotions_target_scope",
+        ),
+        CheckConstraint(
+            "discount_type IS NULL OR discount_type IN ('percentage', 'fixed_amount')",
+            name="ck_promotions_discount_type",
+        ),
+        Index("ix_promotions_branch_active", "branch_id", "active", "archived_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(180))
+    promotion_type: Mapped[str] = mapped_column(String(30), index=True)
+    discount_type: Mapped[str | None] = mapped_column(String(30))
+    discount_value: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    receive_quantity: Mapped[int | None] = mapped_column(Integer)
+    pay_quantity: Mapped[int | None] = mapped_column(Integer)
+    target_scope: Mapped[str] = mapped_column(String(30))
+    starts_on: Mapped[date | None] = mapped_column(Date)
+    ends_on: Mapped[date | None] = mapped_column(Date)
+    weekdays: Mapped[list[int]] = mapped_column(JSON, default=list, nullable=False)
+    service_channels: Mapped[list[str]] = mapped_column(JSON, default=list, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+    targets: Mapped[list[PromotionTarget]] = relationship(
+        back_populates="promotion",
+        cascade="all, delete-orphan",
+    )
+
+
+class PromotionTarget(Base):
+    __tablename__ = "promotion_targets"
+    __table_args__ = (
+        CheckConstraint(
+            "(product_id IS NOT NULL AND category_id IS NULL) OR "
+            "(product_id IS NULL AND category_id IS NOT NULL)",
+            name="ck_promotion_targets_single_target",
+        ),
+        UniqueConstraint("promotion_id", "product_id", name="uq_promotion_target_product"),
+        UniqueConstraint("promotion_id", "category_id", name="uq_promotion_target_category"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    promotion_id: Mapped[int] = mapped_column(ForeignKey("promotions.id", ondelete="CASCADE"), index=True)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="CASCADE"),
+        index=True,
+    )
+
+    promotion: Mapped[Promotion] = relationship(back_populates="targets")
+
+
 class ModifierGroup(Base, TimestampMixin):
     __tablename__ = "modifier_groups"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(140))
+    internal_label: Mapped[str | None] = mapped_column(String(140), nullable=True)
     minimum: Mapped[int] = mapped_column(Integer, default=0)
-    maximum: Mapped[int] = mapped_column(Integer, default=1)
+    maximum: Mapped[int | None] = mapped_column(Integer, nullable=True)
     required: Mapped[bool] = mapped_column(Boolean, default=False)
+    allow_repeats: Mapped[bool] = mapped_column(Boolean, default=False)
+    max_per_option: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Modifier(Base, TimestampMixin):
@@ -231,6 +321,7 @@ class Modifier(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(140))
     price_delta: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class ProductModifierGroup(Base):
@@ -269,6 +360,19 @@ class RecipeItem(Base, TimestampMixin):
     quantity: Mapped[Decimal] = mapped_column(Numeric(14, 3))
 
 
+class ComboItem(Base, TimestampMixin):
+    __tablename__ = "combo_items"
+    __table_args__ = (UniqueConstraint("product_id", "component_product_id", name="uq_combo_component"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    component_product_id: Mapped[int] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"), index=True
+    )
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), default=Decimal("1"))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class StockMovement(Base):
     __tablename__ = "stock_movements"
 
@@ -294,6 +398,7 @@ class Order(Base, TimestampMixin):
         UniqueConstraint("branch_id", "number", name="uq_order_branch_number"),
         UniqueConstraint("business_id", "external_reference", name="uq_order_external_reference"),
         Index("ix_orders_branch_status_created", "branch_id", "status", "created_at"),
+        Index("ix_orders_branch_created_id", "branch_id", "created_at", "id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -313,6 +418,9 @@ class Order(Base, TimestampMixin):
     delivery_address: Mapped[dict | None] = mapped_column(JSON)
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     discount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    manual_discount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    promotion_discount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    applied_promotions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     delivery_fee: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     notes: Mapped[str | None] = mapped_column(Text)
@@ -341,13 +449,22 @@ class OrderItem(Base, TimestampMixin):
     notes: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(30), default="pending")
     line_total: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    promotion_discount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    promotion_snapshot: Mapped[dict | None] = mapped_column(JSON)
 
     order: Mapped[Order] = relationship(back_populates="items")
 
 
 class KitchenTicket(Base, TimestampMixin):
     __tablename__ = "kitchen_tickets"
-    __table_args__ = (UniqueConstraint("order_id", "station", name="uq_ticket_order_station"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "order_id",
+            "station",
+            "sequence",
+            name="uq_ticket_order_station_sequence",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
@@ -493,6 +610,13 @@ class PaymentEvidence(Base, TimestampMixin):
     __tablename__ = "payment_evidence"
     __table_args__ = (
         UniqueConstraint("business_id", "provider", "operation_number", name="uq_payment_operation"),
+        Index(
+            "uq_payment_evidence_one_open_per_order",
+            "order_id",
+            unique=True,
+            postgresql_where=text("status IN ('evidence_received', 'under_review')"),
+            sqlite_where=text("status IN ('evidence_received', 'under_review')"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -531,10 +655,17 @@ class AuditEvent(Base):
 
 class IdempotencyRecord(Base):
     __tablename__ = "idempotency_records"
-    __table_args__ = (UniqueConstraint("scope", "idempotency_key", name="uq_idempotency_scope_key"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "business_id",
+            "scope",
+            "idempotency_key",
+            name="uq_idempotency_business_scope_key",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
     scope: Mapped[str] = mapped_column(String(120))
     idempotency_key: Mapped[str] = mapped_column(String(240))
     response_code: Mapped[int] = mapped_column(Integer, default=200)

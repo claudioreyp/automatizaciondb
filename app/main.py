@@ -11,6 +11,7 @@ from .api import api, legacy
 from .auth import AuthContext, decode_access_token, ensure_branch_scope, resolve_membership
 from .config import get_settings
 from .database import Base, SessionLocal, engine
+from .errors import CodedHTTPException
 from .models import Branch
 from .realtime import hub
 
@@ -54,6 +55,15 @@ app.add_middleware(
 )
 app.include_router(api)
 app.include_router(legacy)
+
+
+@app.exception_handler(CodedHTTPException)
+async def coded_http_exception(_, exc: CodedHTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail, "code": exc.code},
+        headers=exc.headers,
+    )
 
 
 @app.exception_handler(RequestValidationError)

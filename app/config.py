@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     public_api_base_url: str | None = None
     integration_service_token: str | None = None
     dev_auth_token: str | None = None
-    legacy_public_reads_enabled: bool = True
+    legacy_public_reads_enabled: bool = False
     auto_create_schema: bool = True
     upload_dir: Path = Field(default=Path("./uploads"))
     payment_vision_model: str = "gpt-4.1-mini"
