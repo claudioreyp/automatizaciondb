@@ -71,6 +71,94 @@ Do not replay pending print jobs or historical integration events during checks.
 - The existing localhost PWA does not move domains automatically. Install the
   HTTPS POS separately; mobile physical installation must be checked separately.
 
+## Published test release evidence
+
+Completed 2026-09-19, without purchasing plans. The three custom domains serve
+valid HTTPS. Only three CNAME records were added; root/www and other services were
+left unchanged. Supabase Site URL is the HTTPS POS, with exact POS invitation/login
+and Admins login redirects; existing loopback invitation redirects were retained
+for local testing. Public signup remains disabled.
+
+| App | Published application commit | Deployment |
+| --- | --- | --- |
+| CLIENTES | `a915c1352d4acf6efe22bdc585de99227ad69c7a` | Vercel `dpl_B66G49sXf7VHNydVB3pE4zNqqbc7` |
+| Admins | `3a8d2e219d665973443b7293c2531b5c75951bcb` | Vercel `dpl_96492mondvcDRQTcKoRAHFT47idu` |
+| API | `1d332cf2d12f56e4760fcd8f15d95a461f6f8514` | Render `dep-danb3v6gekts738ce53g` |
+
+Subsequent documentation/test-script commits do not change application code.
+Vercel production branches match the existing `agent/escalar-ai-*` branches.
+Render remains manually deployed. Vercel's technical preview addresses may require
+Vercel authentication; use the custom domains for POS testing.
+
+Verification completed:
+
+- API Pytest: 723 passed, 2 PostgreSQL tests skipped in the SQLite run. Both
+  PostgreSQL tests passed separately in disposable schemas: concurrent folios and
+  same-identity password renewal. The temporary migration-test role was dropped.
+- CLIENTES: lint/build and 753 Vitest tests passed. Admins: lint/build and 22
+  Vitest tests passed. Both Vercel remote builds and Render startup passed.
+- Mocked Playwright regression: CLIENTES 227 passed/1 skipped, Admins 9 passed,
+  across desktop/tablet/mobile. Orders, tables, kitchen, printing and PWA included.
+- Live HTTPS: Admins login, two new restaurant/owner/token provisions, owner login,
+  minimum scopes, copyable endpoint existence, cross-tenant denials, suspension /
+  reactivation, password renewal, idempotent renewal replay, old-password and
+  old-HTTP-session rejection. Integration token survived password renewal.
+- Live deployed browser checks at 1440x1000, 834x1112 and 390x844: both logins,
+  restaurant details, order/table/kitchen navigation, installation page, manifest
+  and PNG icons. No development login or added Support/Tutorial links.
+- Exact credentialed CORS for the two frontends; unrelated origins rejected.
+  Direct authenticated WSS connected to the test branch. Real PIN pairing/login/
+  logout used Secure + HttpOnly + SameSite=Lax cookies; cashier could not enter
+  Admins. Test device/member were archived after checking.
+- All four recovered images returned HTTP 200 through the deployed API and matched
+  their source SHA-256. Storage stays private; public catalog/branding routes keep
+  their existing authorization contracts. Actual Google Maps tiles rendered from
+  the POS domain, without saving a location or changing the key's restrictions.
+- QZ server identity and RSA/SHA512 signature verified without contacting a printer
+  or claiming a job. One historical pending print and 23 unacknowledged events
+  remain untouched. No real orders/payments were created in this live smoke test.
+- Alembic remains `20260919_0023`. All public tables have RLS; anon/authenticated
+  have zero direct public-table grants. `escalar_pos_api` is not superuser, cannot
+  create roles/databases/tables, and cannot bypass RLS.
+- Grouped visual review of deployed desktop/mobile screens preserved the existing
+  interface. Targeted Impeccable detector returned no findings; this is not a full
+  accessibility certification. Artifacts stay local and excluded from Git.
+
+Test businesses 3 and 4 are explicitly labelled PRUEBA DESPLIEGUE and were left
+suspended; their tokens were revoked. Their audit history remains. Temporary
+passwords/tokens were removed from the local test receipt after verification.
+Original restaurants, owners, integration tokens and operational records were not
+reset by these checks.
+
+Remaining limits (do not claim these as tested):
+
+- Full physical printing from the public domain and physical mobile installation
+  remain pending. Localhost installation/printing evidence is not cloud evidence.
+- A diagnostic output exposed QZ private identity material during setup. It was
+  not committed or placed in frontend assets. Treat it as exposed and arrange a
+  supervised identity rotation and renewed trust on each printer workstation;
+  do not silently rotate or disable QZ security. The current identity was retained
+  to avoid breaking terminals pending that coordinated action.
+- Render wake-up after a full idle/sleep cycle has not been measured. Reconnection
+  logic passed isolated tests, but Free is not continuous commercial hosting.
+- SMTP, server route-calculation and vision credentials remain unconfigured.
+  Browser Maps loading does not establish server route/vision availability.
+- npm audit reports dependency advisories. The production React Router advisory
+  GHSA-qwww-vcr4-c8h2 affects unstable RSC APIs, not these Vite BrowserRouter SPAs;
+  dependency maintenance remains a separate tested upgrade, not a blind audit fix.
+
+Opt-in reproduction scripts: `verify_cloud_test_release.py`,
+`verify_cloud_transport.py`, `retire_cloud_test_release.py` and
+`Admins/scripts/cloud-browser-smoke.mjs`. They require explicit private input and
+labelled test tenants. Never rerun a creation after an uncertain response without
+reconciling its ignored private receipt. Never publish those receipts.
+
+Platform references: [Render custom domains](https://render.com/docs/custom-domains),
+[Render Free](https://render.com/docs/free),
+[Vercel Hobby](https://vercel.com/docs/plans/hobby),
+[Supabase SMTP](https://supabase.com/docs/guides/auth/auth-smtp),
+[React Router advisory](https://github.com/advisories/GHSA-qwww-vcr4-c8h2).
+
 ## Safe rollback
 
 Render keeps the last healthy instance serving traffic when build or
