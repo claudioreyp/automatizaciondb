@@ -190,7 +190,7 @@ def test_public_and_integration_menus_expose_only_current_digital_promotions(
             "name": "Agente promociones",
             "scopes": ["menu:read"],
         },
-        headers=auth_headers,
+        headers={**auth_headers, "X-Dev-Role": "superadmin"},
     )
     assert credential.status_code == 201, credential.text
     integration_menu = client.get(

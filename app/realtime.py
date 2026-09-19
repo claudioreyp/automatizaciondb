@@ -2,7 +2,7 @@ import asyncio
 from collections import defaultdict
 from typing import Any
 
-from fastapi import WebSocket
+from fastapi import HTTPException, WebSocket
 
 
 class BranchRealtimeHub:
@@ -28,6 +28,16 @@ class BranchRealtimeHub:
         stale: list[WebSocket] = []
         for websocket in clients:
             try:
+                authorize = getattr(websocket.state, "authorize", None)
+                if authorize:
+                    try:
+                        await asyncio.to_thread(authorize)
+                    except Exception as error:
+                        unavailable = isinstance(error, HTTPException) and error.status_code == 503
+                        await websocket.close(code=1013 if unavailable else 1008,
+                                              reason="Auth temporarily unavailable" if unavailable else "Session expired")
+                        stale.append(websocket)
+                        continue
                 await websocket.send_json({"event": event, "payload": payload})
             except Exception:
                 stale.append(websocket)

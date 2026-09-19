@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -16,6 +16,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    Time,
     UniqueConstraint,
     text,
 )
@@ -41,10 +42,17 @@ class Business(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     slug: Mapped[str] = mapped_column(String(120), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(180), index=True)
+    order_folio_counter: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
     status: Mapped[str] = mapped_column(String(30), default="active", index=True)
     plan: Mapped[str] = mapped_column(String(60), default="basic")
     currency: Mapped[str] = mapped_column(String(3), default="PEN")
     timezone: Mapped[str] = mapped_column(String(80), default="America/Lima")
+    country_code: Mapped[str] = mapped_column(
+        String(2), default="PE", server_default=text("'PE'"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1"), nullable=False
+    )
     logo_url: Mapped[str | None] = mapped_column(Text)
     phone: Mapped[str | None] = mapped_column(String(40))
     auto_accept_payment_evidence: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -72,10 +80,25 @@ class Branch(Base, TimestampMixin):
     plin_number: Mapped[str | None] = mapped_column(String(40))
     payment_recipient_name: Mapped[str | None] = mapped_column(String(180))
     maps_url: Mapped[str | None] = mapped_column(Text)
+    google_place_id: Mapped[str | None] = mapped_column(String(255))
+    latitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
+    longitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7))
+    logo_storage_path: Mapped[str | None] = mapped_column(Text)
+    cover_storage_path: Mapped[str | None] = mapped_column(Text)
+    whatsapp_number: Mapped[str | None] = mapped_column(String(40))
+    whatsapp_status: Mapped[str] = mapped_column(
+        String(30), default="unknown", server_default=text("'unknown'"), nullable=False
+    )
     yape_qr_storage_path: Mapped[str | None] = mapped_column(Text)
     menu_card_storage_path: Mapped[str | None] = mapped_column(Text)
+    agent_name: Mapped[str | None] = mapped_column(String(80))
+    agent_menu_images: Mapped[list | None] = mapped_column(JSON(none_as_null=True))
     agent_context_notes: Mapped[str | None] = mapped_column(Text)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1"), nullable=False
+    )
 
     business: Mapped[Business] = relationship(back_populates="branches")
 
@@ -105,6 +128,31 @@ class Membership(Base, TimestampMixin):
     branch_id: Mapped[int | None] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
     role: Mapped[str] = mapped_column(String(30), index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class AuthSecurityState(Base, TimestampMixin):
+    __tablename__ = "auth_security_states"
+
+    auth_user_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    pending_operation_id: Mapped[str | None] = mapped_column(String(36))
+    requires_password_reset: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+class PasswordResetOperation(Base, TimestampMixin):
+    __tablename__ = "password_reset_operations"
+    __table_args__ = (UniqueConstraint("auth_user_id", "key_hash", name="uq_password_reset_key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    auth_user_id: Mapped[str] = mapped_column(String(120), index=True)
+    membership_id: Mapped[int] = mapped_column(ForeignKey("memberships.id"))
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), index=True)
+    actor_id: Mapped[str] = mapped_column(String(120))
+    key_hash: Mapped[str] = mapped_column(String(64))
+    request_digest: Mapped[str] = mapped_column(String(64))
+    security_version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    error_code: Mapped[str | None] = mapped_column(String(60))
 
 
 class ModuleEntitlement(Base, TimestampMixin):
@@ -158,6 +206,7 @@ class DiningArea(Base, TimestampMixin):
         server_default=text("1"),
         nullable=False,
     )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class RestaurantTable(Base, TimestampMixin):
@@ -247,6 +296,7 @@ class ProductVariant(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(120))
     price_delta: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    available: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"), nullable=False)
 
 
 class Promotion(Base, TimestampMixin):
@@ -339,6 +389,7 @@ class Modifier(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(140))
     price_delta: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    available: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
 
@@ -414,6 +465,7 @@ class Order(Base, TimestampMixin):
     __tablename__ = "orders"
     __table_args__ = (
         UniqueConstraint("branch_id", "number", name="uq_order_branch_number"),
+        UniqueConstraint("business_id", "folio", name="uq_order_business_folio"),
         UniqueConstraint("business_id", "external_reference", name="uq_order_external_reference"),
         Index("ix_orders_branch_status_created", "branch_id", "status", "created_at"),
         Index("ix_orders_branch_created_id", "branch_id", "created_at", "id"),
@@ -423,6 +475,7 @@ class Order(Base, TimestampMixin):
     business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
     branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
     number: Mapped[str] = mapped_column(String(40))
+    folio: Mapped[int | None] = mapped_column(Integer)
     channel: Mapped[str] = mapped_column(String(30), default="counter", index=True)
     source: Mapped[str] = mapped_column(String(40), default="pos")
     status: Mapped[str] = mapped_column(String(40), default="draft", index=True)
@@ -440,6 +493,12 @@ class Order(Base, TimestampMixin):
     promotion_discount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     applied_promotions: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     delivery_fee: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    delivery_quote_id: Mapped[str | None] = mapped_column(
+        ForeignKey("delivery_quotes.id", ondelete="SET NULL"), index=True
+    )
+    delivery_fee_status: Mapped[str] = mapped_column(
+        String(30), default="final", server_default=text("'final'"), nullable=False
+    )
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     notes: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[str | None] = mapped_column(String(120))
@@ -447,6 +506,8 @@ class Order(Base, TimestampMixin):
     whatsapp_message_id: Mapped[str | None] = mapped_column(String(180), index=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     sent_to_kitchen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    checkout_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    table_released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     version: Mapped[int] = mapped_column(Integer, default=1)
 
@@ -466,6 +527,11 @@ class OrderItem(Base, TimestampMixin):
     modifiers: Mapped[list] = mapped_column(JSON, default=list)
     notes: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(30), default="pending")
+    replaces_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("order_items.id", ondelete="SET NULL"),
+        index=True,
+    )
+    cancellation_reason: Mapped[str | None] = mapped_column(Text)
     line_total: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     promotion_discount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     promotion_snapshot: Mapped[dict | None] = mapped_column(JSON)
@@ -482,6 +548,7 @@ class KitchenTicket(Base, TimestampMixin):
             "sequence",
             name="uq_ticket_order_station_sequence",
         ),
+        UniqueConstraint("order_id", "sequence", name="uq_ticket_order_sequence"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -489,9 +556,12 @@ class KitchenTicket(Base, TimestampMixin):
     branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
     station: Mapped[str] = mapped_column(String(80), default="kitchen")
+    kind: Mapped[str] = mapped_column(String(30), default="standard", index=True)
     status: Mapped[str] = mapped_column(String(30), default="queued", index=True)
     sequence: Mapped[int] = mapped_column(Integer, default=1)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"), nullable=False)
     items_snapshot: Mapped[list] = mapped_column(JSON, default=list)
+    context_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     fired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     ready_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -500,31 +570,80 @@ class KitchenTicket(Base, TimestampMixin):
 
 class CashRegister(Base, TimestampMixin):
     __tablename__ = "cash_registers"
+    __table_args__ = (
+        Index(
+            "uq_cash_registers_one_default_per_branch",
+            "branch_id",
+            unique=True,
+            sqlite_where=text("is_default = 1"),
+            postgresql_where=text("is_default IS TRUE"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
     branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(120))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default=text("1"), nullable=False
+    )
 
 
 class CashSession(Base, TimestampMixin):
     __tablename__ = "cash_sessions"
+    __table_args__ = (
+        Index(
+            "uq_cash_sessions_one_open_per_register",
+            "register_id",
+            unique=True,
+            sqlite_where=text("status = 'open'"),
+            postgresql_where=text("status = 'open'"),
+        ),
+        Index(
+            "ix_cash_sessions_branch_status_closed",
+            "branch_id",
+            "status",
+            "closed_at",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
     branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
     register_id: Mapped[int] = mapped_column(ForeignKey("cash_registers.id", ondelete="CASCADE"), index=True)
+    previous_session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cash_sessions.id", ondelete="SET NULL"),
+        index=True,
+    )
     status: Mapped[str] = mapped_column(String(30), default="open", index=True)
     opening_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     expected_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
     declared_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     difference: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    card_expected_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    card_declared_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    card_difference: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    transfer_expected_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    total_expected_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    total_difference: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    retained_fund_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    cash_withdrawn_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    result: Mapped[str | None] = mapped_column(String(30), index=True)
+    denominations: Mapped[dict | None] = mapped_column(JSON)
+    pending_orders_snapshot: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    pending_orders_ignored: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    pending_orders_override_by: Mapped[str | None] = mapped_column(String(120))
+    pending_orders_override_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    actor_display_name: Mapped[str | None] = mapped_column(String(180))
     opened_by: Mapped[str] = mapped_column(String(120))
     closed_by: Mapped[str | None] = mapped_column(String(120))
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     close_notes: Mapped[str | None] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
 
 class CashMovement(Base):
@@ -663,7 +782,11 @@ class AuditEvent(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     business_id: Mapped[int | None] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    branch_id: Mapped[int | None] = mapped_column(
+        ForeignKey("branches.id", ondelete="SET NULL"), index=True
+    )
     actor_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    actor_display_name: Mapped[str | None] = mapped_column(String(180))
     action: Mapped[str] = mapped_column(String(100), index=True)
     entity_type: Mapped[str] = mapped_column(String(80), index=True)
     entity_id: Mapped[str | None] = mapped_column(String(120))
@@ -728,4 +851,264 @@ class IntegrationEvent(Base):
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     acknowledged_by: Mapped[str | None] = mapped_column(String(120))
     delivery_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class BranchSettings(Base, TimestampMixin):
+    __tablename__ = "branch_settings"
+    __table_args__ = (UniqueConstraint("branch_id", name="uq_branch_settings_branch"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
+    pos_tables: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    pos_counter: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    pos_takeaway: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    pos_delivery: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    digital_tables: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    digital_takeaway: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    digital_delivery: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    delivery_mode: Mapped[str] = mapped_column(String(30), default="fixed", index=True)
+    delivery_policy: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    fixed_delivery_fee: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    distance_base_fee: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    distance_fee_per_km: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    distance_max_km: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+    free_delivery_threshold: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    minimum_order_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    payment_methods: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    delivery_min_minutes: Mapped[int] = mapped_column(Integer, default=25, nullable=False)
+    delivery_max_minutes: Mapped[int] = mapped_column(Integer, default=45, nullable=False)
+    pickup_minutes: Mapped[int] = mapped_column(Integer, default=15, nullable=False)
+    advanced_printing: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    printer_config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    customer_ticket_template: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    kitchen_ticket_template: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
+class DeliveryBand(Base, TimestampMixin):
+    __tablename__ = "delivery_bands"
+    __table_args__ = (
+        UniqueConstraint("branch_id", "sort_order", name="uq_delivery_band_branch_order"),
+        CheckConstraint("minimum_km >= 0", name="ck_delivery_band_minimum_nonnegative"),
+        CheckConstraint("maximum_km > minimum_km", name="ck_delivery_band_valid_range"),
+        CheckConstraint("fee >= 0", name="ck_delivery_band_fee_nonnegative"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
+    minimum_km: Mapped[Decimal] = mapped_column(Numeric(8, 2))
+    maximum_km: Mapped[Decimal] = mapped_column(Numeric(8, 2))
+    fee: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
+class DeliveryQuote(Base):
+    __tablename__ = "delivery_quotes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
+    mode: Mapped[str] = mapped_column(String(30), index=True)
+    subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    distance_km: Mapped[Decimal | None] = mapped_column(Numeric(8, 2))
+    fee: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    minimum_order_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    configuration_version: Mapped[int] = mapped_column(Integer)
+    input_snapshot: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class StaffMember(Base, TimestampMixin):
+    __tablename__ = "staff_members"
+    __table_args__ = (
+        UniqueConstraint("business_id", "auth_user_id", name="uq_staff_business_auth_user"),
+        UniqueConstraint("business_id", "email", name="uq_staff_business_email"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    auth_user_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    email: Mapped[str | None] = mapped_column(String(240), index=True)
+    first_name: Mapped[str] = mapped_column(String(120))
+    last_name: Mapped[str] = mapped_column(String(120), default="")
+    pin_hash: Mapped[str | None] = mapped_column(Text)
+    email_access: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    failed_pin_attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    pin_locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
+class StaffMemberRole(Base):
+    __tablename__ = "staff_member_roles"
+
+    staff_member_id: Mapped[int] = mapped_column(
+        ForeignKey("staff_members.id", ondelete="CASCADE"), primary_key=True
+    )
+    role: Mapped[str] = mapped_column(String(40), primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+
+
+class StaffMemberBranch(Base):
+    __tablename__ = "staff_member_branches"
+
+    staff_member_id: Mapped[int] = mapped_column(
+        ForeignKey("staff_members.id", ondelete="CASCADE"), primary_key=True
+    )
+    branch_id: Mapped[int] = mapped_column(
+        ForeignKey("branches.id", ondelete="CASCADE"), primary_key=True
+    )
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+
+
+class PairedDevice(Base, TimestampMixin):
+    __tablename__ = "paired_devices"
+    __table_args__ = (UniqueConstraint("token_hash", name="uq_paired_device_token_hash"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(180))
+    token_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    pairing_code_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    pairing_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    paired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    credential_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    staff_session_hash: Mapped[str | None] = mapped_column(String(64))
+    staff_session_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    session_staff_id: Mapped[int | None] = mapped_column(Integer)
+    session_access_hash: Mapped[str | None] = mapped_column(String(64))
+    failed_pin_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    pin_locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ServiceSchedule(Base, TimestampMixin):
+    __tablename__ = "service_schedules"
+    __table_args__ = (
+        UniqueConstraint("branch_id", "name", name="uq_service_schedule_branch_name"),
+        Index(
+            "uq_service_schedule_primary_branch",
+            "branch_id",
+            unique=True,
+            sqlite_where=text("kind = 'primary' AND archived_at IS NULL"),
+            postgresql_where=text("kind = 'primary' AND archived_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(180))
+    kind: Mapped[str] = mapped_column(String(30), default="additional", index=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
+class ScheduleShift(Base, TimestampMixin):
+    __tablename__ = "schedule_shifts"
+    __table_args__ = (
+        UniqueConstraint(
+            "schedule_id", "day_of_week", "starts_at", "ends_at", name="uq_schedule_shift_window"
+        ),
+        CheckConstraint("day_of_week >= 0 AND day_of_week <= 6", name="ck_schedule_shift_weekday"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    schedule_id: Mapped[int] = mapped_column(
+        ForeignKey("service_schedules.id", ondelete="CASCADE"), index=True
+    )
+    day_of_week: Mapped[int] = mapped_column(Integer, index=True)
+    starts_at: Mapped[time] = mapped_column(Time())
+    ends_at: Mapped[time] = mapped_column(Time())
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class ScheduleAssignment(Base):
+    __tablename__ = "schedule_assignments"
+    __table_args__ = (
+        CheckConstraint(
+            "(product_id IS NOT NULL AND promotion_id IS NULL) OR "
+            "(product_id IS NULL AND promotion_id IS NOT NULL)",
+            name="ck_schedule_assignment_single_target",
+        ),
+        UniqueConstraint("schedule_id", "product_id", name="uq_schedule_assignment_product"),
+        UniqueConstraint("schedule_id", "promotion_id", name="uq_schedule_assignment_promotion"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
+    schedule_id: Mapped[int] = mapped_column(
+        ForeignKey("service_schedules.id", ondelete="CASCADE"), index=True
+    )
+    product_id: Mapped[int | None] = mapped_column(
+        ForeignKey("products.id", ondelete="CASCADE"), index=True
+    )
+    promotion_id: Mapped[int | None] = mapped_column(
+        ForeignKey("promotions.id", ondelete="CASCADE"), index=True
+    )
+
+
+class PrinterDevice(Base, TimestampMixin):
+    __tablename__ = "printer_devices"
+    __table_args__ = (UniqueConstraint("branch_id", "system_name", name="uq_printer_branch_system_name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
+    paired_device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("paired_devices.id", ondelete="SET NULL"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(180))
+    system_name: Mapped[str] = mapped_column(String(255))
+    purpose: Mapped[str] = mapped_column(String(40), default="kitchen", index=True)
+    paper_width_mm: Mapped[int] = mapped_column(Integer, default=80)
+    copies: Mapped[int] = mapped_column(Integer, default=1)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
+class PrintJob(Base):
+    __tablename__ = "print_jobs"
+    __table_args__ = (
+        UniqueConstraint("business_id", "idempotency_key", name="uq_print_job_business_key"),
+        Index("ix_print_jobs_device_status_created", "paired_device_id", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id", ondelete="CASCADE"), index=True)
+    paired_device_id: Mapped[int | None] = mapped_column(
+        ForeignKey("paired_devices.id", ondelete="SET NULL"), index=True
+    )
+    printer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("printer_devices.id", ondelete="SET NULL"), index=True
+    )
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"), index=True)
+    kitchen_ticket_id: Mapped[int | None] = mapped_column(
+        ForeignKey("kitchen_tickets.id", ondelete="SET NULL"), index=True
+    )
+    job_type: Mapped[str] = mapped_column(String(40), index=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(240))
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

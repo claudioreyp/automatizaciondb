@@ -10,7 +10,7 @@ def create_credential(client, tenant, auth_headers, scopes):
             "name": "Disponibilidad POS",
             "scopes": scopes,
         },
-        headers=auth_headers,
+        headers={**auth_headers, "X-Dev-Role": "superadmin"},
     )
     assert response.status_code == 201, response.text
     return response.json()

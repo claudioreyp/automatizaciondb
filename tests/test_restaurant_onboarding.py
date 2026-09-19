@@ -79,7 +79,10 @@ def test_onboarding_creates_complete_restaurant_and_one_time_n8n_package(client,
     assert result["owner_access"]["user_id"] == "supabase-owner-1"
     assert result["owner_access"]["status"] == "active"
     assert result["credential"]["token"].startswith("esc_live_")
-    assert "inventory:write" in result["credential"]["scopes"]
+    assert "inventory:write" not in result["credential"]["scopes"]
+    assert "adjust_inventory" not in result["integration"]["endpoints"]
+    assert response.headers["cache-control"] == "no-store"
+    assert result["business"]["plan"] == "pos"
     assert result["n8n"]["business_id"] == result["business"]["id"]
     assert result["n8n"]["branch_id"] == result["branch"]["id"]
     assert result["n8n"]["endpoints"]["menu"]["url"].endswith(
@@ -88,6 +91,14 @@ def test_onboarding_creates_complete_restaurant_and_one_time_n8n_package(client,
     assert result["n8n"]["endpoints"]["adjust_inventory"]["method"] == "POST"
     assert "owner_password" not in result
     assert "PizzaHouse2026!" not in response.text
+    reconciled = client.get("/api/v1/admin/onboarding/restaurants/status?slug=pizza-house", headers=ADMIN_HEADERS)
+    assert reconciled.json()["status"] == "created"
+    assert result["credential"]["token"] not in reconciled.text
+    monkeypatch.setattr("app.auth.decode_access_token", lambda _: {"sub": "supabase-owner-1"})
+    owner_context = client.get("/api/v1/context", headers={"Authorization": "Bearer isolated-owner-session"})
+    assert owner_context.status_code == 200
+    assert owner_context.json()["role"] == "owner"
+    assert owner_context.json()["business"]["id"] == result["business"]["id"]
 
     token = result["credential"]["token"]
     context = client.get(

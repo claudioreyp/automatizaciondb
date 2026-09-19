@@ -8,15 +8,20 @@ import secrets
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 from pydantic import ValidationError
+from starlette.concurrency import run_in_threadpool
+from .order_editing import delivery_service, edit_order_details, order_edit_policy
+from .order_folios import parse_order_folio
+from .product_access import POS_MODULES, POS_PLAN, full_pos_modules
+from .integration_package import integration_package
 
 from .auth import (
     AuthContext,
@@ -29,10 +34,27 @@ from .auth import (
     require_integration_token,
     require_integration_scope,
     require_roles,
+    require_active_scope,
+)
+from .cash_service import (
+    actor_display_name,
+    actor_name_by_id,
+    cash_cut_detail,
+    cash_reconciliation,
+    cash_money,
+    close_cash_cut,
+    cut_history_item,
+    cut_preview,
+    lock_cash_register,
+    open_or_get_cash_session,
+    scoped_cash_register,
 )
 from .config import get_settings
 from .database import get_db
+from .catalog_availability import product_selection_unavailable_reason, selection_unavailable_reason, set_product_availability, sync_variant_availability
+from .dashboard_report import dashboard_report
 from .errors import CodedHTTPException
+from .command_revisions import effective_ticket_items
 from .models import (
     AuditEvent,
     Branch,
@@ -70,18 +92,23 @@ from .models import (
     ReservationTable,
     RestaurantTable,
     StockMovement,
+    StaffMember,
+    StaffMemberBranch,
     utcnow,
 )
 from .realtime import hub
 from .schemas import (
     AddOrderItem,
+    ArchiveRequest,
     AreaCreate,
     AreaUpdate,
     BranchCreate,
     BranchUpdate,
     BusinessCreate,
     BusinessUpdate,
+    CashCutCreate,
     CashMovementCreate,
+    CashRegisterMovementCreate,
     CashSessionClose,
     CashSessionOpen,
     CategoryCreate,
@@ -109,6 +136,7 @@ from .schemas import (
     OrderCommand,
     OrderCreate,
     OrderItemBatch,
+    OrderItemRevision,
     OrderPatch,
     OrderTransition,
     PaymentCreate,
@@ -125,24 +153,32 @@ from .schemas import (
     PublicReservationCreate,
     RecipeReplace,
     RegisterCreate,
+    RegisterSettingsUpdate,
     RestaurantOnboardingCreate,
     ReservationCreate,
     ReservationUpdate,
     SplitPreview,
     StockAdjustment,
     TableCreate,
+    TableCheckoutPayment,
     TableUpdate,
+    KitchenCommandAction,
     TicketTransition,
 )
+from .security_audit import cash_audit_snapshot
 from .services import (
+    active_order_items,
     add_order_item,
     add_payment,
+    apply_order_item_revisions,
     append_order_item_batch,
     assert_version,
+    assert_command_version,
     audit,
     available_tables,
     build_order_item,
     cash_session_expected,
+    complete_kitchen_command,
     confirm_order,
     create_integration_event,
     create_order,
@@ -155,11 +191,27 @@ from .services import (
     product_capacity,
     promotion_is_active,
     recalculate_order,
+    reopen_kitchen_command,
+    reopen_table_checkout,
     save_idempotent_response,
     send_order_to_kitchen,
     serialize_order,
+    start_table_checkout,
+    pay_table_checkout,
     split_amounts,
     transition_order,
+)
+from .settings_api import router as settings_router
+from .agent_settings import router as agent_router, menu_images, set_menu_images, writable as writable_agent, cleanup_unreferenced
+from .device_api import router as device_router
+from .pos_printing_api import router as pos_printing_router
+from .pos_printing import checkout_receipt_context
+from .settings_service import (
+    archive_area,
+    archive_register,
+    effective_roles,
+    get_or_create_branch_settings,
+    get_or_create_primary_schedule,
 )
 from .storage import analyze_payment_image, delete_private_file, load_private_file, store_private_file
 import httpx
@@ -168,6 +220,12 @@ from PIL import Image, UnidentifiedImageError
 
 api = APIRouter(prefix="/api/v1")
 legacy = APIRouter(prefix="/api")
+api.include_router(settings_router)
+api.include_router(agent_router)
+api.include_router(device_router)
+api.include_router(pos_printing_router)
+from .password_resets import router as password_reset_router, reset_capabilities
+api.include_router(password_reset_router)
 
 
 def catalog_error(status_code: int, detail: str, code: str) -> CodedHTTPException:
@@ -238,7 +296,10 @@ def scoped_order_for_user(
         if user.branch_id is not None:
             statement = statement.where(Order.branch_id == user.branch_id)
     if for_update:
-        statement = statement.with_for_update()
+        if db.get_bind().dialect.name == "sqlite":
+            # SQLite ignores FOR UPDATE: acquire its write lock before reading a version.
+            db.execute(update(Order).where(statement.whereclause).values(updated_at=Order.updated_at).execution_options(synchronize_session=False))
+        statement = statement.with_for_update().execution_options(populate_existing=True)
     order = db.scalar(statement)
     if not order:
         raise CodedHTTPException(404, "Order not found", "ORDER_NOT_FOUND")
@@ -246,7 +307,7 @@ def scoped_order_for_user(
 
 
 FINAL_TABLE_ORDER_STATUSES = {"closed", "cancelled", "delivered"}
-TABLE_ASSIGNMENT_LOCKED_STATUSES = {"ready", "dispatched", *FINAL_TABLE_ORDER_STATUSES}
+TABLE_ASSIGNMENT_LOCKED_STATUSES = {"dispatched", *FINAL_TABLE_ORDER_STATUSES}
 
 
 def apply_order_table_assignment(
@@ -256,7 +317,7 @@ def apply_order_table_assignment(
 ) -> list[RestaurantTable]:
     if target_table_id == order.table_id:
         return []
-    if order.status in TABLE_ASSIGNMENT_LOCKED_STATUSES:
+    if order.status in TABLE_ASSIGNMENT_LOCKED_STATUSES or order.table_released_at is not None:
         raise CodedHTTPException(
             409,
             "Table assignment can no longer be changed for this order",
@@ -303,6 +364,7 @@ def apply_order_table_assignment(
                 Order.branch_id == order.branch_id,
                 Order.table_id == target_table.id,
                 Order.status.not_in(FINAL_TABLE_ORDER_STATUSES),
+                Order.table_released_at.is_(None),
             ).limit(1)
         )
         if active_order_id is not None:
@@ -372,7 +434,7 @@ def scoped_branch_for_user(db: Session, user: AuthContext, branch_id: int) -> Br
     return branch
 
 
-MODULES = ["pos", "tables", "kds", "inventory", "cash", "delivery", "reservations", "whatsapp"]
+MODULES = POS_MODULES
 
 PRODUCT_IMAGE_MAX_BYTES = 5 * 1024 * 1024
 PRODUCT_IMAGE_MIME_BY_FORMAT = {
@@ -413,25 +475,19 @@ def validate_product_image(data: bytes, declared_content_type: str | None) -> tu
 
 
 def serialize_business(db: Session, business: Business) -> dict:
-    modules = {
-        item.module: item.enabled
-        for item in db.scalars(
-            select(ModuleEntitlement).where(ModuleEntitlement.business_id == business.id)
-        )
-    }
     return {
         "id": business.id,
         "slug": business.slug,
         "name": business.name,
         "status": business.status,
-        "plan": business.plan,
+        "plan": POS_PLAN,
         "currency": business.currency,
         "timezone": business.timezone,
         "logo_url": business.logo_url,
         "phone": business.phone,
         "auto_accept_payment_evidence": business.auto_accept_payment_evidence,
         "auto_accept_limit": float(business.auto_accept_limit or 0),
-        "modules": {module: modules.get(module, False) for module in MODULES},
+        "modules": full_pos_modules(),
         "created_at": business.created_at,
         "updated_at": business.updated_at,
     }
@@ -554,6 +610,8 @@ def branch_for_user(db: Session, user: AuthContext, branch_id: int) -> Branch:
     if not branch:
         raise HTTPException(status_code=404, detail="Branch not found")
     ensure_branch_scope(user, branch.business_id, branch.id)
+    if not user.is_superadmin:
+        require_active_scope(db, branch.business_id, branch.id)
     return branch
 
 
@@ -816,15 +874,23 @@ def serialize_catalog(
                     "name": modifier.name,
                     "price_delta": float(modifier.price_delta),
                     "active": modifier.active,
+                    "available": modifier.available,
                     "sort_order": modifier.sort_order,
                 }
                 for modifier in modifiers
-                if modifier.group_id == group.id and (modifier.active or not available_only)
+                if modifier.group_id == group.id and ((modifier.active and modifier.available) or not available_only)
             ],
         }
         for group in groups
     }
 
+    unavailable_reasons = {
+        product.id: selection_unavailable_reason(
+            [variant for variant in variants if variant.product_id == product.id],
+            [(group, [option for option in modifiers if option.group_id == group.id])
+             for group in groups if any(link.product_id == product.id and link.group_id == group.id for link in links)],
+        ) for product in products
+    }
     return {
         "branch": serialize_branch(branch),
         "categories": [
@@ -861,6 +927,7 @@ def serialize_catalog(
                 "service_channels": product.service_channels,
                 "product_type": product.product_type,
                 "available": product.available,
+                "unavailable_reason": unavailable_reasons[product.id],
                 "track_stock": product.track_stock,
                 "preparation_station": product.preparation_station,
                 "sort_order": product.sort_order,
@@ -870,9 +937,10 @@ def serialize_catalog(
                         "name": variant.name,
                         "price_delta": float(variant.price_delta),
                         "active": variant.active,
+                        "available": variant.available,
                     }
                     for variant in variants
-                    if variant.product_id == product.id and (variant.active or not available_only)
+                    if variant.product_id == product.id and ((variant.active and variant.available) or not available_only)
                 ],
                 "modifier_groups": [
                     group_payloads[link.group_id]
@@ -903,6 +971,7 @@ def serialize_catalog(
                 ],
             }
             for product in products
+            if not available_only or unavailable_reasons[product.id] is None
         ],
         "promotions": [serialize_promotion(promotion) for promotion in promotions],
     }
@@ -932,7 +1001,28 @@ def serialize_area(area: DiningArea) -> dict:
         "sort_order": area.sort_order,
         "columns": area.columns,
         "rows": area.rows,
+        "active": area.archived_at is None,
+        "archived_at": area.archived_at,
         "version": area.version,
+    }
+
+
+def serialize_cash_register(db: Session, register: CashRegister) -> dict:
+    has_open_session = db.scalar(
+        select(CashSession.id).where(
+            CashSession.register_id == register.id,
+            CashSession.status == "open",
+        ).limit(1)
+    ) is not None
+    return {
+        "id": register.id,
+        "branch_id": register.branch_id,
+        "name": register.name,
+        "active": register.active,
+        "is_default": register.is_default,
+        "has_open_session": has_open_session,
+        "archived_at": register.archived_at,
+        "version": register.version,
     }
 
 
@@ -978,20 +1068,66 @@ def serialize_reservation(db: Session, reservation: Reservation) -> dict:
     }
 
 
-def serialize_ticket(ticket: KitchenTicket) -> dict:
+def kitchen_author_names(db: Session, business_id: int, branch_id: int, actors: set[str]) -> dict[str, str]:
+    if not actors:
+        return {}
+    memberships = db.scalars(select(Membership).where(
+        Membership.auth_user_id.in_(actors),
+        Membership.business_id == business_id,
+        or_(Membership.branch_id == branch_id, Membership.branch_id.is_(None)),
+    ).order_by(Membership.branch_id.is_not(None), Membership.id)).all()
+    names = {member.auth_user_id: member.full_name.strip() for member in memberships if member.full_name and member.full_name.strip()}
+    staff = db.scalars(select(StaffMember).join(StaffMemberBranch, and_(
+        StaffMemberBranch.staff_member_id == StaffMember.id,
+        StaffMemberBranch.business_id == business_id,
+        StaffMemberBranch.branch_id == branch_id,
+    )).where(StaffMember.business_id == business_id, StaffMember.auth_user_id.in_(actors))).all()
+    for member in staff:
+        name = f"{member.first_name} {member.last_name or ''}".strip()
+        if name:
+            names[member.auth_user_id] = name
+    return names
+
+
+def ticket_utc(value: datetime | None) -> datetime | None:
+    # SQLite drops tzinfo on read; these persisted instants are always UTC.
+    return value.replace(tzinfo=timezone.utc) if value and value.tzinfo is None else value
+
+
+def serialize_ticket(
+    ticket: KitchenTicket,
+    *,
+    order: Order | None = None,
+    table_name: str | None = None,
+    created_by_name: str | None = None,
+) -> dict:
+    context = {key: value for key, value in (ticket.context_snapshot or {}).items()
+               if key != "_pos_printing"}
     return {
         "id": ticket.id,
         "business_id": ticket.business_id,
         "branch_id": ticket.branch_id,
         "order_id": ticket.order_id,
+        "order_number": context.get("order_number") or (order.number if order else None),
+        "order_folio": order.folio if order is not None else context.get("order_folio"),
+        "channel": context.get("channel") or (order.channel if order else None),
+        "source": context.get("source") or (order.source if order else None),
+        "customer_name": context.get("customer_name") or (order.customer_name if order else None),
+        "table_id": context.get("table_id") or (order.table_id if order else None),
+        "table_name": context.get("table_name") or table_name,
+        "created_by": context.get("created_by") or (order.created_by if order else None),
+        "created_by_name": context["created_by_name"] if "created_by_name" in context else created_by_name,
         "station": ticket.station,
+        "kind": ticket.kind,
+        "context": context,
         "status": ticket.status,
         "sequence": ticket.sequence,
-        "items": ticket.items_snapshot,
-        "fired_at": ticket.fired_at,
-        "created_at": ticket.fired_at,
-        "started_at": ticket.started_at,
-        "ready_at": ticket.ready_at,
+        "version": ticket.version,
+        "items": effective_ticket_items(ticket),
+        "fired_at": ticket_utc(ticket.fired_at),
+        "created_at": ticket_utc(ticket.fired_at),
+        "started_at": ticket_utc(ticket.started_at),
+        "ready_at": ticket_utc(ticket.ready_at),
         "print_count": ticket.print_count,
     }
 
@@ -999,10 +1135,13 @@ def serialize_ticket(ticket: KitchenTicket) -> dict:
 ORDER_REVIEW_EVIDENCE_STATUSES = {"evidence_received", "under_review"}
 
 
-def serialize_order_summary(order: Order, *, requires_review: bool) -> dict:
+def serialize_order_summary(
+    order: Order, *, requires_review: bool, paid_amount: Decimal = Decimal("0")
+) -> dict:
     return {
         "id": order.id,
         "number": order.number,
+        "folio": order.folio,
         "customer_name": order.customer_name,
         "customer_phone": order.customer_phone,
         "channel": order.channel,
@@ -1013,16 +1152,18 @@ def serialize_order_summary(order: Order, *, requires_review: bool) -> dict:
         "total": float(order.total or 0),
         "delivery_fee": float(order.delivery_fee or 0),
         "requires_review": requires_review,
-        "item_count": len(order.items),
+        "paid_amount": float(money(paid_amount)),
+        "item_count": len(active_order_items(order)),
         "version": order.version,
     }
 
 
-def serialize_payment(payment: Payment) -> dict:
+def serialize_payment(payment: Payment, *, cash_register_name: str | None = None) -> dict:
     return {
         "id": payment.id,
         "order_id": payment.order_id,
         "cash_session_id": payment.cash_session_id,
+        "cash_register_name": cash_register_name,
         "method": payment.method,
         "status": payment.status,
         "amount": float(payment.amount),
@@ -1065,7 +1206,7 @@ def create_business_endpoint(
     user: AuthContext = Depends(require_roles("superadmin")),
     db: Session = Depends(get_db),
 ):
-    business = Business(name=payload.name, slug=payload.slug, plan=payload.plan)
+    business = Business(name=payload.name, slug=payload.slug, plan=POS_PLAN)
     db.add(business)
     try:
         db.flush()
@@ -1073,7 +1214,7 @@ def create_business_endpoint(
         db.rollback()
         raise HTTPException(status_code=409, detail="Business slug already exists") from exc
     for module in MODULES:
-        db.add(ModuleEntitlement(business_id=business.id, module=module, enabled=module in payload.modules))
+        db.add(ModuleEntitlement(business_id=business.id, module=module, enabled=True))
     audit(db, user, "business.created", "business", business.id, business.id)
     db.commit()
     return serialize_business(db, business)
@@ -1230,6 +1371,7 @@ def list_business_memberships(
             "active": item.active,
             "created_at": item.created_at,
             "updated_at": item.updated_at,
+            **reset_capabilities(db, item),
         }
         for item in memberships
     ]
@@ -1340,6 +1482,17 @@ def accept_invitation(
     else:
         membership.role = invitation.role
         membership.active = True
+    staff_member = db.scalar(
+        select(StaffMember).where(
+            StaffMember.business_id == invitation.business_id,
+            StaffMember.email == invitation.email,
+        )
+    )
+    if staff_member:
+        staff_member.auth_user_id = user.user_id
+        staff_member.active = True
+        staff_member.archived_at = None
+        staff_member.version += 1
     invitation.status = "accepted"
     invitation.accepted_at = utcnow()
     audit(db, user, "invitation.accepted", "invitation", invitation.id, invitation.business_id)
@@ -1362,11 +1515,34 @@ def restaurant_context(
     business = db.get(Business, resolved)
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
-    branches = list(db.scalars(select(Branch).where(Branch.business_id == resolved).order_by(Branch.name)))
+    branch_statement = select(Branch).where(Branch.business_id == resolved)
+    if not user.is_superadmin:
+        branch_statement = branch_statement.where(Branch.active.is_(True), Branch.archived_at.is_(None))
+    if not user.is_superadmin and user.branch_id is not None:
+        branch_statement = branch_statement.where(Branch.id == user.branch_id)
+    elif not user.is_superadmin:
+        staff_member = db.scalar(
+            select(StaffMember).where(
+                StaffMember.business_id == resolved,
+                StaffMember.auth_user_id == user.user_id,
+                StaffMember.active.is_(True),
+            )
+        )
+        if staff_member:
+            allowed_branch_ids = list(
+                db.scalars(
+                    select(StaffMemberBranch.branch_id).where(
+                        StaffMemberBranch.staff_member_id == staff_member.id
+                    )
+                )
+            )
+            branch_statement = branch_statement.where(Branch.id.in_(allowed_branch_ids or [-1]))
+    branches = list(db.scalars(branch_statement.order_by(Branch.name)))
     return {
         "business": serialize_business(db, business),
         "branches": [serialize_branch(item) for item in branches],
         "role": user.role,
+        "roles": sorted(effective_roles(db, user, resolved)),
     }
 
 
@@ -1377,10 +1553,27 @@ def list_branches(
     db: Session = Depends(get_db),
 ):
     resolved = scoped_business_id(user, business_id)
-    return [
-        serialize_branch(item)
-        for item in db.scalars(select(Branch).where(Branch.business_id == resolved).order_by(Branch.name))
-    ]
+    statement = select(Branch).where(Branch.business_id == resolved)
+    if not user.is_superadmin and user.branch_id is not None:
+        statement = statement.where(Branch.id == user.branch_id)
+    elif not user.is_superadmin:
+        staff_member = db.scalar(
+            select(StaffMember).where(
+                StaffMember.business_id == resolved,
+                StaffMember.auth_user_id == user.user_id,
+                StaffMember.active.is_(True),
+            )
+        )
+        if staff_member:
+            allowed_branch_ids = list(
+                db.scalars(
+                    select(StaffMemberBranch.branch_id).where(
+                        StaffMemberBranch.staff_member_id == staff_member.id
+                    )
+                )
+            )
+            statement = statement.where(Branch.id.in_(allowed_branch_ids or [-1]))
+    return [serialize_branch(item) for item in db.scalars(statement.order_by(Branch.name))]
 
 
 @api.post("/branches", status_code=201, tags=["branches"])
@@ -1394,8 +1587,17 @@ def create_branch_endpoint(
     branch = Branch(business_id=business_id, **payload.model_dump())
     db.add(branch)
     db.flush()
+    get_or_create_branch_settings(db, branch)
+    get_or_create_primary_schedule(db, branch)
     db.add(DiningArea(business_id=business_id, branch_id=branch.id, name="Salón principal"))
-    db.add(CashRegister(business_id=business_id, branch_id=branch.id, name="Caja principal"))
+    db.add(
+        CashRegister(
+            business_id=business_id,
+            branch_id=branch.id,
+            name="Caja principal",
+            is_default=True,
+        )
+    )
     audit(db, user, "branch.created", "branch", branch.id, business_id)
     db.commit()
     return serialize_branch(branch)
@@ -1586,6 +1788,7 @@ async def delete_supabase_auth_user(
 async def onboard_restaurant(
     payload: RestaurantOnboardingCreate,
     request: Request,
+    response: Response,
     user: AuthContext = Depends(require_roles("superadmin")),
     db: Session = Depends(get_db),
 ):
@@ -1595,27 +1798,38 @@ async def onboard_restaurant(
     business = Business(
         name=payload.business.name,
         slug=payload.business.slug,
-        plan=payload.business.plan,
+        plan=POS_PLAN,
     )
     db.add(business)
     supabase_user_id: str | None = None
     caller_authorization = request.headers.get("Authorization")
     try:
-        db.flush()
+        # A concurrent slug insert may wait for this transaction. Keep that wait
+        # off the event loop so the first request can finish its Auth call.
+        await run_in_threadpool(db.flush)
         for module in MODULES:
             db.add(
                 ModuleEntitlement(
                     business_id=business.id,
                     module=module,
-                    enabled=module in payload.business.modules,
+                    enabled=True,
                 )
             )
 
         branch = Branch(business_id=business.id, **payload.branch.model_dump())
         db.add(branch)
         db.flush()
+        get_or_create_branch_settings(db, branch)
+        get_or_create_primary_schedule(db, branch)
         db.add(DiningArea(business_id=business.id, branch_id=branch.id, name="Salón principal"))
-        db.add(CashRegister(business_id=business.id, branch_id=branch.id, name="Caja principal"))
+        db.add(
+            CashRegister(
+                business_id=business.id,
+                branch_id=branch.id,
+                name="Caja principal",
+                is_default=True,
+            )
+        )
 
         integration_token, prefix, token_hash = issue_integration_token()
         credential = IntegrationCredential(
@@ -1695,7 +1909,9 @@ async def onboard_restaurant(
     settings = get_settings()
     api_base_url = (settings.public_api_base_url or f"{str(request.base_url).rstrip('/')}/api/v1").rstrip("/")
     integration_base = f"{api_base_url}/integrations"
+    response.headers["Cache-Control"] = "no-store"
     return {
+        "integration": integration_package(api_base_url, business.id, branch.id, credential.scopes),
         "business": serialize_business(db, business),
         "branch": serialize_branch(branch),
         "owner_access": {
@@ -1746,10 +1962,49 @@ async def onboard_restaurant(
     }
 
 
+@api.get("/admin/branches/{branch_id}/integration", tags=["superadmin"])
+def get_branch_integration_package(
+    branch_id: int,
+    request: Request,
+    response: Response,
+    credential_id: int,
+    user: AuthContext = Depends(require_roles("superadmin")),
+    db: Session = Depends(get_db),
+):
+    branch = branch_for_user(db, user, branch_id)
+    credential = db.get(IntegrationCredential, credential_id)
+    if not credential or credential.branch_id != branch.id or credential.business_id != branch.business_id:
+        raise HTTPException(404, "Integration credential not found")
+    base = get_settings().public_api_base_url or f"{str(request.base_url).rstrip('/')}/api/v1"
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        "integration": integration_package(base, branch.business_id, branch.id, credential.scopes),
+        "credential": serialize_integration_credential(credential),
+    }
+
+
+@api.get("/admin/onboarding/restaurants/status", tags=["superadmin"])
+def restaurant_onboarding_status(
+    slug: str,
+    response: Response,
+    user: AuthContext = Depends(require_roles("superadmin")),
+    db: Session = Depends(get_db),
+):
+    response.headers["Cache-Control"] = "no-store"
+    business = db.scalar(select(Business).where(Business.slug == slug))
+    if not business:
+        return {"status": "not_found", "business": None}
+    owner = db.scalar(select(Membership.id).where(
+        Membership.business_id == business.id, Membership.role == "owner", Membership.active.is_(True),
+    ))
+    credential = db.scalar(select(IntegrationCredential.id).where(IntegrationCredential.business_id == business.id))
+    return {"status": "created" if owner and credential else "requires_review", "business": serialize_business(db, business)}
+
+
 @api.get("/admin/integration-credentials", tags=["admin"])
 def list_integration_credentials(
     branch_id: int,
-    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    user: AuthContext = Depends(require_roles("superadmin")),
     db: Session = Depends(get_db),
 ):
     branch_for_user(db, user, branch_id)
@@ -1764,7 +2019,8 @@ def list_integration_credentials(
 @api.post("/admin/integration-credentials", status_code=201, tags=["admin"])
 def create_integration_credential(
     payload: IntegrationCredentialCreate,
-    user: AuthContext = Depends(require_roles("superadmin", "owner")),
+    response: Response,
+    user: AuthContext = Depends(require_roles("superadmin")),
     db: Session = Depends(get_db),
 ):
     branch = branch_for_user(db, user, payload.branch_id)
@@ -1791,13 +2047,15 @@ def create_integration_credential(
         {"branch_id": branch.id, "scopes": payload.scopes},
     )
     db.commit()
+    response.headers["Cache-Control"] = "no-store"
     return {**serialize_integration_credential(credential), "token": token}
 
 
 @api.post("/admin/integration-credentials/{credential_id}/rotate", tags=["admin"])
 def rotate_integration_credential(
     credential_id: int,
-    user: AuthContext = Depends(require_roles("superadmin", "owner")),
+    response: Response,
+    user: AuthContext = Depends(require_roles("superadmin")),
     db: Session = Depends(get_db),
 ):
     credential = db.get(IntegrationCredential, credential_id)
@@ -1818,13 +2076,14 @@ def rotate_integration_credential(
         credential.business_id,
     )
     db.commit()
+    response.headers["Cache-Control"] = "no-store"
     return {**serialize_integration_credential(credential), "token": token}
 
 
 @api.post("/admin/integration-credentials/{credential_id}/revoke", tags=["admin"])
 def revoke_integration_credential(
     credential_id: int,
-    user: AuthContext = Depends(require_roles("superadmin", "owner")),
+    user: AuthContext = Depends(require_roles("superadmin")),
     db: Session = Depends(get_db),
 ):
     credential = db.get(IntegrationCredential, credential_id)
@@ -1852,13 +2111,14 @@ async def upload_branch_yape_qr(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
     db: Session = Depends(get_db),
 ):
-    branch = branch_for_user(db, user, branch_id)
+    branch = writable_agent(db, user, branch_id)
     content_type = file.content_type or "application/octet-stream"
     if not content_type.startswith("image/"):
         raise HTTPException(status_code=422, detail="Yape QR must be an image")
     data = await file.read()
     if not data or len(data) > 5 * 1024 * 1024:
         raise HTTPException(status_code=422, detail="Yape QR image must be between 1 byte and 5 MB")
+    old_path = branch.yape_qr_storage_path
     branch.yape_qr_storage_path = await store_private_file(
         data,
         file.filename or "yape-qr.png",
@@ -1866,7 +2126,15 @@ async def upload_branch_yape_qr(
         "branch-payment-qr",
     )
     audit(db, user, "branch.yape_qr_updated", "branch", branch.id, branch.business_id)
-    db.commit()
+    branch.version += 1
+    new_path = branch.yape_qr_storage_path
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        await cleanup_unreferenced(db, new_path)
+        raise
+    await cleanup_unreferenced(db, old_path)
     return serialize_branch(branch)
 
 
@@ -1877,13 +2145,14 @@ async def upload_branch_menu_card(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
     db: Session = Depends(get_db),
 ):
-    branch = branch_for_user(db, user, branch_id)
+    branch = writable_agent(db, user, branch_id)
     content_type = file.content_type or "application/octet-stream"
     if not content_type.startswith("image/"):
         raise HTTPException(status_code=422, detail="La carta debe ser una imagen")
     data = await file.read()
     if not data or len(data) > 10 * 1024 * 1024:
         raise HTTPException(status_code=422, detail="La imagen de la carta debe pesar entre 1 byte y 10 MB")
+    old_path = branch.menu_card_storage_path
     branch.menu_card_storage_path = await store_private_file(
         data,
         file.filename or "carta.png",
@@ -1891,7 +2160,16 @@ async def upload_branch_menu_card(
         "branch-menu-card",
     )
     audit(db, user, "branch.menu_card_updated", "branch", branch.id, branch.business_id)
-    db.commit()
+    set_menu_images(branch, menu_images(branch))
+    branch.version += 1
+    new_path = branch.menu_card_storage_path
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        await cleanup_unreferenced(db, new_path)
+        raise
+    await cleanup_unreferenced(db, old_path)
     return serialize_branch(branch)
 
 
@@ -2301,8 +2579,11 @@ def update_product(
         category = db.get(Category, changes["category_id"])
         if not category or category.branch_id != product.branch_id:
             raise HTTPException(status_code=422, detail="Category does not belong to branch")
+    availability_changed = "available" in changes and changes["available"] != product.available
     for key, value in changes.items():
         setattr(product, key, value)
+    if availability_changed:
+        set_product_availability(db, product, product.available)
     audit(db, user, "product.updated", "product", product.id, product.business_id)
     db.commit()
     return {
@@ -2388,7 +2669,7 @@ def create_product_variant(
     )
     if duplicate:
         raise HTTPException(status_code=409, detail="A variant with that name already exists")
-    variant = ProductVariant(product_id=product.id, **payload.model_dump())
+    variant = ProductVariant(product_id=product.id, available=product.available, **payload.model_dump())
     db.add(variant)
     db.flush()
     audit(db, user, "product.variant_created", "product_variant", variant.id, product.business_id)
@@ -2398,6 +2679,7 @@ def create_product_variant(
         "name": variant.name,
         "price_delta": float(variant.price_delta),
         "active": variant.active,
+        "available": variant.available,
     }
 
 
@@ -2428,6 +2710,7 @@ def update_product_variant(
             raise HTTPException(status_code=409, detail="A variant with that name already exists")
     for key, value in changes.items():
         setattr(variant, key, value)
+    sync_variant_availability(db, product)
     audit(db, user, "product.variant_updated", "product_variant", variant.id, product.business_id)
     db.commit()
     return {
@@ -2435,6 +2718,7 @@ def update_product_variant(
         "name": variant.name,
         "price_delta": float(variant.price_delta),
         "active": variant.active,
+        "available": variant.available,
     }
 
 
@@ -2452,6 +2736,7 @@ def archive_product_variant(
         raise HTTPException(status_code=404, detail="Product not found")
     branch_for_user(db, user, product.branch_id)
     variant.active = False
+    sync_variant_availability(db, product)
     audit(db, user, "product.variant_archived", "product_variant", variant.id, product.business_id)
     db.commit()
     return Response(status_code=204)
@@ -2482,6 +2767,7 @@ def _serialize_modifier_group(db: Session, group: ModifierGroup) -> dict:
                 "name": modifier.name,
                 "price_delta": float(modifier.price_delta),
                 "active": modifier.active,
+                "available": modifier.available,
                 "sort_order": modifier.sort_order,
             }
             for modifier in modifiers
@@ -2717,8 +3003,40 @@ def delete_modifier_group(
         raise HTTPException(status_code=404, detail="Modifier group not found")
     branch_for_user(db, user, group.branch_id)
     business_id = group.business_id
+    affected_products = list(
+        db.execute(
+            select(Product.id, Product.name)
+            .join(ProductModifierGroup, ProductModifierGroup.product_id == Product.id)
+            .where(ProductModifierGroup.group_id == group.id)
+            .order_by(Product.name, Product.id)
+        ).all()
+    )
+    modifier_ids = list(
+        db.scalars(
+            select(Modifier.id)
+            .where(Modifier.group_id == group.id)
+            .order_by(Modifier.sort_order, Modifier.id)
+        )
+    )
     db.delete(group)
-    audit(db, user, "modifier_group.deleted", "modifier_group", group_id, business_id)
+    audit(
+        db,
+        user,
+        "modifier_group.deleted",
+        "modifier_group",
+        group_id,
+        business_id,
+        {
+            "name": group.name,
+            "detached_product_count": len(affected_products),
+            "detached_products": [
+                {"id": product_id, "name": product_name}
+                for product_id, product_name in affected_products
+            ],
+            "deleted_modifier_ids": modifier_ids,
+        },
+        branch_id=group.branch_id,
+    )
     db.commit()
     return Response(status_code=204)
 
@@ -2867,7 +3185,7 @@ async def update_product_availability(
             "CATALOG_RESOURCE_NOT_FOUND",
         )
     previous = product.available
-    product.available = payload.available
+    set_product_availability(db, product, payload.available)
     result = {
         "id": product.id,
         "branch_id": product.branch_id,
@@ -2887,6 +3205,57 @@ async def update_product_availability(
         )
     db.commit()
     await hub.broadcast(product.branch_id, "catalog.availability_updated", result)
+    return result
+
+
+@api.patch("/catalog/variants/{variant_id}/availability", tags=["catalog"])
+async def update_variant_availability(
+    variant_id: int,
+    payload: ProductAvailabilityUpdate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier", "kitchen")),
+    db: Session = Depends(get_db),
+):
+    variant = db.get(ProductVariant, variant_id)
+    product = db.get(Product, variant.product_id) if variant else None
+    if not variant or not variant.active or not product:
+        raise HTTPException(404, "No encontramos esa variante")
+    branch_for_user(db, user, product.branch_id)
+    # Serialize updates of sibling variants on the parent row.
+    db.scalar(select(Product).where(Product.id == product.id).with_for_update())
+    previous = variant.available
+    variant.available = payload.available
+    sync_variant_availability(db, product)
+    result = {"id": variant.id, "kind": "variant", "branch_id": product.branch_id,
+              "product_id": product.id, "available": variant.available, "product_available": product.available}
+    if previous != variant.available:
+        audit(db, user, "variant.availability_changed", "product_variant", variant.id, product.business_id,
+              {"previous": previous, **result})
+    db.commit()
+    await hub.broadcast(product.branch_id, "catalog.availability_updated", result)
+    return result
+
+
+@api.patch("/catalog/modifiers/{modifier_id}/availability", tags=["catalog"])
+async def update_modifier_availability(
+    modifier_id: int,
+    payload: ProductAvailabilityUpdate,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier", "kitchen")),
+    db: Session = Depends(get_db),
+):
+    modifier = db.get(Modifier, modifier_id)
+    group = db.get(ModifierGroup, modifier.group_id) if modifier else None
+    if not modifier or not modifier.active or not group or group.branch_id is None:
+        raise HTTPException(404, "No encontramos esa opción")
+    branch_for_user(db, user, group.branch_id)
+    previous = modifier.available
+    modifier.available = payload.available
+    result = {"id": modifier.id, "kind": "modifier", "branch_id": group.branch_id,
+              "group_id": group.id, "available": modifier.available}
+    if previous != modifier.available:
+        audit(db, user, "modifier.availability_changed", "modifier", modifier.id, group.business_id,
+              {"previous": previous, **result})
+    db.commit()
+    await hub.broadcast(group.branch_id, "catalog.availability_updated", result)
     return result
 
 
@@ -3007,7 +3376,7 @@ async def import_catalog_csv(
         product.name = row["name"]
         product.description = row["description"]
         product.price = row["price"]
-        product.available = row["available"]
+        set_product_availability(db, product, row["available"])
         product.preparation_station = row["preparation_station"]
         product.track_stock = row["stock_quantity"] is not None
         db.flush()
@@ -3333,7 +3702,12 @@ def list_areas(
     branch_for_user(db, user, branch_id)
     return [
         serialize_area(item)
-        for item in db.scalars(select(DiningArea).where(DiningArea.branch_id == branch_id).order_by(DiningArea.sort_order))
+        for item in db.scalars(
+            select(DiningArea).where(
+                DiningArea.branch_id == branch_id,
+                DiningArea.archived_at.is_(None),
+            ).order_by(DiningArea.sort_order)
+        )
     ]
 
 
@@ -3428,6 +3802,33 @@ async def update_area(
     return result
 
 
+@api.delete("/areas/{area_id}", tags=["tables"])
+async def delete_area(
+    area_id: int,
+    payload: ArchiveRequest,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    key = (idempotency_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key header is required")
+    area = scoped_area_for_user(db, user, area_id, for_update=True)
+    if not area or area.archived_at is not None:
+        raise HTTPException(status_code=404, detail="Area not found")
+    scope = f"settings.area.{area.id}.archive"
+    if existing := get_idempotent_response(db, scope, key, area.business_id):
+        return existing
+    assert_version(area.version, payload.expected_version)
+    archive_area(db, area)
+    result = serialize_area(area)
+    audit(db, user, "area.archived", "dining_area", area.id, area.business_id)
+    save_idempotent_response(db, scope, key, area.business_id, result)
+    db.commit()
+    await hub.broadcast(area.branch_id, "area.archived", result)
+    return result
+
+
 @api.get("/tables", tags=["tables"])
 def list_tables(
     branch_id: int,
@@ -3443,6 +3844,7 @@ def list_tables(
             Order.branch_id == branch_id,
             Order.table_id.is_not(None),
             Order.status.not_in(["closed", "cancelled", "delivered"]),
+            Order.table_released_at.is_(None),
         )
         .order_by(Order.created_at.desc())
     )
@@ -3621,6 +4023,7 @@ def list_orders(
         statement = statement.where(
             or_(
                 Order.number.ilike(pattern),
+                Order.folio == parse_order_folio(search) if parse_order_folio(search) is not None else False,
                 Order.customer_name.ilike(pattern),
                 Order.customer_phone.ilike(pattern),
             )
@@ -3632,43 +4035,63 @@ def list_orders(
 def orders_workspace(
     branch_id: int,
     day: date | None = None,
+    period: Literal["day", "all"] = "day",
+    view: Literal["orders", "table_history"] = "orders",
     search: str | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
     user: AuthContext = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    scoped_branch_for_user(db, user, branch_id)
+    branch = scoped_branch_for_user(db, user, branch_id)
     local_day = day or datetime.now(ZoneInfo("America/Lima")).date()
     local_start = datetime.combine(local_day, time.min, tzinfo=ZoneInfo("America/Lima"))
     start_utc = local_start.astimezone(timezone.utc)
     end_utc = (local_start + timedelta(days=1)).astimezone(timezone.utc)
-    day_conditions = (
+    scope_conditions = [
+        Order.business_id == branch.business_id,
         Order.branch_id == branch_id,
-        Order.created_at >= start_utc,
-        Order.created_at < end_utc,
-    )
+    ]
+    if period == "day":
+        scope_conditions.extend([
+            Order.created_at >= start_utc,
+            Order.created_at < end_utc,
+        ])
+    if view == "table_history":
+        scope_conditions.extend([
+            Order.channel == "dine_in",
+            or_(
+                Order.table_id.is_not(None),
+                Order.table_released_at.is_not(None),
+            ),
+            or_(
+                Order.status.in_(FINAL_TABLE_ORDER_STATUSES),
+                Order.table_released_at.is_not(None),
+            ),
+        ])
     evidence_requires_review = (
         select(PaymentEvidence.id)
         .where(
             PaymentEvidence.order_id == Order.id,
+            PaymentEvidence.business_id == Order.business_id,
             PaymentEvidence.status.in_(ORDER_REVIEW_EVIDENCE_STATUSES),
         )
         .exists()
     )
     review_count = db.scalar(
         select(func.count(Order.id)).where(
-            *day_conditions,
+            *scope_conditions,
             or_(Order.status == "pending_confirmation", evidence_requires_review),
         )
     ) or 0
 
-    filters = list(day_conditions)
+    filters = list(scope_conditions)
     if search and search.strip():
         pattern = f"%{search.strip()}%"
         filters.append(
             or_(
                 Order.number.ilike(pattern),
+                Order.folio == parse_order_folio(search) if parse_order_folio(search) is not None else False,
                 Order.customer_name.ilike(pattern),
                 Order.customer_phone.ilike(pattern),
             )
@@ -3689,18 +4112,31 @@ def orders_workspace(
         db.scalars(
             select(PaymentEvidence.order_id).where(
                 PaymentEvidence.order_id.in_(order_ids),
+                PaymentEvidence.business_id == branch.business_id,
                 PaymentEvidence.status.in_(ORDER_REVIEW_EVIDENCE_STATUSES),
             )
         )
     ) if order_ids else set()
+    paid_amounts = dict(db.execute(
+        select(Payment.order_id, func.sum(Payment.amount))
+        .where(
+            Payment.order_id.in_(order_ids),
+            Payment.business_id == branch.business_id,
+            Payment.status == "confirmed",
+        )
+        .group_by(Payment.order_id)
+    ).all()) if order_ids else {}
     return {
         "day": local_day.isoformat(),
+        "period": period,
+        "view": view,
         "items": [
             serialize_order_summary(
                 order,
                 requires_review=(
                     order.status == "pending_confirmation" or order.id in evidence_order_ids
                 ),
+                paid_amount=paid_amounts.get(order.id, Decimal("0")),
             )
             for order in orders
         ],
@@ -3755,21 +4191,25 @@ def get_order_detail(
     payments = list(
         db.scalars(
             select(Payment)
-            .where(Payment.order_id == order.id)
+            .where(Payment.order_id == order.id, Payment.business_id == order.business_id)
             .order_by(Payment.received_at, Payment.id)
         )
     )
     evidence = list(
         db.scalars(
             select(PaymentEvidence)
-            .where(PaymentEvidence.order_id == order.id)
+            .where(PaymentEvidence.order_id == order.id, PaymentEvidence.business_id == order.business_id)
             .order_by(PaymentEvidence.created_at.desc(), PaymentEvidence.id.desc())
         )
     )
     tickets = list(
         db.scalars(
             select(KitchenTicket)
-            .where(KitchenTicket.order_id == order.id)
+            .where(
+                KitchenTicket.order_id == order.id,
+                KitchenTicket.business_id == order.business_id,
+                KitchenTicket.branch_id == order.branch_id,
+            )
             .order_by(KitchenTicket.fired_at, KitchenTicket.station, KitchenTicket.sequence)
         )
     )
@@ -3779,15 +4219,64 @@ def get_order_detail(
             Decimal("0"),
         )
     )
+    # A register rename must not change a receipt's historical identity.
+    payment_ids = {str(payment.id) for payment in payments}
+    register_names: dict[str, str] = {}
+    payment_audits = db.scalars(select(AuditEvent).where(
+        AuditEvent.business_id == order.business_id,
+        or_(AuditEvent.branch_id == order.branch_id, AuditEvent.branch_id.is_(None)),
+        AuditEvent.entity_type == "payment",
+        AuditEvent.entity_id.in_(payment_ids),
+        AuditEvent.action == "payment.created",
+    ).order_by(AuditEvent.created_at, AuditEvent.id)) if payment_ids else []
+    for event in payment_audits:
+        snapshot = event.payload or {}
+        name = snapshot.get("cash_register_name")
+        if snapshot.get("order_id") == order.id and isinstance(name, str) and name.strip():
+            register_names.setdefault(event.entity_id, name.strip())
+    # Match the stored table ID; a later catalogue rename must not rewrite history.
+    table_context = {"table_id": order.table_id, "table_name": None}
+    for ticket in sorted(tickets, key=lambda item: (item.fired_at, item.id), reverse=True):
+        context = ticket.context_snapshot or {}
+        if context.get("table_id") is not None and (
+            order.table_id is None or context["table_id"] == order.table_id
+        ):
+            table_context = {
+                "table_id": context["table_id"],
+                "table_name": context.get("table_name"),
+                **{key: context[key] for key in ("area_id", "area_name") if key in context},
+            }
+            break
+    checkout_context = checkout_receipt_context(db, order)
+    if checkout_context is not None:
+        table_context = {key: checkout_context.get(key) for key in ("table_id", "table_name", "area_id", "area_name")}
+    cancellation = db.scalar(
+        select(AuditEvent).where(
+            AuditEvent.business_id == order.business_id,
+            # Older audit records have no branch, but still identify this scoped order.
+            or_(AuditEvent.branch_id == order.branch_id, AuditEvent.branch_id.is_(None)),
+            AuditEvent.entity_type == "order",
+            AuditEvent.entity_id == str(order.id),
+            AuditEvent.action == "order.cancelled",
+        ).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()).limit(1)
+    ) if order.status == "cancelled" else None
+    cancellation_reason = (cancellation.payload or {}).get("reason") if cancellation else None
+    cancellation_reason = (cancellation_reason.strip() or None) if isinstance(cancellation_reason, str) else None
     return {
         "order": serialize_order(order),
-        "payments": [serialize_payment(payment) for payment in payments],
+        "table_context": table_context,
+        "cancellation_reason": cancellation_reason,
+        "payments": [
+            serialize_payment(payment, cash_register_name=register_names.get(str(payment.id)))
+            for payment in payments
+        ],
         "payment_summary": {
             "paid": float(paid_total),
             "remaining": float(max(money(order.total) - paid_total, Decimal("0"))),
         },
         "payment_evidence": [serialize_payment_evidence(item) for item in evidence],
-        "tickets": [serialize_ticket(ticket) for ticket in tickets],
+        "tickets": [serialize_ticket(ticket, order=order) for ticket in tickets],
+        "edit_policy": order_edit_policy(db, order),
     }
 
 
@@ -3795,16 +4284,38 @@ def get_order_detail(
 async def patch_order_endpoint(
     order_id: int,
     payload: OrderPatch,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier", "waiter")),
     db: Session = Depends(get_db),
 ):
-    order = load_order(db, order_id, for_update=True)
-    ensure_branch_scope(user, order.business_id, order.branch_id)
-    if order.status not in {"draft", "pending_confirmation", "confirmed"}:
+    order = scoped_order_for_user(db, user, order_id, for_update=True)
+    values = payload.model_dump(exclude_unset=True, exclude={"expected_version", "expected_total"})
+    protected_edit = payload.expected_total is not None or "channel" in values
+    if protected_edit:
+        if not idempotency_key or payload.expected_version is None or payload.expected_total is None:
+            raise HTTPException(status_code=422, detail="Idempotency-Key, expected_version y expected_total son obligatorios.")
+        scope = f"order-details-edit:{order.id}"
+        if existing := get_idempotent_response(db, scope, idempotency_key, order.business_id):
+            return existing
+        assert_version(order.version, payload.expected_version)
+        changes = edit_order_details(db, order, values, payload.expected_total)
+        order.version += 1
+        audit(db, user, "order.updated", "order", order.id, order.business_id, changes, branch_id=order.branch_id)
+        db.flush()
+        result = serialize_order(order)
+        save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
+        db.commit()
+        await hub.broadcast(order.branch_id, "order.updated", result)
+        return result
+    editable_statuses = {"draft", "pending_confirmation", "confirmed"}
+    table_transfer_statuses = {"sent_to_kitchen", "preparing", "ready"}
+    is_table_only_update = set(values) == {"table_id"}
+    if order.status not in editable_statuses and not (
+        order.status in table_transfer_statuses and is_table_only_update
+    ):
         raise HTTPException(status_code=409, detail="Order can no longer be edited")
     assert_version(order.version, payload.expected_version)
     ensure_no_open_payment_evidence(db, order, "editing the order")
-    values = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
     audit_values = dict(values)
     changed_tables = (
         apply_order_table_assignment(db, order, values.pop("table_id"))
@@ -3866,7 +4377,7 @@ async def add_order_item_batch_endpoint(
     db.flush()
     result = {
         "order": serialize_order(order),
-        "tickets": [serialize_ticket(ticket) for ticket in tickets],
+        "tickets": [serialize_ticket(ticket, order=order) for ticket in tickets],
         "appended_item_ids": [item.id for item in new_items],
     }
     save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
@@ -3881,6 +4392,54 @@ async def add_order_item_batch_endpoint(
     return result
 
 
+@api.post("/orders/{order_id}/item-revisions", status_code=201, tags=["orders"])
+async def revise_order_items_endpoint(
+    order_id: int,
+    payload: OrderItemRevision,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: AuthContext = Depends(
+        require_roles("superadmin", "owner", "manager", "cashier", "waiter")
+    ),
+    db: Session = Depends(get_db),
+):
+    if not idempotency_key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key is required")
+    order = scoped_order_for_user(db, user, order_id, for_update=True)
+    scope = f"order-item-revision:{order.id}"
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
+    if existing:
+        return existing
+    assert_version(order.version, payload.expected_version)
+    previous_ticket_ids = set(db.scalars(select(KitchenTicket.id).where(KitchenTicket.order_id == order.id)))
+    replacements, cancellations, tickets = apply_order_item_revisions(
+        db,
+        user,
+        order,
+        payload.operations,
+    )
+    db.flush()
+    result = {
+        "order": serialize_order(order),
+        "tickets": [serialize_ticket(ticket, order=order) for ticket in tickets],
+        "replacement_item_ids": [item.id for item in replacements],
+        "cancelled_item_ids": [item.id for item in cancellations],
+        "created_ticket_ids": [ticket.id for ticket in tickets if ticket.id not in previous_ticket_ids],
+        "updated_ticket_ids": [ticket.id for ticket in tickets if ticket.id in previous_ticket_ids],
+    }
+    save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
+    db.commit()
+    result = {
+        **result,
+        "order": serialize_order(scoped_order_for_user(db, user, order.id)),
+    }
+    await hub.broadcast(order.branch_id, "order.updated", result["order"])
+    if result["updated_ticket_ids"]:
+        await hub.broadcast(order.branch_id, "kitchen.ticket_updated", result)
+    if result["created_ticket_ids"]:
+        await hub.broadcast(order.branch_id, "kitchen.ticket_created", result)
+    return result
+
+
 @api.delete("/orders/{order_id}/items/{item_id}", tags=["orders"])
 async def remove_order_item_endpoint(
     order_id: int,
@@ -3889,7 +4448,7 @@ async def remove_order_item_endpoint(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier", "waiter")),
     db: Session = Depends(get_db),
 ):
-    order = load_order(db, order_id, for_update=True)
+    order = scoped_order_for_user(db, user, order_id, for_update=True)
     ensure_branch_scope(user, order.business_id, order.branch_id)
     assert_version(order.version, expected_version)
     if order.status not in {"draft", "pending_confirmation", "confirmed"}:
@@ -3898,6 +4457,8 @@ async def remove_order_item_endpoint(
     item = next((candidate for candidate in order.items if candidate.id == item_id), None)
     if not item:
         raise HTTPException(status_code=404, detail="Order item not found")
+    if not any(candidate.id != item_id for candidate in active_order_items(order)):
+        raise CodedHTTPException(409, 'Para cancelar todos los productos, usa "Cancelar pedido" en el men\u00fa de tres puntos.', "ORDER_REQUIRES_CANCELLATION")
     db.delete(item)
     order.items.remove(item)
     recalculate_order(db, order)
@@ -3956,7 +4517,7 @@ async def confirm_and_send_order_endpoint(
     db.flush()
     result = {
         "order": serialize_order(order),
-        "tickets": [serialize_ticket(ticket) for ticket in tickets],
+        "tickets": [serialize_ticket(ticket, order=order) for ticket in tickets],
     }
     save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
     db.commit()
@@ -3983,7 +4544,7 @@ async def send_to_kitchen_endpoint(
         return existing
     tickets = send_order_to_kitchen(db, user, order)
     db.flush()
-    result = {"order": serialize_order(order), "tickets": [serialize_ticket(ticket) for ticket in tickets]}
+    result = {"order": serialize_order(order), "tickets": [serialize_ticket(ticket, order=order) for ticket in tickets]}
     save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
     db.commit()
     await hub.broadcast(order.branch_id, "kitchen.ticket_created", result)
@@ -4001,7 +4562,7 @@ async def transition_order_endpoint(
     ensure_branch_scope(user, order.business_id, order.branch_id)
     assert_version(order.version, payload.expected_version)
     previous_status = order.status
-    transition_order(db, user, order, payload.status)
+    transition_order(db, user, order, payload.status, reason=payload.reason)
     if order.status != previous_status and order.status in {"ready", "dispatched", "delivered", "cancelled"}:
         create_integration_event(
             db,
@@ -4036,6 +4597,7 @@ async def create_payment_endpoint(
         "payment": {
             "id": payment.id,
             "order_id": payment.order_id,
+            "cash_session_id": payment.cash_session_id,
             "method": payment.method,
             "amount": float(payment.amount),
             "status": payment.status,
@@ -4045,6 +4607,98 @@ async def create_payment_endpoint(
     save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
     db.commit()
     await hub.broadcast(order.branch_id, "payment.created", result)
+    return result
+
+
+@api.post("/orders/{order_id}/table-checkout/start", tags=["tables"])
+async def start_table_checkout_endpoint(
+    order_id: int,
+    payload: OrderCommand,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: AuthContext = Depends(
+        require_roles("superadmin", "owner", "manager", "cashier", "waiter")
+    ),
+    db: Session = Depends(get_db),
+):
+    if not idempotency_key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key is required")
+    order = scoped_order_for_user(db, user, order_id, for_update=True)
+    scope = f"table-checkout-start:{order.id}"
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
+    if existing:
+        return existing
+    assert_version(order.version, payload.expected_version)
+    start_table_checkout(db, user, order)
+    db.flush()
+    result = {"order": serialize_order(order)}
+    save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
+    db.commit()
+    result = {"order": serialize_order(scoped_order_for_user(db, user, order.id))}
+    await hub.broadcast(order.branch_id, "order.updated", result["order"])
+    return result
+
+
+@api.post("/orders/{order_id}/table-checkout/reopen", tags=["tables"])
+async def reopen_table_checkout_endpoint(
+    order_id: int,
+    payload: OrderCommand,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: AuthContext = Depends(
+        require_roles("superadmin", "owner", "manager", "cashier", "waiter")
+    ),
+    db: Session = Depends(get_db),
+):
+    if not idempotency_key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key is required")
+    order = scoped_order_for_user(db, user, order_id, for_update=True)
+    scope = f"table-checkout-reopen:{order.id}"
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
+    if existing:
+        return existing
+    assert_version(order.version, payload.expected_version)
+    reopen_table_checkout(db, user, order)
+    db.flush()
+    result = {"order": serialize_order(order)}
+    save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
+    db.commit()
+    result = {"order": serialize_order(scoped_order_for_user(db, user, order.id))}
+    await hub.broadcast(order.branch_id, "order.updated", result["order"])
+    return result
+
+
+@api.post("/orders/{order_id}/table-checkout/pay", tags=["tables", "payments"])
+async def pay_table_checkout_endpoint(
+    order_id: int,
+    payload: TableCheckoutPayment,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: AuthContext = Depends(
+        require_roles("superadmin", "owner", "manager", "cashier")
+    ),
+    db: Session = Depends(get_db),
+):
+    if not idempotency_key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key is required")
+    order = scoped_order_for_user(db, user, order_id, for_update=True)
+    scope = f"table-checkout-pay:{order.id}"
+    existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
+    if existing:
+        return existing
+    assert_version(order.version, payload.expected_version)
+    payments = pay_table_checkout(db, user, order, payload.payments)
+    db.flush()
+    table = db.get(RestaurantTable, order.table_id) if order.table_id else None
+    result = {
+        "order": serialize_order(order),
+        "payments": [serialize_payment(payment) for payment in payments],
+        "table": serialize_table(table) if table else None,
+    }
+    save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
+    db.commit()
+    result["order"] = serialize_order(scoped_order_for_user(db, user, order.id))
+    await hub.broadcast(order.branch_id, "payment.created", result)
+    await hub.broadcast(order.branch_id, "order.updated", result["order"])
+    if result["table"]:
+        await hub.broadcast(order.branch_id, "table.updated", result["table"])
     return result
 
 
@@ -4064,6 +4718,187 @@ def split_order_preview(
     return {"remaining": float(remaining), "parts": [float(value) for value in split_amounts(remaining, payload.parts)]}
 
 
+@api.get("/kitchen/commands", tags=["kitchen"])
+def list_kitchen_commands(
+    branch_id: int,
+    view: str = Query(default="active", pattern="^(active|history)$"),
+    local_date: date | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=12, ge=1, le=100),
+    user: AuthContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    branch = branch_for_user(db, user, branch_id)
+    base_filters = (
+        KitchenTicket.business_id == branch.business_id,
+        KitchenTicket.branch_id == branch.id,
+    )
+    status_filter = (
+        KitchenTicket.status.in_(["queued", "preparing"])
+        if view == "active"
+        else KitchenTicket.status.in_(["ready", "served"])
+    )
+    filters = [*base_filters, status_filter]
+    if view == "history":
+        lima = ZoneInfo("America/Lima")
+        selected_date = local_date or datetime.now(lima).date()
+        start_at = datetime.combine(selected_date, time.min, tzinfo=lima).astimezone(timezone.utc)
+        end_at = start_at + timedelta(days=1)
+        filters.extend(
+            [
+                KitchenTicket.ready_at.is_not(None),
+                KitchenTicket.ready_at >= start_at,
+                KitchenTicket.ready_at < end_at,
+            ]
+        )
+
+    total = db.scalar(
+        select(func.count(KitchenTicket.id)).where(*filters)
+    ) or 0
+    active_count = db.scalar(
+        select(func.count(KitchenTicket.id)).where(
+            *base_filters,
+            KitchenTicket.status.in_(["queued", "preparing"]),
+        )
+    ) or 0
+    order_by = (
+        (KitchenTicket.fired_at.asc(), KitchenTicket.id.asc())
+        if view == "active"
+        else (KitchenTicket.ready_at.desc(), KitchenTicket.id.desc())
+    )
+    statement = (
+        select(KitchenTicket, Order, RestaurantTable.name.label("table_name"))
+        .join(
+            Order,
+            and_(
+                Order.id == KitchenTicket.order_id,
+                Order.business_id == KitchenTicket.business_id,
+                Order.branch_id == KitchenTicket.branch_id,
+            ),
+        )
+        .outerjoin(
+            RestaurantTable,
+            and_(
+                RestaurantTable.id == Order.table_id,
+                RestaurantTable.business_id == KitchenTicket.business_id,
+                RestaurantTable.branch_id == KitchenTicket.branch_id,
+            ),
+        )
+        .where(*filters)
+        .order_by(*order_by)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    rows = db.execute(statement).all()
+    actors = {(ticket.context_snapshot or {}).get("created_by") or order.created_by for ticket, order, _ in rows}
+    names = kitchen_author_names(db, branch.business_id, branch.id, actors - {None})
+    items = [
+        serialize_ticket(ticket, order=order, table_name=table_name,
+                         created_by_name=names.get((ticket.context_snapshot or {}).get("created_by") or order.created_by))
+        for ticket, order, table_name in rows
+    ]
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "active_count": active_count,
+        "view": view,
+    }
+
+
+def _kitchen_command_statement(user: AuthContext, command_id: int):
+    statement = select(KitchenTicket).where(KitchenTicket.id == command_id)
+    if not user.is_superadmin:
+        statement = statement.where(KitchenTicket.business_id == user.business_id)
+        if user.branch_id is not None:
+            statement = statement.where(KitchenTicket.branch_id == user.branch_id)
+    return statement
+
+
+def serialize_scoped_command(db: Session, ticket: KitchenTicket, order: Order) -> dict:
+    actor = (ticket.context_snapshot or {}).get("created_by") or order.created_by
+    names = kitchen_author_names(db, ticket.business_id, ticket.branch_id, {actor} if actor else set())
+    return serialize_ticket(ticket, order=order, created_by_name=names.get(actor))
+
+
+@api.post("/kitchen/commands/{command_id}/complete", tags=["kitchen"])
+async def complete_kitchen_command_endpoint(
+    command_id: int,
+    payload: KitchenCommandAction,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: AuthContext = Depends(
+        require_roles("superadmin", "owner", "manager", "kitchen")
+    ),
+    db: Session = Depends(get_db),
+):
+    if not idempotency_key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key is required")
+    statement = _kitchen_command_statement(user, command_id)
+    candidate = db.scalar(statement)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Kitchen command not found")
+    scope = f"kitchen-command-complete:{candidate.id}"
+    existing = get_idempotent_response(db, scope, idempotency_key, candidate.business_id)
+    if existing:
+        return existing
+    order = scoped_order_for_user(db, user, candidate.order_id, for_update=True)
+    ticket = db.scalar(statement.with_for_update().execution_options(populate_existing=True))
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Kitchen command not found")
+    previous_order_status = order.status
+    complete_kitchen_command(db, user, order, ticket, payload.expected_status, payload.expected_version)
+    if previous_order_status != "ready" and order.status in {"ready", "closed"}:
+        create_integration_event(db, order, "order.ready", {"status": "ready"})
+    db.flush()
+    result = {
+        "command": serialize_scoped_command(db, ticket, order),
+        "order": serialize_order(order),
+    }
+    save_idempotent_response(db, scope, idempotency_key, ticket.business_id, result)
+    db.commit()
+    await hub.broadcast(ticket.branch_id, "kitchen.ticket_updated", result)
+    await hub.broadcast(ticket.branch_id, "order.updated", result["order"])
+    return result
+
+
+@api.post("/kitchen/commands/{command_id}/reopen", tags=["kitchen"])
+async def reopen_kitchen_command_endpoint(
+    command_id: int,
+    payload: KitchenCommandAction,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: AuthContext = Depends(
+        require_roles("superadmin", "owner", "manager", "kitchen")
+    ),
+    db: Session = Depends(get_db),
+):
+    if not idempotency_key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key is required")
+    statement = _kitchen_command_statement(user, command_id)
+    candidate = db.scalar(statement)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Kitchen command not found")
+    scope = f"kitchen-command-reopen:{candidate.id}"
+    existing = get_idempotent_response(db, scope, idempotency_key, candidate.business_id)
+    if existing:
+        return existing
+    order = scoped_order_for_user(db, user, candidate.order_id, for_update=True)
+    ticket = db.scalar(statement.with_for_update().execution_options(populate_existing=True))
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Kitchen command not found")
+    reopen_kitchen_command(db, user, order, ticket, payload.expected_status, payload.expected_version)
+    db.flush()
+    result = {
+        "command": serialize_scoped_command(db, ticket, order),
+        "order": serialize_order(order),
+    }
+    save_idempotent_response(db, scope, idempotency_key, ticket.business_id, result)
+    db.commit()
+    await hub.broadcast(ticket.branch_id, "kitchen.ticket_updated", result)
+    await hub.broadcast(ticket.branch_id, "order.updated", result["order"])
+    return result
+
+
 @api.get("/kitchen/tickets", tags=["kitchen"])
 def list_kitchen_tickets(
     branch_id: int,
@@ -4072,15 +4907,41 @@ def list_kitchen_tickets(
     user: AuthContext = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    branch_for_user(db, user, branch_id)
-    statement = select(KitchenTicket).where(KitchenTicket.branch_id == branch_id).order_by(KitchenTicket.fired_at.asc())
+    branch = branch_for_user(db, user, branch_id)
+    statement = (
+        select(KitchenTicket, Order, RestaurantTable.name.label("table_name"))
+        .outerjoin(
+            Order,
+            and_(
+                Order.id == KitchenTicket.order_id,
+                Order.business_id == KitchenTicket.business_id,
+                Order.branch_id == KitchenTicket.branch_id,
+            ),
+        )
+        .outerjoin(
+            RestaurantTable,
+            and_(
+                RestaurantTable.id == Order.table_id,
+                RestaurantTable.business_id == KitchenTicket.business_id,
+                RestaurantTable.branch_id == KitchenTicket.branch_id,
+            ),
+        )
+        .where(
+            KitchenTicket.business_id == branch.business_id,
+            KitchenTicket.branch_id == branch.id,
+        )
+        .order_by(KitchenTicket.fired_at.asc())
+    )
     if status:
         statement = statement.where(KitchenTicket.status == status)
     else:
         statement = statement.where(KitchenTicket.status.in_(["queued", "preparing", "ready"]))
     if station:
         statement = statement.where(KitchenTicket.station == station)
-    return [serialize_ticket(item) for item in db.scalars(statement)]
+    return [
+        serialize_ticket(ticket, order=order, table_name=table_name)
+        for ticket, order, table_name in db.execute(statement).all()
+    ]
 
 
 @api.post("/kitchen/tickets/{ticket_id}/transition", tags=["kitchen"])
@@ -4095,15 +4956,26 @@ async def transition_ticket(
         statement = statement.where(KitchenTicket.business_id == user.business_id)
         if user.branch_id is not None:
             statement = statement.where(KitchenTicket.branch_id == user.branch_id)
-    ticket = db.scalar(statement.with_for_update())
+    ticket = db.scalar(statement)
     if not ticket:
         raise HTTPException(status_code=404, detail="Kitchen ticket not found")
+    order = scoped_order_for_user(db, user, ticket.order_id, for_update=True)
+    ticket = db.scalar(statement.with_for_update().execution_options(populate_existing=True))
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Kitchen ticket not found")
+    if order.status == "cancelled":
+        raise CodedHTTPException(
+            409,
+            "Kitchen tickets cannot change after the order is cancelled",
+            "ORDER_CANCELLED",
+        )
     if payload.expected_status != ticket.status:
         raise CodedHTTPException(
             409,
             "Kitchen ticket changed on another terminal",
             "KITCHEN_TICKET_STALE",
         )
+    assert_command_version(ticket, payload.expected_version)
     allowed = {
         "queued": {"preparing", "cancelled"},
         "preparing": {"ready", "cancelled"},
@@ -4111,26 +4983,31 @@ async def transition_ticket(
     }
     if payload.status != ticket.status and payload.status not in allowed.get(ticket.status, set()):
         raise HTTPException(status_code=409, detail="Invalid kitchen transition")
+    if ticket.status != payload.status:
+        ticket.version += 1
     ticket.status = payload.status
     if payload.status == "preparing":
         ticket.started_at = utcnow()
     if payload.status == "ready":
         ticket.ready_at = utcnow()
-    order = load_order(db, ticket.order_id, for_update=True)
     sibling_statuses = list(
         db.scalars(select(KitchenTicket.status).where(KitchenTicket.order_id == order.id, KitchenTicket.id != ticket.id))
     ) + [payload.status]
     previous_order_status = order.status
     if sibling_statuses and all(value in {"ready", "served"} for value in sibling_statuses):
-        order.status = "ready"
+        if order.table_released_at is not None:
+            order.status = "closed"
+            order.closed_at = order.closed_at or utcnow()
+        else:
+            order.status = "ready"
     elif any(value == "preparing" for value in sibling_statuses):
         order.status = "preparing"
     order.version += 1
-    if previous_order_status != "ready" and order.status == "ready":
+    if previous_order_status != "ready" and order.status in {"ready", "closed"}:
         create_integration_event(db, order, "order.ready", {"status": "ready"})
     audit(db, user, f"kitchen.{payload.status}", "kitchen_ticket", ticket.id, ticket.business_id)
     db.commit()
-    result = serialize_ticket(ticket)
+    result = serialize_ticket(ticket, order=order)
     await hub.broadcast(ticket.branch_id, "kitchen.ticket_updated", result)
     return result
 
@@ -4138,7 +5015,9 @@ async def transition_ticket(
 @api.post("/kitchen/tickets/{ticket_id}/print", tags=["kitchen"])
 def register_ticket_print(
     ticket_id: int,
-    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "kitchen", "cashier")),
+    user: AuthContext = Depends(
+        require_roles("superadmin", "owner", "manager", "kitchen", "cashier", "waiter")
+    ),
     db: Session = Depends(get_db),
 ):
     ticket = db.get(KitchenTicket, ticket_id)
@@ -4147,7 +5026,7 @@ def register_ticket_print(
     branch_for_user(db, user, ticket.branch_id)
     ticket.print_count += 1
     db.commit()
-    return serialize_ticket(ticket)
+    return serialize_ticket(ticket, order=db.get(Order, ticket.order_id))
 
 
 @api.get("/cash/registers", tags=["cash"])
@@ -4158,8 +5037,14 @@ def list_registers(
 ):
     branch_for_user(db, user, branch_id)
     return [
-        {"id": item.id, "branch_id": item.branch_id, "name": item.name, "active": item.active}
-        for item in db.scalars(select(CashRegister).where(CashRegister.branch_id == branch_id))
+        serialize_cash_register(db, item)
+        for item in db.scalars(
+            select(CashRegister).where(
+                CashRegister.branch_id == branch_id,
+                CashRegister.active.is_(True),
+                CashRegister.archived_at.is_(None),
+            ).order_by(CashRegister.is_default.desc(), CashRegister.name, CashRegister.id)
+        )
     ]
 
 
@@ -4170,11 +5055,106 @@ def create_register(
     db: Session = Depends(get_db),
 ):
     branch = branch_for_user(db, user, payload.branch_id)
-    register = CashRegister(business_id=branch.business_id, **payload.model_dump())
+    active_count = db.scalar(
+        select(func.count(CashRegister.id)).where(
+            CashRegister.branch_id == branch.id,
+            CashRegister.active.is_(True),
+            CashRegister.archived_at.is_(None),
+        )
+    ) or 0
+    make_default = payload.is_default or active_count == 0
+    if make_default:
+        for existing in db.scalars(
+            select(CashRegister).where(
+                CashRegister.branch_id == branch.id,
+                CashRegister.is_default.is_(True),
+            ).with_for_update()
+        ):
+            existing.is_default = False
+            existing.version += 1
+        db.flush()
+    register = CashRegister(
+        business_id=branch.business_id,
+        branch_id=branch.id,
+        name=payload.name.strip(),
+        is_default=make_default,
+    )
     db.add(register)
     db.commit()
     db.refresh(register)
-    return {"id": register.id, "branch_id": register.branch_id, "name": register.name, "active": register.active}
+    return serialize_cash_register(db, register)
+
+
+@api.patch("/cash/registers/{register_id}", tags=["cash"])
+def update_register_settings(
+    register_id: int,
+    payload: RegisterSettingsUpdate,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    key = (idempotency_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key header is required")
+    candidate = scoped_cash_register(db, user, register_id)
+    register = db.scalar(
+        select(CashRegister).where(CashRegister.id == candidate.id).with_for_update()
+    )
+    scope = f"settings.cash_register.{register.id}.update"
+    if existing := get_idempotent_response(db, scope, key, register.business_id):
+        return existing
+    assert_version(register.version, payload.expected_version)
+    changes = payload.model_dump(exclude={"expected_version"}, exclude_none=True)
+    if "name" in changes:
+        changes["name"] = changes["name"].strip()
+    if changes.get("is_default"):
+        for item in db.scalars(
+            select(CashRegister).where(
+                CashRegister.branch_id == register.branch_id,
+                CashRegister.id != register.id,
+                CashRegister.is_default.is_(True),
+            ).with_for_update()
+        ):
+            item.is_default = False
+            item.version += 1
+        db.flush()
+    elif changes.get("is_default") is False and register.is_default:
+        raise HTTPException(status_code=409, detail="Select another default cash register first")
+    for field, value in changes.items():
+        setattr(register, field, value)
+    register.version += 1
+    result = serialize_cash_register(db, register)
+    audit(db, user, "cash_register.updated", "cash_register", register.id, register.business_id, changes)
+    save_idempotent_response(db, scope, key, register.business_id, result)
+    db.commit()
+    return result
+
+
+@api.delete("/cash/registers/{register_id}", tags=["cash"])
+def delete_register_settings(
+    register_id: int,
+    payload: ArchiveRequest,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    key = (idempotency_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key header is required")
+    candidate = scoped_cash_register(db, user, register_id)
+    register = db.scalar(
+        select(CashRegister).where(CashRegister.id == candidate.id).with_for_update()
+    )
+    scope = f"settings.cash_register.{register.id}.archive"
+    if existing := get_idempotent_response(db, scope, key, register.business_id):
+        return existing
+    assert_version(register.version, payload.expected_version)
+    archive_register(db, register)
+    result = serialize_cash_register(db, register)
+    audit(db, user, "cash_register.archived", "cash_register", register.id, register.business_id)
+    save_idempotent_response(db, scope, key, register.business_id, result)
+    db.commit()
+    return result
 
 
 @api.get("/cash/sessions", tags=["cash"])
@@ -4211,12 +5191,18 @@ def open_cash_session(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier")),
     db: Session = Depends(get_db),
 ):
-    register = db.get(CashRegister, payload.register_id)
-    if not register:
-        raise HTTPException(status_code=404, detail="Cash register not found")
-    branch = branch_for_user(db, user, register.branch_id)
+    candidate = scoped_cash_register(db, user, payload.register_id)
+    branch = branch_for_user(db, user, candidate.branch_id)
+    register = lock_cash_register(
+        db,
+        business_id=branch.business_id,
+        branch_id=branch.id,
+        register_id=candidate.id,
+    )
     existing = db.scalar(
-        select(CashSession).where(CashSession.register_id == register.id, CashSession.status == "open")
+        select(CashSession)
+        .where(CashSession.register_id == register.id, CashSession.status == "open")
+        .with_for_update()
     )
     if existing:
         raise HTTPException(status_code=409, detail="Cash register already has an open session")
@@ -4238,13 +5224,36 @@ def open_cash_session(
 def create_cash_movement(
     session_id: int,
     payload: CashMovementCreate,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier")),
     db: Session = Depends(get_db),
 ):
-    session = db.get(CashSession, session_id)
-    if not session or session.status != "open":
+    candidate = db.get(CashSession, session_id)
+    if not candidate:
         raise HTTPException(status_code=404, detail="Open cash session not found")
-    branch_for_user(db, user, session.branch_id)
+    branch_for_user(db, user, candidate.branch_id)
+    scope = f"cash-session-movement:{candidate.id}"
+    if existing := get_idempotent_response(db, scope, idempotency_key, candidate.business_id):
+        return existing
+    register = lock_cash_register(
+        db,
+        business_id=candidate.business_id,
+        branch_id=candidate.branch_id,
+        register_id=candidate.register_id,
+    )
+    if existing := get_idempotent_response(db, scope, idempotency_key, candidate.business_id):
+        return existing
+    session = db.scalar(
+        select(CashSession)
+        .where(
+            CashSession.id == session_id,
+            CashSession.register_id == register.id,
+            CashSession.status == "open",
+        )
+        .with_for_update()
+    )
+    if not session:
+        raise HTTPException(status_code=404, detail="Open cash session not found")
     movement = CashMovement(
         cash_session_id=session.id,
         movement_type=payload.movement_type,
@@ -4254,9 +5263,19 @@ def create_cash_movement(
         created_by=user.user_id,
     )
     db.add(movement)
-    audit(db, user, "cash.movement_created", "cash_session", session.id, session.business_id)
+    session.version += 1
+    db.flush()
+    audit(
+        db, user, "cash.movement_created", "cash_movement", movement.id, session.business_id,
+        cash_audit_snapshot(movement, session, register), branch_id=session.branch_id,
+        actor_display_name=actor_display_name(
+            db, user, business_id=session.business_id, branch_id=session.branch_id,
+        ),
+    )
+    result = {"id": movement.id, "expected_amount": float(cash_session_expected(db, session))}
+    save_idempotent_response(db, scope, idempotency_key, session.business_id, result)
     db.commit()
-    return {"id": movement.id, "expected_amount": float(cash_session_expected(db, session))}
+    return result
 
 
 @api.post("/cash/sessions/{session_id}/close", tags=["cash"])
@@ -4266,18 +5285,58 @@ def close_cash_session(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier")),
     db: Session = Depends(get_db),
 ):
-    session = db.scalar(select(CashSession).where(CashSession.id == session_id).with_for_update())
-    if not session or session.status != "open":
+    candidate = db.get(CashSession, session_id)
+    if not candidate:
         raise HTTPException(status_code=404, detail="Open cash session not found")
-    branch_for_user(db, user, session.branch_id)
-    expected = cash_session_expected(db, session)
+    branch_for_user(db, user, candidate.branch_id)
+    register = lock_cash_register(
+        db,
+        business_id=candidate.business_id,
+        branch_id=candidate.branch_id,
+        register_id=candidate.register_id,
+    )
+    session = db.scalar(
+        select(CashSession)
+        .where(
+            CashSession.id == session_id,
+            CashSession.register_id == register.id,
+            CashSession.status == "open",
+        )
+        .with_for_update()
+    )
+    if not session:
+        raise HTTPException(status_code=404, detail="Open cash session not found")
+    reconciliation = cash_reconciliation(db, session)
+    expected = reconciliation["cash_expected"]
     session.expected_amount = expected
     session.declared_amount = money(payload.declared_amount)
     session.difference = money(session.declared_amount - expected)
+    session.card_expected_amount = reconciliation["card_expected"]
+    session.transfer_expected_amount = reconciliation["transfer_expected"]
+    session.total_expected_amount = money(
+        expected
+        + session.card_expected_amount
+        + session.transfer_expected_amount
+    )
+    session.total_difference = session.difference
+    session.result = (
+        "balanced"
+        if session.difference == 0
+        else "surplus"
+        if session.difference > 0
+        else "shortage"
+    )
     session.status = "closed"
     session.closed_at = utcnow()
     session.closed_by = user.user_id
+    session.actor_display_name = actor_display_name(
+        db,
+        user,
+        business_id=session.business_id,
+        branch_id=session.branch_id,
+    )
     session.close_notes = payload.notes
+    session.version += 1
     audit(db, user, "cash.closed", "cash_session", session.id, session.business_id, {"difference": float(session.difference)})
     db.commit()
     return {
@@ -4287,6 +5346,393 @@ def close_cash_session(
         "declared_amount": float(session.declared_amount),
         "difference": float(session.difference),
     }
+
+
+@api.get("/cash/registers/{register_id}/cut-preview", tags=["cash"])
+def preview_cash_cut(
+    register_id: int,
+    user: AuthContext = Depends(
+        require_roles("superadmin", "owner", "manager", "cashier")
+    ),
+    db: Session = Depends(get_db),
+):
+    register = scoped_cash_register(db, user, register_id)
+    branch_for_user(db, user, register.branch_id)
+    return cut_preview(db, register)
+
+
+@api.post("/cash/registers/{register_id}/cuts", status_code=201, tags=["cash"])
+def create_cash_cut(
+    register_id: int,
+    payload: CashCutCreate,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: AuthContext = Depends(
+        require_roles("superadmin", "owner", "manager", "cashier")
+    ),
+    db: Session = Depends(get_db),
+):
+    if not idempotency_key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key is required")
+    candidate = scoped_cash_register(db, user, register_id)
+    branch_for_user(db, user, candidate.branch_id)
+    scope = f"cash-cut:{candidate.id}"
+    existing = get_idempotent_response(
+        db,
+        scope,
+        idempotency_key,
+        candidate.business_id,
+    )
+    if existing:
+        return existing
+
+    register = lock_cash_register(
+        db,
+        business_id=candidate.business_id,
+        branch_id=candidate.branch_id,
+        register_id=candidate.id,
+    )
+    existing = get_idempotent_response(
+        db,
+        scope,
+        idempotency_key,
+        register.business_id,
+    )
+    if existing:
+        return existing
+
+    session, next_session = close_cash_cut(db, user, register, payload)
+    result = {
+        **cash_cut_detail(db, session, register),
+        "next_period": {
+            "id": next_session.id,
+            "version": next_session.version,
+            "opening_amount": float(next_session.opening_amount),
+            "opened_at": next_session.opened_at,
+        },
+    }
+    audit(
+        db,
+        user,
+        "cash.cut_created",
+        "cash_session",
+        session.id,
+        session.business_id,
+        {
+            "register_id": register.id,
+            "result": session.result,
+            "total_difference": float(session.total_difference or 0),
+            "pending_order_count": len(session.pending_orders_snapshot or []),
+            "pending_orders_ignored": session.pending_orders_ignored,
+            "next_session_id": next_session.id,
+        },
+    )
+    save_idempotent_response(
+        db,
+        scope,
+        idempotency_key,
+        session.business_id,
+        result,
+    )
+    db.commit()
+    return result
+
+
+@api.get("/cash/cuts", tags=["cash"])
+def list_cash_cuts(
+    branch_id: int,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    register_id: int | None = None,
+    result: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    user: AuthContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    branch = branch_for_user(db, user, branch_id)
+    if result is not None and result not in {"balanced", "surplus", "shortage"}:
+        raise HTTPException(status_code=422, detail="Invalid cash cut result filter")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from must not be after date_to")
+    if register_id is not None:
+        register = scoped_cash_register(db, user, register_id)
+        if register.branch_id != branch.id:
+            raise CodedHTTPException(
+                404,
+                "Cash register not found for this branch",
+                "CASH_REGISTER_NOT_FOUND",
+            )
+
+    statement = (
+        select(CashSession, CashRegister)
+        .join(CashRegister, CashRegister.id == CashSession.register_id)
+        .where(
+            CashSession.business_id == branch.business_id,
+            CashSession.branch_id == branch.id,
+            CashSession.status == "closed",
+        )
+    )
+    lima = ZoneInfo("America/Lima")
+    if date_from:
+        start = datetime.combine(date_from, time.min, tzinfo=lima).astimezone(timezone.utc)
+        statement = statement.where(CashSession.closed_at >= start)
+    if date_to:
+        end = datetime.combine(
+            date_to + timedelta(days=1),
+            time.min,
+            tzinfo=lima,
+        ).astimezone(timezone.utc)
+        statement = statement.where(CashSession.closed_at < end)
+    if register_id is not None:
+        statement = statement.where(CashSession.register_id == register_id)
+    if result is not None:
+        statement = statement.where(CashSession.result == result)
+
+    total = int(
+        db.scalar(
+            select(func.count()).select_from(statement.order_by(None).subquery())
+        )
+        or 0
+    )
+    rows = db.execute(
+        statement
+        .order_by(CashSession.closed_at.desc(), CashSession.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return {
+        "items": [
+            cut_history_item(db, session, register)
+            for session, register in rows
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": (total + page_size - 1) // page_size,
+    }
+
+
+@api.get("/cash/cuts/{cut_id}", tags=["cash"])
+def get_cash_cut(
+    cut_id: int,
+    user: AuthContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    statement = (
+        select(CashSession, CashRegister)
+        .join(CashRegister, CashRegister.id == CashSession.register_id)
+        .where(
+            CashSession.id == cut_id,
+            CashSession.status == "closed",
+        )
+    )
+    if not user.is_superadmin:
+        if user.business_id is None:
+            raise CodedHTTPException(404, "Cash cut not found", "CASH_CUT_NOT_FOUND")
+        statement = statement.where(CashSession.business_id == user.business_id)
+        if user.branch_id is not None:
+            statement = statement.where(CashSession.branch_id == user.branch_id)
+    row = db.execute(statement).first()
+    if not row:
+        raise CodedHTTPException(404, "Cash cut not found", "CASH_CUT_NOT_FOUND")
+    session, register = row
+    return cash_cut_detail(db, session, register)
+
+
+@api.get("/cash/registers/{register_id}/movements", tags=["cash"])
+def list_register_movements(
+    register_id: int,
+    movement_id: int | None = Query(default=None, ge=1),
+    branch_id: int | None = Query(default=None, ge=1),
+    movement_type: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    user: AuthContext = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    register = scoped_cash_register(db, user, register_id)
+    branch_for_user(db, user, register.branch_id)
+    if branch_id is not None and register.branch_id != branch_id:
+        raise CodedHTTPException(404, "Cash register not found for this branch", "CASH_REGISTER_NOT_FOUND")
+    allowed_types = {"income", "withdrawal", "expense", "refund"}
+    if movement_type is not None and movement_type not in allowed_types:
+        raise HTTPException(status_code=422, detail="Invalid cash movement type")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from must not be after date_to")
+
+    statement = (
+        select(CashMovement, CashSession)
+        .join(CashSession, CashSession.id == CashMovement.cash_session_id)
+        .where(
+            CashSession.business_id == register.business_id,
+            CashSession.branch_id == register.branch_id,
+            CashSession.register_id == register.id,
+            CashMovement.movement_type.in_(allowed_types),
+        )
+    )
+    lima = ZoneInfo("America/Lima")
+    if movement_id is not None:
+        statement = statement.where(CashMovement.id == movement_id)
+    if movement_type:
+        statement = statement.where(CashMovement.movement_type == movement_type)
+    if date_from:
+        start = datetime.combine(date_from, time.min, tzinfo=lima).astimezone(timezone.utc)
+        statement = statement.where(CashMovement.created_at >= start)
+    if date_to:
+        end = datetime.combine(
+            date_to + timedelta(days=1),
+            time.min,
+            tzinfo=lima,
+        ).astimezone(timezone.utc)
+        statement = statement.where(CashMovement.created_at < end)
+
+    total = int(
+        db.scalar(
+            select(func.count()).select_from(statement.order_by(None).subquery())
+        )
+        or 0
+    )
+    rows = db.execute(
+        statement
+        .order_by(CashMovement.created_at.desc(), CashMovement.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    ).all()
+    return {
+        "branch_id": register.branch_id,
+        "register": {
+            "id": register.id,
+            "name": register.name,
+            "active": bool(register.active and register.archived_at is None),
+        },
+        "items": [
+            {
+                "id": movement.id,
+                "session_id": session.id,
+                "register_id": register.id,
+                "movement_type": movement.movement_type,
+                "amount": float(movement.amount),
+                "note": movement.note,
+                "created_by": actor_name_by_id(
+                    db,
+                    movement.created_by,
+                    business_id=session.business_id,
+                    branch_id=session.branch_id,
+                ),
+                "created_at": movement.created_at,
+            }
+            for movement, session in rows
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": (total + page_size - 1) // page_size,
+    }
+
+
+@api.post(
+    "/cash/registers/{register_id}/movements",
+    status_code=201,
+    tags=["cash"],
+)
+def create_register_movement(
+    register_id: int,
+    payload: CashRegisterMovementCreate,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: AuthContext = Depends(
+        require_roles("superadmin", "owner", "manager", "cashier")
+    ),
+    db: Session = Depends(get_db),
+):
+    if not idempotency_key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key is required")
+    candidate = scoped_cash_register(db, user, register_id)
+    branch_for_user(db, user, candidate.branch_id)
+    scope = f"cash-register-movement:{candidate.id}"
+    existing = get_idempotent_response(
+        db,
+        scope,
+        idempotency_key,
+        candidate.business_id,
+    )
+    if existing:
+        return existing
+
+    register = lock_cash_register(
+        db,
+        business_id=candidate.business_id,
+        branch_id=candidate.branch_id,
+        register_id=candidate.id,
+    )
+    existing = get_idempotent_response(
+        db,
+        scope,
+        idempotency_key,
+        register.business_id,
+    )
+    if existing:
+        return existing
+    session, created = open_or_get_cash_session(
+        db,
+        register,
+        actor_id=user.user_id,
+    )
+    current_version = 0 if created else session.version
+    if payload.expected_version != current_version:
+        raise CodedHTTPException(
+            409,
+            "Cash period changed while the movement was being recorded",
+            "CASH_CUT_STALE",
+        )
+    movement = CashMovement(
+        cash_session_id=session.id,
+        movement_type=payload.movement_type,
+        payment_method="cash",
+        amount=cash_money(payload.amount),
+        note=payload.note.strip(),
+        created_by=user.user_id,
+    )
+    db.add(movement)
+    session.version += 1
+    db.flush()
+    result = {
+        "id": movement.id,
+        "session_id": session.id,
+        "register_id": register.id,
+        "movement_type": movement.movement_type,
+        "amount": float(movement.amount),
+        "note": movement.note,
+        "created_by": actor_display_name(
+            db,
+            user,
+            business_id=session.business_id,
+            branch_id=session.branch_id,
+        ),
+        "created_at": movement.created_at,
+        "session_version": session.version,
+    }
+    audit(
+        db,
+        user,
+        "cash.movement_created",
+        "cash_movement",
+        movement.id,
+        session.business_id,
+        cash_audit_snapshot(movement, session, register),
+        branch_id=session.branch_id,
+        actor_display_name=result["created_by"],
+    )
+    save_idempotent_response(
+        db,
+        scope,
+        idempotency_key,
+        session.business_id,
+        result,
+    )
+    db.commit()
+    return result
 
 
 @api.get("/reservations/availability", tags=["reservations"])
@@ -4458,6 +5904,8 @@ def list_delivery_orders(
     }
     result = []
     for order in orders:
+        if delivery_service(order) != "own":
+            continue
         assignment = assignments.get(order.id)
         result.append(
             {
@@ -4487,6 +5935,8 @@ async def assign_delivery(
     ensure_branch_scope(user, order.business_id, order.branch_id)
     if order.channel != "delivery":
         raise HTTPException(status_code=422, detail="Order is not a delivery")
+    if delivery_service(order) != "own":
+        raise HTTPException(status_code=409, detail="Este pedido usa un servicio externo, no reparto propio.")
     if payload.courier_id:
         courier = db.get(Courier, payload.courier_id)
         if not courier or courier.branch_id != order.branch_id or not courier.active:
@@ -4560,6 +6010,18 @@ async def transition_delivery(
     result = {"order_id": order.id, "status": assignment.status, "order_status": order.status}
     await hub.broadcast(order.branch_id, "delivery.updated", result)
     return result
+
+
+@api.get("/reports/dashboard", tags=["reports"])
+def get_dashboard_report(
+    branch_id: int,
+    date_from: date,
+    date_to: date,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier")),
+    db: Session = Depends(get_db),
+):
+    branch = branch_for_user(db, user, branch_id)
+    return dashboard_report(db, branch.business_id, branch.id, date_from, date_to)
 
 
 @api.get("/reports/daily", tags=["reports"])
@@ -4936,6 +6398,7 @@ async def review_payment_evidence(
             PaymentCreate(
                 method=evidence.provider if evidence.provider in {"yape", "plin"} else "transfer",
                 amount=amount,
+                register_id=payload.register_id,
                 external_reference=evidence.operation_number,
                 note=payload.note or "Approved payment evidence",
             ),
@@ -5040,6 +6503,7 @@ def public_menu(
         for product in products
         if (product.category_id is None or product.category_id in active_category_ids)
         and any(channel.startswith("digital_") for channel in product.service_channels)
+        and product_selection_unavailable_reason(db, product) is None
     ]
     promotions = list(
         db.scalars(
@@ -5084,6 +6548,7 @@ def public_menu(
                         .where(
                             ProductVariant.product_id == item.id,
                             ProductVariant.active.is_(True),
+                            ProductVariant.available.is_(True),
                         )
                         .order_by(ProductVariant.id)
                     )
@@ -5269,6 +6734,7 @@ def integration_user_for_branch(db: Session, branch_id: int) -> tuple[AuthContex
     branch = db.get(Branch, branch_id)
     if not branch or not branch.active:
         raise HTTPException(status_code=404, detail="Branch not found")
+    require_active_scope(db, branch.business_id, branch.id)
     return AuthContext("integration", "owner", branch.business_id, branch.id), branch
 
 
@@ -5318,6 +6784,8 @@ def integration_context(
             **branch_payload,
             "yape_qr_configured": bool(branch.yape_qr_storage_path),
             "menu_card_configured": bool(branch.menu_card_storage_path),
+            "agent_name": branch.agent_name,
+            "menu_images": [{"id": image["id"], "url": f"/api/v1/integrations/context/menu-cards/{image['id']}"} for image in menu_images(branch)],
             "yape_qr_url": (
                 f"/api/v1/public/{business.slug}/{branch.slug}/yape-qr"
                 if branch.yape_qr_storage_path
@@ -5509,7 +6977,7 @@ async def integration_product_availability(
     if existing:
         return existing
     previous = product.available
-    product.available = payload.available
+    set_product_availability(db, product, payload.available)
     result = {
         "id": product.id,
         "branch_id": product.branch_id,
@@ -5668,7 +7136,7 @@ async def integration_confirm_order(
     confirm_order(db, user, order)
     tickets = send_order_to_kitchen(db, user, order)
     db.flush()
-    result = {"order": serialize_order(order), "tickets": [serialize_ticket(ticket) for ticket in tickets]}
+    result = {"order": serialize_order(order), "tickets": [serialize_ticket(ticket, order=order) for ticket in tickets]}
     save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
     db.commit()
     await hub.broadcast(order.branch_id, "kitchen.ticket_created", result)
@@ -5704,7 +7172,7 @@ async def integration_cash_confirm_order(
     )
     result = {
         "order": serialize_order(order),
-        "tickets": [serialize_ticket(ticket) for ticket in tickets],
+        "tickets": [serialize_ticket(ticket, order=order) for ticket in tickets],
         "event_id": event.id,
     }
     save_idempotent_response(db, scope, idempotency_key, order.business_id, result)

@@ -1,8 +1,10 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+
+from .printing_settings import FONT_SIZES
 
 
 class ApiModel(BaseModel):
@@ -102,8 +104,8 @@ class RestaurantOnboardingCreate(ApiModel):
     owner_name: str = Field(default="Propietario", min_length=2, max_length=180)
     owner_email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     owner_password: SecretStr = Field(min_length=12, max_length=128)
-    credential_name: str = Field(default="Agente n8n principal", min_length=2, max_length=120)
-    integration_scopes: list[str] = Field(default_factory=lambda: sorted(INTEGRATION_SCOPES))
+    credential_name: str = Field(default="Integracion principal", min_length=2, max_length=120)
+    integration_scopes: list[str] = Field(default_factory=lambda: sorted(DEFAULT_AGENT_SCOPES))
 
     @field_validator("owner_password")
     @classmethod
@@ -506,6 +508,7 @@ class OrderCreate(ApiModel):
     whatsapp_chat_id: str | None = None
     whatsapp_message_id: str | None = None
     delivery_address: dict | None = None
+    delivery_quote_id: str | None = None
     delivery_fee: Decimal = Field(default=Decimal("0"), ge=0)
     discount: Decimal = Field(default=Decimal("0"), ge=0)
     notes: str | None = None
@@ -514,6 +517,8 @@ class OrderCreate(ApiModel):
 
 
 class OrderPatch(ApiModel):
+    channel: Literal["counter", "takeaway", "delivery"] | None = None
+    expected_total: Decimal | None = Field(default=None, ge=0)
     table_id: int | None = None
     customer_name: str | None = None
     customer_phone: str | None = None
@@ -521,6 +526,7 @@ class OrderPatch(ApiModel):
     whatsapp_chat_id: str | None = None
     whatsapp_message_id: str | None = None
     delivery_address: dict | None = None
+    delivery_quote_id: str | None = None
     delivery_fee: Decimal | None = Field(default=None, ge=0)
     discount: Decimal | None = Field(default=None, ge=0)
     notes: str | None = None
@@ -538,6 +544,26 @@ class OrderItemBatch(ApiModel):
     expected_version: int | None = None
 
 
+class OrderItemRevisionOperation(ApiModel):
+    type: Literal["edit", "cancel"]
+    item_id: int
+    replacement: OrderLineInput | None = None
+    reason: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_operation(self):
+        if self.type == "edit" and self.replacement is None:
+            raise ValueError("An edited item requires its replacement")
+        if self.type == "cancel" and not (self.reason or "").strip():
+            raise ValueError("A cancellation reason is required")
+        return self
+
+
+class OrderItemRevision(ApiModel):
+    operations: list[OrderItemRevisionOperation] = Field(min_length=1, max_length=100)
+    expected_version: int | None = None
+
+
 class OrderCommand(ApiModel):
     expected_version: int | None = None
 
@@ -545,6 +571,12 @@ class OrderCommand(ApiModel):
 class OrderTransition(ApiModel):
     status: Literal["preparing", "ready", "dispatched", "delivered", "closed", "cancelled"]
     expected_version: int | None = None
+    reason: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def trim_reason(cls, value):
+        return (value.strip() or None) if isinstance(value, str) else value
 
 
 class PaymentAllocationInput(ApiModel):
@@ -557,9 +589,15 @@ class PaymentCreate(ApiModel):
     method: Literal["cash", "card", "yape", "plin", "transfer", "online"]
     amount: Decimal = Field(gt=0)
     cash_session_id: int | None = None
+    register_id: int | None = None
     external_reference: str | None = None
     note: str | None = None
     allocations: list[PaymentAllocationInput] = Field(default_factory=list)
+    expected_version: int | None = None
+
+
+class TableCheckoutPayment(ApiModel):
+    payments: list[PaymentCreate] = Field(min_length=1, max_length=20)
     expected_version: int | None = None
 
 
@@ -570,11 +608,18 @@ class SplitPreview(ApiModel):
 class TicketTransition(ApiModel):
     status: Literal["preparing", "ready", "served", "cancelled"]
     expected_status: Literal["queued", "preparing", "ready", "served", "cancelled"]
+    expected_version: int | None = Field(default=None, ge=1)
+
+
+class KitchenCommandAction(ApiModel):
+    expected_status: Literal["queued", "preparing", "ready", "served", "cancelled"]
+    expected_version: int | None = Field(default=None, ge=1)
 
 
 class RegisterCreate(ApiModel):
     branch_id: int
-    name: str
+    name: str = Field(min_length=1, max_length=120)
+    is_default: bool = False
 
 
 class CashSessionOpen(ApiModel):
@@ -592,6 +637,35 @@ class CashMovementCreate(ApiModel):
 class CashSessionClose(ApiModel):
     declared_amount: Decimal = Field(ge=0)
     notes: str | None = None
+
+
+class CashCutCreate(ApiModel):
+    cash_counted: Decimal = Field(ge=0)
+    card_counted: Decimal | None = Field(default=None, ge=0)
+    retained_fund: Decimal = Field(default=Decimal("0"), ge=0)
+    denominations: dict[str, int] | None = None
+    ignore_pending_orders: bool = False
+    note: str | None = Field(default=None, max_length=2000)
+    expected_version: int = Field(ge=0)
+
+    @field_validator("denominations", mode="before")
+    @classmethod
+    def validate_denominations(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise ValueError("Denominations must be an object")
+        for count in value.values():
+            if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                raise ValueError("Denomination counts must be nonnegative integers")
+        return value
+
+
+class CashRegisterMovementCreate(ApiModel):
+    movement_type: Literal["income", "withdrawal"]
+    amount: Decimal = Field(gt=0)
+    note: str = Field(min_length=1, max_length=1000)
+    expected_version: int = Field(ge=0)
 
 
 class ReservationCreate(ApiModel):
@@ -645,6 +719,7 @@ class EvidenceMetadata(ApiModel):
 class EvidenceReview(ApiModel):
     approve: bool
     note: str | None = None
+    register_id: int | None = None
 
 
 class IntegrationEvidenceCreate(EvidenceMetadata):
@@ -667,6 +742,7 @@ class PublicOrderCreate(ApiModel):
     customer_name: str
     customer_phone: str
     delivery_address: dict | None = None
+    delivery_quote_id: str | None = None
     notes: str | None = None
     items: list[OrderLineInput] = Field(min_length=1)
 
@@ -691,3 +767,338 @@ class LegacyDraftCreate(ApiModel):
     @classmethod
     def keep_items_payload(cls, value):
         return value
+
+
+SettingsRole = Literal[
+    "owner",
+    "members_manager",
+    "manager",
+    "menu_manager",
+    "cashier",
+    "waiter",
+    "kitchen",
+    "dispatcher",
+]
+
+
+class SettingsBusinessUpdate(ApiModel):
+    name: str | None = Field(default=None, min_length=2, max_length=180)
+    currency: Literal["PEN"] | None = None
+    timezone: Literal["America/Lima"] | None = None
+    country_code: Literal["PE"] | None = None
+    expected_version: int = Field(ge=1)
+
+
+class SettingsBranchProfileUpdate(ApiModel):
+    name: str | None = Field(default=None, min_length=2, max_length=180)
+    address: str | None = Field(default=None, max_length=1000)
+    phone: str | None = Field(default=None, max_length=40)
+    maps_url: str | None = Field(default=None, max_length=2000)
+    google_place_id: str | None = Field(default=None, max_length=255)
+    latitude: Decimal | None = Field(default=None, ge=-90, le=90)
+    longitude: Decimal | None = Field(default=None, ge=-180, le=180)
+    expected_version: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def validate_coordinates(self):
+        if (self.latitude is None) != (self.longitude is None):
+            raise ValueError("Latitude and longitude must be provided together")
+        return self
+
+
+class SettingsServicesUpdate(ApiModel):
+    pos_tables: bool
+    pos_counter: bool
+    pos_takeaway: bool
+    pos_delivery: bool
+    digital_tables: bool
+    digital_takeaway: bool
+    digital_delivery: bool
+    expected_version: int = Field(ge=1)
+
+
+class DeliveryNeighborhood(ApiModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=120)
+    fee: float = Field(ge=0, le=9999999999.99, allow_inf_nan=False)
+
+
+class DeliveryOrigin(ApiModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
+    maps_url: str = Field(default="", max_length=2048)
+
+
+class DeliveryPolicy(ApiModel):
+    model_config = ConfigDict(extra="forbid")
+
+    neighborhoods: list[DeliveryNeighborhood] = Field(default_factory=list, max_length=200)
+    origin: DeliveryOrigin | None = None
+    outside_band_mode: Literal["reject", "quote"] = "reject"
+
+    @model_validator(mode="after")
+    def validate_neighborhood_names(self):
+        names = [item.name.casefold() for item in self.neighborhoods]
+        if len(set(names)) != len(names):
+            raise ValueError("Neighborhood names must be unique ignoring case")
+        return self
+
+
+class SettingsDeliveryUpdate(ApiModel):
+    delivery_mode: Literal["free", "fixed", "bands", "distance", "quote", "neighborhoods"]
+    delivery_policy: DeliveryPolicy | None = None
+    fixed_delivery_fee: Decimal = Field(default=Decimal("0"), ge=0)
+    distance_base_fee: Decimal = Field(default=Decimal("0"), ge=0)
+    distance_fee_per_km: Decimal = Field(default=Decimal("0"), ge=0)
+    distance_max_km: Decimal | None = Field(default=None, gt=0)
+    free_delivery_threshold: Decimal | None = Field(default=None, ge=0)
+    minimum_order_amount: Decimal | None = Field(default=None, ge=0)
+    bands: list["DeliveryBandCreate"] | None = None
+    expected_version: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def validate_distance_configuration(self):
+        if self.delivery_mode == "distance" and self.distance_max_km is None:
+            raise ValueError("Distance delivery requires a maximum distance")
+        return self
+
+
+class DeliveryBandCreate(ApiModel):
+    minimum_km: Decimal = Field(ge=0)
+    maximum_km: Decimal = Field(gt=0)
+    fee: Decimal = Field(ge=0)
+    sort_order: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def validate_range(self):
+        if self.maximum_km <= self.minimum_km:
+            raise ValueError("maximum_km must be greater than minimum_km")
+        return self
+
+
+class DeliveryBandUpdate(DeliveryBandCreate):
+    expected_version: int = Field(ge=1)
+
+
+class DeliveryQuoteCreate(ApiModel):
+    subtotal: Decimal = Field(ge=0)
+    destination: dict = Field(default_factory=dict)
+    distance_km: Decimal | None = Field(default=None, ge=0)
+    expected_configuration_version: int | None = Field(default=None, ge=1, strict=True)
+    confirmed_fee: Decimal | None = Field(default=None, ge=0, le=Decimal("9999999999.99"), allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_manual_confirmation_context(self):
+        if self.confirmed_fee is not None and self.expected_configuration_version is None:
+            raise ValueError("Manual confirmation requires expected_configuration_version")
+        return self
+
+
+class SettingsPaymentMethodsUpdate(ApiModel):
+    payment_methods: dict[Literal["delivery", "takeaway", "counter"], list[Literal[
+        "cash", "card", "transfer", "yape", "plin", "online"
+    ]]]
+    expected_version: int = Field(ge=1)
+
+
+class SettingsTimesUpdate(ApiModel):
+    delivery_min_minutes: int = Field(ge=0, le=1440)
+    delivery_max_minutes: int = Field(ge=0, le=1440)
+    pickup_minutes: int = Field(ge=0, le=1440)
+    expected_version: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def validate_delivery_window(self):
+        if self.delivery_max_minutes < self.delivery_min_minutes:
+            raise ValueError("Maximum delivery time cannot be below the minimum")
+        return self
+
+
+class StaffMemberCreate(ApiModel):
+    first_name: str = Field(min_length=1, max_length=120)
+    last_name: str = Field(default="", max_length=120)
+    email: str | None = Field(default=None, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    email_access: bool = False
+    pin: SecretStr | None = None
+    roles: list[SettingsRole] = Field(min_length=1)
+    branch_ids: list[int] = Field(min_length=1)
+
+    @field_validator("pin")
+    @classmethod
+    def validate_pin(cls, value: SecretStr | None):
+        if value is not None:
+            raw = value.get_secret_value()
+            if len(raw) != 4 or not raw.isdigit():
+                raise ValueError("PIN must contain exactly four digits")
+        return value
+
+    @model_validator(mode="after")
+    def validate_email_access(self):
+        if self.email_access and not self.email:
+            raise ValueError("Email access requires an email address")
+        return self
+
+
+class StaffMemberUpdate(ApiModel):
+    first_name: str | None = Field(default=None, min_length=1, max_length=120)
+    last_name: str | None = Field(default=None, max_length=120)
+    email: str | None = Field(default=None, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    email_access: bool | None = None
+    pin: SecretStr | None = None
+    roles: list[SettingsRole] | None = None
+    branch_ids: list[int] | None = None
+    expected_version: int = Field(ge=1)
+
+    @field_validator("pin")
+    @classmethod
+    def validate_pin(cls, value: SecretStr | None):
+        if value is not None:
+            raw = value.get_secret_value()
+            if len(raw) != 4 or not raw.isdigit():
+                raise ValueError("PIN must contain exactly four digits")
+        return value
+
+
+class StaffPinVerify(ApiModel):
+    staff_member_id: int
+    pin: SecretStr
+
+    @field_validator("pin")
+    @classmethod
+    def validate_pin(cls, value: SecretStr):
+        raw = value.get_secret_value()
+        if len(raw) != 4 or not raw.isdigit():
+            raise ValueError("PIN must contain exactly four digits")
+        return value
+
+
+class PairedDeviceCreate(ApiModel):
+    branch_id: int
+    name: str = Field(min_length=2, max_length=180)
+
+
+class PairedDeviceUpdate(ApiModel):
+    name: str | None = Field(default=None, min_length=2, max_length=180)
+    active: bool | None = None
+    expected_version: int = Field(ge=1)
+
+
+class PairDeviceComplete(ApiModel):
+    pairing_code: SecretStr
+
+
+class ScheduleShiftInput(ApiModel):
+    day_of_week: int = Field(ge=0, le=6)
+    starts_at: time
+    ends_at: time
+    sort_order: int = Field(default=0, ge=0)
+
+
+class ServiceScheduleCreate(ApiModel):
+    name: str = Field(min_length=1, max_length=180)
+    kind: Literal["primary", "additional"] = "additional"
+    shifts: list[ScheduleShiftInput] = Field(default_factory=list)
+
+
+class ServiceScheduleUpdate(ApiModel):
+    name: str | None = Field(default=None, min_length=1, max_length=180)
+    active: bool | None = None
+    shifts: list[ScheduleShiftInput] | None = None
+    expected_version: int = Field(ge=1)
+
+
+class ScheduleAssignmentsReplace(ApiModel):
+    product_ids: list[int] = Field(default_factory=list)
+    promotion_ids: list[int] = Field(default_factory=list)
+    expected_version: int = Field(ge=1)
+
+
+class SettingsPrintingUpdate(ApiModel):
+    advanced_printing: bool
+    printer_config: dict = Field(default_factory=dict)
+    customer_ticket_template: dict = Field(default_factory=dict)
+    kitchen_ticket_template: dict = Field(default_factory=dict)
+    expected_version: int = Field(ge=1)
+
+    @field_validator("printer_config")
+    @classmethod
+    def validate_print_language(cls, config: dict) -> dict:
+        if "print_language" in config and config["print_language"] not in ("pixel", "escpos"):
+            raise ValueError("print_language must be pixel or escpos")
+        if "automatic_printing" in config and type(config["automatic_printing"]) is not bool:
+            raise ValueError("automatic_printing must be a boolean")
+        return config
+
+    @field_validator("customer_ticket_template", "kitchen_ticket_template")
+    @classmethod
+    def validate_font_size(cls, template: dict) -> dict:
+        if "font_size" in template and template["font_size"] not in FONT_SIZES:
+            raise ValueError("font_size must be small, normal or large")
+        return template
+
+    @field_validator("customer_ticket_template")
+    @classmethod
+    def validate_receipt_text(cls, template: dict) -> dict:
+        for key in ("header_enabled", "footer_enabled"):
+            if key in template and type(template[key]) is not bool:
+                raise ValueError(f"{key} must be a boolean")
+        for key in ("header_text", "footer_text"):
+            if key not in template:
+                continue
+            value = template[key]
+            if not isinstance(value, str) or len(value) > 500:
+                raise ValueError(f"{key} must be plain text of at most 500 characters")
+            if any((ord(char) < 32 and char not in "\n\r\t") or ord(char) == 127 for char in value):
+                raise ValueError(f"{key} contains unsupported control characters")
+        return template
+
+
+class PrinterDeviceCreate(ApiModel):
+    name: str = Field(min_length=1, max_length=180)
+    system_name: str = Field(min_length=1, max_length=255)
+    paired_device_id: int | None = None
+    purpose: Literal["kitchen", "bar", "customer"] = "kitchen"
+    paper_width_mm: Literal[58, 80] = 80
+    copies: int = Field(default=1, ge=1, le=10)
+
+
+class PrinterDeviceUpdate(ApiModel):
+    name: str | None = Field(default=None, min_length=1, max_length=180)
+    paired_device_id: int | None = None
+    purpose: Literal["kitchen", "bar", "customer"] | None = None
+    paper_width_mm: Literal[58, 80] | None = None
+    copies: int | None = Field(default=None, ge=1, le=10)
+    active: bool | None = None
+    expected_version: int = Field(ge=1)
+
+
+class PrintJobCreate(ApiModel):
+    printer_id: int | None = None
+    paired_device_id: int | None = None
+    order_id: int | None = None
+    kitchen_ticket_id: int | None = None
+    job_type: Literal["customer_receipt", "kitchen_ticket"]
+    payload: dict = Field(default_factory=dict)
+
+
+class PrintJobComplete(ApiModel):
+    status: Literal["printed", "failed"]
+    error_message: str | None = Field(default=None, max_length=2000)
+
+
+class QZSignRequest(ApiModel):
+    payload: str = Field(min_length=1, max_length=200000)
+    request: str | None = Field(default=None, min_length=1, max_length=200000)
+
+
+class ArchiveRequest(ApiModel):
+    expected_version: int = Field(ge=1)
+
+
+class RegisterSettingsUpdate(ApiModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    is_default: bool | None = None
+    expected_version: int = Field(ge=1)

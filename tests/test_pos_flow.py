@@ -6,7 +6,17 @@ from alembic.script import ScriptDirectory
 
 from app import api as api_module
 from app.database import SessionLocal
-from app.models import AuditEvent, Branch, DiningArea, InventoryItem, KitchenTicket, Membership, Product, RestaurantTable
+from app.models import (
+    AuditEvent,
+    Branch,
+    CashSession,
+    DiningArea,
+    InventoryItem,
+    KitchenTicket,
+    Membership,
+    Product,
+    RestaurantTable,
+)
 
 
 def test_health_and_openapi(client):
@@ -693,7 +703,7 @@ def test_alembic_has_a_single_head():
     config = Config(str(repository_root / "alembic.ini"))
     config.set_main_option("script_location", str(repository_root / "migrations"))
     heads = ScriptDirectory.from_config(config).get_heads()
-    assert heads == ["20260827_0015"]
+    assert heads == ["20260919_0023"]
 
 
 def test_table_cannot_reference_an_area_from_another_branch(client, tenant, auth_headers):
@@ -724,7 +734,7 @@ def test_table_cannot_reference_an_area_from_another_branch(client, tenant, auth
     assert "does not belong" in response.json()["detail"]
 
 
-def test_cash_payment_requires_an_open_cash_session(client, tenant, auth_headers):
+def test_cash_payment_lazily_opens_the_default_cash_session(client, tenant, auth_headers):
     created = client.post(
         "/api/v1/orders",
         json={
@@ -741,8 +751,14 @@ def test_cash_payment_requires_an_open_cash_session(client, tenant, auth_headers
         json={"method": "cash", "amount": 20},
         headers={**auth_headers, "Idempotency-Key": "cash-session-required-payment"},
     )
-    assert payment.status_code == 422
-    assert "cash session" in payment.json()["detail"].lower()
+    assert payment.status_code == 201, payment.text
+    assert payment.json()["payment"]["cash_session_id"] is not None
+
+    with SessionLocal() as db:
+        session = db.get(CashSession, payment.json()["payment"]["cash_session_id"])
+        assert session is not None
+        assert session.status == "open"
+        assert session.register_id == tenant["register_id"]
 
 
 def test_cross_business_branch_is_denied(client, tenant, auth_headers):

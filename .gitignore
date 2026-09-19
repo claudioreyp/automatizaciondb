@@ -10,6 +10,8 @@ __pycache__/
 # Secretos y contraseñas (NUNCA SUBIR A GITHUB)
 .env
 .env.local
+.env.supabase-target
+backups/
 
 # Archivos locales de bases de datos
 *.db
@@ -19,3 +21,6 @@ uploads/
 .coverage
 htmlcov/
 *.log
+.env.*
+!.env.example
+.venv/

@@ -1,6 +1,6 @@
 from app.api import serialize_catalog
 from app.database import SessionLocal
-from app.models import Branch, ModifierGroup
+from app.models import AuditEvent, Branch, ModifierGroup
 
 
 def test_catalog_composition_and_order_validation(client, tenant, auth_headers):
@@ -608,3 +608,173 @@ def test_modifier_group_editor_rejects_blank_and_impossible_configurations(
         headers=auth_headers,
     )
     assert impossible_repeat_limit.status_code == 422
+
+
+def test_orders_charge_allowed_repetitions_and_reject_invalid_quantities(
+    client,
+    tenant,
+    auth_headers,
+):
+    group = client.post(
+        "/api/v1/catalog/modifier-groups",
+        json={
+            "branch_id": tenant["branch_id"],
+            "name": "Salsas repetibles",
+            "minimum": 1,
+            "maximum": 4,
+            "required": True,
+            "allow_repeats": True,
+            "max_per_option": 3,
+            "modifiers": [
+                {"name": "BBQ", "price_delta": 2},
+                {"name": "Ajo", "price_delta": 1},
+            ],
+        },
+        headers=auth_headers,
+    )
+    assert group.status_code == 201, group.text
+    bbq = next(item for item in group.json()["modifiers"] if item["name"] == "BBQ")
+    ajo = next(item for item in group.json()["modifiers"] if item["name"] == "Ajo")
+    linked = client.put(
+        f"/api/v1/catalog/products/{tenant['product_id']}/modifier-groups",
+        json={"group_ids": [group.json()["id"]]},
+        headers=auth_headers,
+    )
+    assert linked.status_code == 200, linked.text
+    modifier_names = {bbq["id"]: bbq["name"], ajo["id"]: ajo["name"]}
+
+    def order_with(modifier_ids, key):
+        return client.post(
+            "/api/v1/orders",
+            json={
+                "branch_id": tenant["branch_id"],
+                "channel": "counter",
+                "items": [{
+                    "product_id": tenant["product_id"],
+                    "quantity": 1,
+                    "modifiers": [
+                        {
+                            "modifier_id": modifier_id,
+                            "name": modifier_names[modifier_id],
+                        }
+                        for modifier_id in modifier_ids
+                    ],
+                }],
+            },
+            headers={**auth_headers, "Idempotency-Key": key},
+        )
+
+    repeated = order_with([bbq["id"], bbq["id"], bbq["id"]], "repeat-valid")
+    assert repeated.status_code == 201, repeated.text
+    assert repeated.json()["total"] == 26.0
+    assert [item["modifier_id"] for item in repeated.json()["items"][0]["modifiers"]] == [
+        bbq["id"],
+        bbq["id"],
+        bbq["id"],
+    ]
+
+    over_per_option = order_with([bbq["id"]] * 4, "repeat-over-option")
+    assert over_per_option.status_code == 422
+
+    over_total = order_with([bbq["id"]] * 3 + [ajo["id"]] * 2, "repeat-over-total")
+    assert over_total.status_code == 422
+
+    disabled = client.patch(
+        f"/api/v1/catalog/modifier-groups/{group.json()['id']}",
+        json={"allow_repeats": False},
+        headers=auth_headers,
+    )
+    assert disabled.status_code == 200, disabled.text
+    duplicate = order_with([bbq["id"], bbq["id"]], "repeat-disabled")
+    assert duplicate.status_code == 422
+
+
+def test_modifier_group_delete_is_scoped_audited_and_preserves_order_snapshots(
+    client,
+    tenant,
+    auth_headers,
+):
+    group = client.post(
+        "/api/v1/catalog/modifier-groups",
+        json={
+            "branch_id": tenant["branch_id"],
+            "name": "Salsas para borrar",
+            "internal_label": "máximo 1",
+            "minimum": 0,
+            "maximum": 1,
+            "required": False,
+            "modifiers": [{"name": "BBQ", "price_delta": 2}],
+        },
+        headers=auth_headers,
+    )
+    assert group.status_code == 201, group.text
+    modifier = group.json()["modifiers"][0]
+    linked = client.put(
+        f"/api/v1/catalog/products/{tenant['product_id']}/modifier-groups",
+        json={"group_ids": [group.json()["id"]]},
+        headers=auth_headers,
+    )
+    assert linked.status_code == 200, linked.text
+
+    order = client.post(
+        "/api/v1/orders",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "counter",
+            "items": [{
+                "product_id": tenant["product_id"],
+                "quantity": 1,
+                "modifiers": [{"modifier_id": modifier["id"], "name": modifier["name"]}],
+            }],
+        },
+        headers={**auth_headers, "Idempotency-Key": "delete-group-snapshot"},
+    )
+    assert order.status_code == 201, order.text
+
+    foreign_headers = {
+        **auth_headers,
+        "X-Dev-User": "other-owner",
+        "X-Business-Id": str(tenant["other_business_id"]),
+        "X-Branch-Id": str(tenant["other_branch_id"]),
+    }
+    forbidden = client.delete(
+        f"/api/v1/catalog/modifier-groups/{group.json()['id']}",
+        headers=foreign_headers,
+    )
+    assert forbidden.status_code == 403
+
+    deleted = client.delete(
+        f"/api/v1/catalog/modifier-groups/{group.json()['id']}",
+        headers=auth_headers,
+    )
+    assert deleted.status_code == 204, deleted.text
+
+    catalog = client.get(
+        f"/api/v1/catalog?branch_id={tenant['branch_id']}",
+        headers=auth_headers,
+    )
+    assert catalog.status_code == 200, catalog.text
+    assert group.json()["id"] not in {item["id"] for item in catalog.json()["modifier_groups"]}
+    product = next(item for item in catalog.json()["products"] if item["id"] == tenant["product_id"])
+    assert product["modifier_groups"] == []
+
+    historical_order = client.get(
+        f"/api/v1/orders/{order.json()['id']}",
+        headers=auth_headers,
+    )
+    assert historical_order.status_code == 200, historical_order.text
+    assert historical_order.json()["items"][0]["modifiers"] == order.json()["items"][0]["modifiers"]
+
+    with SessionLocal() as db:
+        event = db.query(AuditEvent).filter_by(
+            action="modifier_group.deleted",
+            entity_id=str(group.json()["id"]),
+        ).one()
+        assert event.business_id == tenant["business_id"]
+        assert event.branch_id == tenant["branch_id"]
+        assert event.payload["detached_product_count"] == 1
+        assert event.payload["detached_products"] == [{
+            "id": tenant["product_id"],
+            "name": "Pizza",
+        }]
+        assert event.payload["deleted_modifier_ids"] == [modifier["id"]]

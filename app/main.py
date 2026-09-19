@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
+import asyncio
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
 from .api import api, legacy
-from .auth import AuthContext, decode_access_token, ensure_branch_scope, resolve_membership
+from .auth import AuthContext, decode_access_token, ensure_branch_scope, require_active_scope, resolve_membership
 from .config import get_settings
 from .database import Base, SessionLocal, engine
 from .errors import CodedHTTPException
@@ -51,10 +52,19 @@ app.add_middleware(
         "X-Dev-User",
         "X-Dev-Email",
         "X-Integration-Token",
+        "X-CSRF-Token",
     ],
 )
 app.include_router(api)
 app.include_router(legacy)
+
+
+@app.middleware("http")
+async def private_password_reset_responses(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/v1/admin/businesses/") and "/password-reset" in request.url.path:
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.exception_handler(CodedHTTPException)
@@ -72,7 +82,7 @@ async def redact_validation_secrets(_, exc: RequestValidationError):
     for error in exc.errors():
         safe_error = dict(error)
         location = [str(part).lower() for part in safe_error.get("loc", [])]
-        if any("password" in part for part in location):
+        if any(any(secret in part for secret in ("password", "pin", "token", "pairing_code")) for part in location):
             safe_error["input"] = "[REDACTED]"
         errors.append(safe_error)
     return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
@@ -83,6 +93,7 @@ def websocket_user(websocket: WebSocket, branch: Branch) -> AuthContext:
     dev_auth = websocket.query_params.get("dev_auth")
     settings = get_settings()
     with SessionLocal() as db:
+        require_active_scope(db, branch.business_id, branch.id)
         if settings.is_development and settings.dev_auth_token and dev_auth == settings.dev_auth_token:
             role = websocket.query_params.get("role", "owner")
             user = AuthContext(
@@ -94,12 +105,15 @@ def websocket_user(websocket: WebSocket, branch: Branch) -> AuthContext:
             )
         elif token:
             claims = decode_access_token(token)
+            from .auth_sessions import validate_provider_session
+            validate_provider_session(db, token, claims, settings)
             subject = claims.get("sub")
             if not subject:
                 raise ValueError("Token has no subject")
             user = resolve_membership(db, subject, branch.business_id, branch.id)
         else:
-            raise ValueError("Authentication required")
+            from .device_auth import session_user
+            user = session_user(db, websocket)
     ensure_branch_scope(user, branch.business_id, branch.id)
     return user
 
@@ -112,19 +126,34 @@ async def branch_websocket(websocket: WebSocket, branch_id: int):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Branch not found")
         return
     try:
-        websocket_user(websocket, branch)
-    except Exception:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Unauthorized")
+        await asyncio.to_thread(websocket_user, websocket, branch)
+    except Exception as error:
+        unavailable = isinstance(error, HTTPException) and error.status_code == 503
+        await websocket.close(code=1013 if unavailable else status.WS_1008_POLICY_VIOLATION,
+                              reason="Auth temporarily unavailable" if unavailable else "Unauthorized")
         return
 
     await hub.connect(branch_id, websocket)
+    websocket.state.authorize = lambda: websocket_user(websocket, branch)
     try:
         await websocket.send_json({"event": "connected", "payload": {"branch_id": branch_id}})
         while True:
-            await websocket.receive_text()
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=10)
+            except asyncio.TimeoutError:
+                pass
+            try:
+                await asyncio.to_thread(websocket_user, websocket, branch)
+            except Exception as error:
+                unavailable = isinstance(error, HTTPException) and error.status_code == 503
+                await websocket.close(code=1013 if unavailable else status.WS_1008_POLICY_VIOLATION,
+                                      reason="Auth temporarily unavailable" if unavailable else "Session expired")
+                break
     except WebSocketDisconnect:
-        await hub.disconnect(branch_id, websocket)
+        pass
     except Exception:
+        pass
+    finally:
         await hub.disconnect(branch_id, websocket)
 
 

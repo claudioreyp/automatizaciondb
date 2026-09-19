@@ -6,6 +6,11 @@ os.environ["AUTO_CREATE_SCHEMA"] = "true"
 os.environ["DEV_AUTH_TOKEN"] = "test-token"
 os.environ["INTEGRATION_SERVICE_TOKEN"] = "test-integration-token"
 os.environ["LEGACY_PUBLIC_READS_ENABLED"] = "true"
+for name in ("SUPABASE_URL", "SUPABASE_JWT_SECRET", "SUPABASE_JWKS_URL", "SUPABASE_SERVICE_ROLE_KEY"):
+    os.environ[name] = ""  # Isolated tests must never contact configured live Auth.
+os.environ["AUTH_ADMIN_SECRET"] = "isolated-password-operation-secret-for-tests"
+for name in ("QZ_TRAY_CERTIFICATE", "QZ_TRAY_PRIVATE_KEY", "QZ_TRAY_CERTIFICATE_FILE", "QZ_TRAY_PRIVATE_KEY_FILE"):
+    os.environ[name] = ""  # Tests must never read the local printing identity.
 
 import pytest
 from fastapi.testclient import TestClient

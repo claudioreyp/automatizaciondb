@@ -23,7 +23,7 @@ def create_credential(client, tenant, auth_headers, scopes=None):
     response = client.post(
         "/api/v1/admin/integration-credentials",
         json=payload,
-        headers=auth_headers,
+        headers={**auth_headers, "X-Dev-Role": "superadmin"},
     )
     assert response.status_code == 201, response.text
     return response.json()
@@ -58,7 +58,7 @@ def test_branch_credential_is_one_time_scoped_and_revocable(client, tenant, auth
     listed = client.get(
         "/api/v1/admin/integration-credentials",
         params={"branch_id": tenant["branch_id"]},
-        headers=auth_headers,
+        headers={**auth_headers, "X-Dev-Role": "superadmin"},
     )
     assert listed.status_code == 200
     assert "token" not in listed.json()[0]
@@ -84,7 +84,7 @@ def test_branch_credential_is_one_time_scoped_and_revocable(client, tenant, auth
 
     revoked = client.post(
         f"/api/v1/admin/integration-credentials/{credential['id']}/revoke",
-        headers=auth_headers,
+        headers={**auth_headers, "X-Dev-Role": "superadmin"},
     )
     assert revoked.status_code == 200
     assert revoked.json()["active"] is False
@@ -400,7 +400,7 @@ def test_payment_evidence_ids_are_hidden_across_tenants(
     )
     missing_image = client.get(
         "/api/v1/payment-evidence/999999/image",
-        headers=auth_headers,
+        headers={**auth_headers, "X-Dev-Role": "superadmin"},
     )
     assert foreign_image.status_code == 404
     assert foreign_image.json() == missing_image.json() == {

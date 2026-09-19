@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from uuid import uuid4
@@ -12,12 +13,22 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from .auth import AuthContext, ensure_branch_scope
+from .cash_service import actor_display_name as cash_actor_display_name, cash_reconciliation, resolve_payment_cash_session
+from .catalog_availability import product_selection_unavailable_reason
+from .command_revisions import effective_ticket_items, retired_modifier_units
+from .order_folios import reserve_order_folio
+from .pos_printing import (
+    create_checkout_print_job, invalidate_checkout_print_jobs, local_printer_config,
+    prepare_pos_print_intent, print_actor_name, table_print_context,
+)
+from .security_audit import item_audit_snapshot, order_identity_snapshot
 from .errors import CodedHTTPException
 from .models import (
     AuditEvent,
     Branch,
+    BranchSettings,
     Business,
-    CashMovement,
+    CashRegister,
     CashSession,
     ComboItem,
     Customer,
@@ -40,13 +51,28 @@ from .models import (
     Reservation,
     ReservationTable,
     RestaurantTable,
+    ScheduleAssignment,
+    ServiceSchedule,
     StockMovement,
     utcnow,
 )
-from .schemas import OrderCreate, OrderLineInput, PaymentCreate, ReservationCreate
+from .schemas import (
+    OrderCreate,
+    OrderItemRevisionOperation,
+    OrderLineInput,
+    PaymentCreate,
+    ReservationCreate,
+)
+from .settings_service import (
+    apply_delivery_quote_to_order,
+    enqueue_kitchen_print_jobs,
+    schedule_is_open,
+    sync_pending_kitchen_print_jobs,
+)
 
 
 TWOPLACES = Decimal("0.01")
+INACTIVE_ORDER_ITEM_STATUSES = {"cancelled", "superseded"}
 
 
 def money(value: Decimal | int | float | str | None) -> Decimal:
@@ -61,6 +87,14 @@ def decimal_json(value):
     return value
 
 
+def active_order_items(order: Order) -> list[OrderItem]:
+    return [
+        item
+        for item in order.items
+        if item.status not in INACTIVE_ORDER_ITEM_STATUSES
+    ]
+
+
 def audit(
     db: Session,
     user: AuthContext | None,
@@ -69,11 +103,16 @@ def audit(
     entity_id: int | str | None,
     business_id: int | None,
     payload: dict | None = None,
+    *,
+    branch_id: int | None = None,
+    actor_display_name: str | None = None,
 ) -> None:
     db.add(
         AuditEvent(
             business_id=business_id,
+            branch_id=branch_id,
             actor_id=user.user_id if user else "system",
+            actor_display_name=actor_display_name or (user.email if user else "Sistema"),
             action=action,
             entity_type=entity_type,
             entity_id=str(entity_id) if entity_id is not None else None,
@@ -126,6 +165,7 @@ def serialize_order(order: Order) -> dict:
         "business_id": order.business_id,
         "branch_id": order.branch_id,
         "number": order.number,
+        "folio": order.folio,
         "channel": order.channel,
         "source": order.source,
         "status": order.status,
@@ -142,6 +182,8 @@ def serialize_order(order: Order) -> dict:
         "promotion_discount": float(order.promotion_discount or 0),
         "applied_promotions": order.applied_promotions or [],
         "delivery_fee": float(order.delivery_fee or 0),
+        "delivery_quote_id": order.delivery_quote_id,
+        "delivery_fee_status": order.delivery_fee_status,
         "total": float(order.total or 0),
         "notes": order.notes,
         "external_reference": order.external_reference,
@@ -150,6 +192,8 @@ def serialize_order(order: Order) -> dict:
         "submitted_at": order.submitted_at,
         "version": order.version,
         "sent_to_kitchen_at": order.sent_to_kitchen_at,
+        "checkout_started_at": order.checkout_started_at,
+        "table_released_at": order.table_released_at,
         "closed_at": order.closed_at,
         "created_at": order.created_at,
         "updated_at": order.updated_at,
@@ -164,6 +208,8 @@ def serialize_order(order: Order) -> dict:
                 "modifiers": item.modifiers,
                 "notes": item.notes,
                 "status": item.status,
+                "replaces_item_id": item.replaces_item_id,
+                "cancellation_reason": item.cancellation_reason,
                 "line_total": float(item.line_total),
                 "promotion_discount": float(item.promotion_discount or 0),
                 "promotion_snapshot": item.promotion_snapshot,
@@ -256,7 +302,8 @@ def apply_order_promotions(db: Session, order: Order) -> Decimal:
         item.promotion_discount = Decimal("0")
         item.promotion_snapshot = None
     order.applied_promotions = []
-    if not order.items:
+    active_items = active_order_items(order)
+    if not active_items:
         order.promotion_discount = Decimal("0")
         return Decimal("0")
 
@@ -282,7 +329,7 @@ def apply_order_promotions(db: Session, order: Order) -> Decimal:
         order.promotion_discount = Decimal("0")
         return Decimal("0")
 
-    product_ids = {item.product_id for item in order.items if item.product_id is not None}
+    product_ids = {item.product_id for item in active_items if item.product_id is not None}
     products = {
         product.id: product
         for product in db.scalars(select(Product).where(Product.id.in_(product_ids)))
@@ -292,7 +339,7 @@ def apply_order_promotions(db: Session, order: Order) -> Decimal:
     for promotion in promotions:
         eligible = [
             item
-            for item in order.items
+            for item in active_items
             if _promotion_targets_product(promotion, products.get(item.product_id))
         ]
         if not eligible:
@@ -333,7 +380,7 @@ def apply_order_promotions(db: Session, order: Order) -> Decimal:
 
     applied: dict[int, dict] = {}
     total_discount = Decimal("0")
-    for item in order.items:
+    for item in active_items:
         result = best_by_item.get(id(item))
         if not result:
             continue
@@ -363,7 +410,10 @@ def apply_order_promotions(db: Session, order: Order) -> Decimal:
 
 
 def recalculate_order(db: Session, order: Order) -> None:
-    subtotal = sum((money(item.line_total) for item in order.items), Decimal("0"))
+    subtotal = sum(
+        (money(item.line_total) for item in active_order_items(order)),
+        Decimal("0"),
+    )
     order.subtotal = money(subtotal)
     promotion_discount = apply_order_promotions(db, order)
     manual_discount = min(money(order.manual_discount), order.subtotal)
@@ -419,6 +469,9 @@ def build_order_item(
         )
 
     if product is not None:
+        unavailable_reason = product_selection_unavailable_reason(db, product)
+        if unavailable_reason:
+            raise CodedHTTPException(422, unavailable_reason, "PRODUCT_OPTIONS_UNAVAILABLE")
         required_channel = (
             service_channel_for_order(order_channel, order_source)
             if order_channel
@@ -455,6 +508,7 @@ def build_order_item(
                 ProductVariant.product_id == product.id,
                 func.lower(ProductVariant.name) == variant_name.strip().lower(),
                 ProductVariant.active.is_(True),
+                ProductVariant.available.is_(True),
             )
         )
         if not variant:
@@ -493,6 +547,7 @@ def build_order_item(
             .where(
                 ProductModifierGroup.product_id == product.id,
                 Modifier.active.is_(True),
+                Modifier.available.is_(True),
             )
         )
         if selection.modifier_id is not None:
@@ -531,6 +586,8 @@ def build_order_item(
                 "modifier_id": modifier.id,
                 "name": modifier.name,
                 "price_delta": float(money(modifier.price_delta)),
+                "group_id": modifier.group_id,
+                "group_name": modifier_group.name if modifier_group else "Personalizaciones",
             }
         )
     for group in linked_groups:
@@ -572,6 +629,53 @@ def create_order(
         raise HTTPException(status_code=404, detail="Branch not found")
     ensure_branch_scope(user, branch.business_id, branch.id)
 
+    branch_settings = db.scalar(
+        select(BranchSettings).where(BranchSettings.branch_id == branch.id)
+    )
+    if branch_settings:
+        digital_source = payload.source in {
+            "public_store",
+            "agent",
+            "n8n",
+            "integration",
+            "whatsapp",
+            "whatsapp_agent",
+        }
+        service_key = {
+            "dine_in": "digital_tables" if digital_source else "pos_tables",
+            "counter": "pos_counter",
+            "takeaway": "digital_takeaway" if digital_source else "pos_takeaway",
+            "delivery": "digital_delivery" if digital_source else "pos_delivery",
+            "online": "digital_takeaway",
+            "whatsapp": "digital_takeaway",
+        }.get(payload.channel)
+        if service_key and not getattr(branch_settings, service_key):
+            raise CodedHTTPException(409, "Service is disabled for this branch", "SERVICE_DISABLED")
+        fulfillment = (
+            "delivery"
+            if payload.channel == "delivery"
+            else "counter"
+            if payload.channel in {"counter", "dine_in"}
+            else "takeaway"
+        )
+        allowed_methods = (branch_settings.payment_methods or {}).get(fulfillment, [])
+        if payload.payment_method and allowed_methods and payload.payment_method not in allowed_methods:
+            raise CodedHTTPException(
+                409,
+                "Payment method is disabled for this service",
+                "PAYMENT_METHOD_DISABLED",
+            )
+        primary_schedule = db.scalar(
+            select(ServiceSchedule).where(
+                ServiceSchedule.branch_id == branch.id,
+                ServiceSchedule.kind == "primary",
+                ServiceSchedule.active.is_(True),
+                ServiceSchedule.archived_at.is_(None),
+            )
+        )
+        if primary_schedule and not schedule_is_open(db, primary_schedule):
+            raise CodedHTTPException(409, "Branch is closed at this time", "BRANCH_CLOSED")
+
     if payload.channel == "dine_in" and not payload.table_id:
         raise CodedHTTPException(422, "Dine-in orders require a table", "TABLE_REQUIRED_FOR_DINE_IN")
 
@@ -590,6 +694,7 @@ def create_order(
                 Order.table_id == table.id,
                 Order.branch_id == branch.id,
                 Order.status.not_in(["closed", "cancelled", "delivered"]),
+                Order.table_released_at.is_(None),
             ).limit(1)
         )
         if active_order_id is not None:
@@ -636,6 +741,36 @@ def create_order(
             )
         )
     recalculate_order(db, order)
+    product_ids = {item.product_id for item in order.items if item.product_id is not None}
+    if product_ids:
+        assigned_schedules = list(
+            db.scalars(
+                select(ServiceSchedule)
+                .join(ScheduleAssignment, ScheduleAssignment.schedule_id == ServiceSchedule.id)
+                .where(
+                    ServiceSchedule.branch_id == branch.id,
+                    ServiceSchedule.kind == "additional",
+                    ServiceSchedule.active.is_(True),
+                    ServiceSchedule.archived_at.is_(None),
+                    ScheduleAssignment.product_id.in_(product_ids),
+                )
+                .distinct()
+            )
+        )
+        if any(not schedule_is_open(db, schedule) for schedule in assigned_schedules):
+            raise CodedHTTPException(
+                409,
+                "One or more products are outside their configured schedule",
+                "PRODUCT_SCHEDULE_CLOSED",
+            )
+    if payload.delivery_quote_id:
+        if payload.channel != "delivery":
+            raise HTTPException(status_code=422, detail="Delivery quotes can only be used for delivery orders")
+        apply_delivery_quote_to_order(db, order, payload.delivery_quote_id)
+        recalculate_order(db, order)
+    if order.source == "pos":
+        ensure_final_delivery_fee(order)
+    order.folio = reserve_order_folio(db, branch.business_id)
     db.add(order)
     db.flush()
     if table:
@@ -708,7 +843,7 @@ def create_integration_event(
 def add_order_item(db: Session, user: AuthContext, order: Order, line: OrderLineInput) -> Order:
     if order.status not in {"draft", "pending_confirmation", "confirmed"}:
         raise HTTPException(status_code=409, detail="Order can no longer be edited")
-    ensure_no_open_payment_evidence(db, order, "adding products")
+    ensure_order_products_mutable(db, order, "adding products")
     order.items.append(
         build_order_item(
             db,
@@ -726,12 +861,10 @@ def add_order_item(db: Session, user: AuthContext, order: Order, line: OrderLine
     return order
 
 
-def commit_order_items_stock(
+def _inventory_requirements_for_items(
     db: Session,
-    user: AuthContext,
-    order: Order,
     items: list[OrderItem],
-) -> None:
+) -> dict[int, Decimal]:
     requirements: dict[int, Decimal] = {}
     for item in items:
         if not item.product_id:
@@ -758,6 +891,16 @@ def commit_order_items_stock(
                 requirements[component.inventory_item_id] = requirements.get(
                     component.inventory_item_id, Decimal("0")
                 ) + required
+    return requirements
+
+
+def commit_order_items_stock(
+    db: Session,
+    user: AuthContext,
+    order: Order,
+    items: list[OrderItem],
+) -> None:
+    requirements = _inventory_requirements_for_items(db, items)
 
     inventory_items: dict[int, InventoryItem] = {}
     for inventory_id, required in requirements.items():
@@ -794,16 +937,64 @@ def commit_order_items_stock(
         )
 
 
+def restore_order_items_stock(
+    db: Session,
+    user: AuthContext,
+    order: Order,
+    items: list[OrderItem],
+) -> None:
+    requirements = _inventory_requirements_for_items(db, items)
+    for inventory_id, restored in requirements.items():
+        inventory = db.scalar(
+            select(InventoryItem)
+            .where(
+                InventoryItem.id == inventory_id,
+                InventoryItem.branch_id == order.branch_id,
+            )
+            .with_for_update()
+        )
+        if not inventory:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Recipe inventory item {inventory_id} not found",
+            )
+        inventory.quantity = Decimal(str(inventory.quantity)) + restored
+        inventory.version += 1
+        db.add(
+            StockMovement(
+                business_id=order.business_id,
+                branch_id=order.branch_id,
+                inventory_item_id=inventory.id,
+                movement_type="item_revision_reversal",
+                quantity_delta=restored,
+                balance_after=inventory.quantity,
+                reference_type="order",
+                reference_id=str(order.id),
+                created_by=user.user_id,
+            )
+        )
+
+
 def commit_order_stock(db: Session, user: AuthContext, order: Order) -> None:
-    commit_order_items_stock(db, user, order, list(order.items))
+    commit_order_items_stock(db, user, order, active_order_items(order))
+
+
+def ensure_final_delivery_fee(order: Order) -> None:
+    if order.delivery_fee_status == "pending_quote" or order.delivery_fee is None:
+        raise CodedHTTPException(
+            409,
+            "Delivery cost must be confirmed before the order can continue",
+            "DELIVERY_FEE_PENDING",
+        )
 
 
 def confirm_order(db: Session, user: AuthContext, order: Order) -> Order:
+    ensure_final_delivery_fee(order)
     if order.status == "confirmed":
         return order
     if order.status not in {"draft", "pending_confirmation"}:
         raise HTTPException(status_code=409, detail="Only draft orders can be confirmed")
-    if not order.items:
+    if not active_order_items(order):
         raise HTTPException(status_code=422, detail="Order must contain at least one item")
     commit_order_stock(db, user, order)
     order.status = "confirmed"
@@ -812,14 +1003,12 @@ def confirm_order(db: Session, user: AuthContext, order: Order) -> Order:
     return order
 
 
-def _ticket_items_by_station(db: Session, items: list[OrderItem]) -> dict[str, list[dict]]:
-    grouped: dict[str, list[dict]] = {}
+def _ticket_items_snapshot(db: Session, items: list[OrderItem]) -> list[dict]:
+    snapshot: list[dict] = []
     for item in items:
-        station = "kitchen"
         combo_components: list[dict] = []
         if item.product_id:
             product = db.get(Product, item.product_id)
-            station = product.preparation_station if product else "kitchen"
             if product and product.product_type == "combo":
                 components = list(
                     db.scalars(
@@ -845,56 +1034,86 @@ def _ticket_items_by_station(db: Session, items: list[OrderItem]) -> dict[str, l
                     for component in components
                     if component.component_product_id in component_products
                 ]
-        grouped.setdefault(station, []).append(
+        snapshot.append(
             {
                 "item_id": item.id,
                 "name": item.product_name,
+                "variant_name": item.variant_name,
                 "quantity": float(item.quantity),
                 "modifiers": item.modifiers,
+                "line_total": float(item.line_total),
+                "promotion_discount": float(item.promotion_discount or 0),
                 "notes": item.notes,
+                "status": item.status,
+                "replaces_item_id": item.replaces_item_id,
+                "cancellation_reason": item.cancellation_reason,
                 "combo_components": combo_components,
             }
         )
-    return grouped
+    return snapshot
+
+
+def _ticket_context_snapshot(db: Session, order: Order) -> dict:
+    return {
+        "order_number": order.number,
+        "order_folio": order.folio,
+        "channel": order.channel,
+        "source": order.source,
+        "customer_name": order.customer_name,
+        "customer_phone": order.customer_phone,
+        "delivery_address": deepcopy(order.delivery_address),
+        "notes": order.notes,
+        **table_print_context(db, order),
+        "created_by": order.created_by,
+    }
 
 
 def create_kitchen_tickets(
     db: Session,
     order: Order,
     items: list[OrderItem],
+    *,
+    kind: str = "standard",
+    items_snapshot: list[dict] | None = None,
+    context: dict | None = None,
 ) -> list[KitchenTicket]:
-    if not items:
+    if not items and items_snapshot is None:
         return []
 
     # Every caller also locks the order, but acquiring it here keeps sequence
     # allocation safe if this service is reused by another endpoint later.
     db.scalar(select(Order.id).where(Order.id == order.id).with_for_update())
-    grouped = _ticket_items_by_station(db, items)
-
-    tickets: list[KitchenTicket] = []
-    for station, items in grouped.items():
-        existing_sequences = list(
-            db.scalars(
-                select(KitchenTicket.sequence)
-                .where(
-                    KitchenTicket.order_id == order.id,
-                    KitchenTicket.station == station,
-                )
-                .with_for_update()
-            )
+    existing_sequences = list(
+        db.scalars(
+            select(KitchenTicket.sequence)
+            .where(KitchenTicket.order_id == order.id)
+            .with_for_update()
         )
-        ticket = KitchenTicket(
-            business_id=order.business_id,
-            branch_id=order.branch_id,
-            order_id=order.id,
-            station=station,
-            sequence=max(existing_sequences, default=0) + 1,
-            items_snapshot=items,
-        )
-        db.add(ticket)
-        tickets.append(ticket)
+    )
+    ticket_context = _ticket_context_snapshot(db, order)
+    if context:
+        ticket_context.update(context)
+    ticket_context["created_by_name"] = print_actor_name(db, order, ticket_context.get("created_by"))
+    ticket = KitchenTicket(
+        business_id=order.business_id,
+        branch_id=order.branch_id,
+        order_id=order.id,
+        station="kitchen",
+        kind=kind,
+        sequence=max(existing_sequences, default=0) + 1,
+        items_snapshot=(
+            items_snapshot
+            if items_snapshot is not None
+            else _ticket_items_snapshot(db, items)
+        ),
+        context_snapshot=ticket_context,
+    )
+    db.add(ticket)
     db.flush()
-    return tickets
+    settings = db.scalar(select(BranchSettings).where(BranchSettings.branch_id == order.branch_id))
+    if order.source != "pos" or local_printer_config(settings) is None:
+        enqueue_kitchen_print_jobs(db, order, [ticket])
+    return [ticket]
 
 
 OPEN_PAYMENT_EVIDENCE_STATUSES = {"evidence_received", "under_review"}
@@ -919,7 +1138,40 @@ def ensure_no_open_payment_evidence(
         )
 
 
+def ensure_order_products_mutable(
+    db: Session,
+    order: Order,
+    action: str,
+) -> None:
+    if order.status in {"cancelled", "closed"} or order.table_released_at is not None:
+        raise CodedHTTPException(
+            409,
+            "Order products are locked",
+            "ORDER_ITEMS_LOCKED",
+        )
+    if order.checkout_started_at is not None:
+        raise CodedHTTPException(
+            409,
+            "Reopen the table before changing its products",
+            "TABLE_CHECKOUT_STARTED",
+        )
+    has_payment = db.scalar(
+        select(Payment.id).where(
+            Payment.order_id == order.id,
+            Payment.status == "confirmed",
+        ).limit(1)
+    )
+    if has_payment is not None:
+        raise CodedHTTPException(
+            409,
+            "Order products cannot change after a payment",
+            "ORDER_HAS_PAYMENTS",
+        )
+    ensure_no_open_payment_evidence(db, order, action)
+
+
 def send_order_to_kitchen(db: Session, user: AuthContext, order: Order) -> list[KitchenTicket]:
+    ensure_final_delivery_fee(order)
     db.flush()
     ensure_no_open_payment_evidence(db, order, "sending the order to kitchen")
     existing = list(
@@ -940,12 +1192,14 @@ def send_order_to_kitchen(db: Session, user: AuthContext, order: Order) -> list[
             "KITCHEN_TICKETS_ALREADY_CREATED",
         )
 
-    tickets = create_kitchen_tickets(db, order, list(order.items))
+    tickets = create_kitchen_tickets(db, order, active_order_items(order))
     order.status = "sent_to_kitchen"
     order.sent_to_kitchen_at = utcnow()
     order.version += 1
     audit(db, user, "order.sent_to_kitchen", "order", order.id, order.business_id)
     db.flush()
+    for ticket in tickets:
+        prepare_pos_print_intent(db, order, ticket)
     return tickets
 
 
@@ -979,13 +1233,14 @@ def append_order_item_batch(
         "confirmed",
         "sent_to_kitchen",
         "preparing",
+        "ready",
     }:
         raise CodedHTTPException(
             409,
             "Order can no longer receive products",
             "ORDER_ITEMS_LOCKED",
         )
-    ensure_no_open_payment_evidence(db, order, "adding products")
+    ensure_order_products_mutable(db, order, "adding products")
 
     previous_status = order.status
     new_items = [
@@ -1004,20 +1259,19 @@ def append_order_item_batch(
     recalculate_order(db, order)
 
     tickets: list[KitchenTicket] = []
-    if previous_status in {"confirmed", "sent_to_kitchen", "preparing"}:
+    if previous_status in {"confirmed", "sent_to_kitchen", "preparing", "ready"}:
         commit_order_items_stock(db, user, order, new_items)
         existing_ticket_count = db.scalar(
             select(func.count(KitchenTicket.id)).where(KitchenTicket.order_id == order.id)
         ) or 0
         if previous_status == "confirmed" and existing_ticket_count == 0:
-            tickets = create_kitchen_tickets(db, order, list(order.items))
+            tickets = create_kitchen_tickets(db, order, active_order_items(order), context={"created_by": user.user_id})
             order.status = "sent_to_kitchen"
             order.sent_to_kitchen_at = order.sent_to_kitchen_at or utcnow()
         else:
-            tickets = create_kitchen_tickets(db, order, new_items)
-            if previous_status == "confirmed":
-                order.status = "sent_to_kitchen"
-                order.sent_to_kitchen_at = order.sent_to_kitchen_at or utcnow()
+            tickets = create_kitchen_tickets(db, order, new_items, kind="addition", context={"created_by": user.user_id})
+            order.status = "sent_to_kitchen"
+            order.sent_to_kitchen_at = order.sent_to_kitchen_at or utcnow()
 
     sync_order_payment_status(db, order)
     order.version += 1
@@ -1033,7 +1287,218 @@ def append_order_item_batch(
             "ticket_ids": [ticket.id for ticket in tickets],
         },
     )
+    db.flush()
+    for ticket in tickets:
+        prepare_pos_print_intent(db, order, ticket)
     return new_items, tickets
+
+
+def apply_order_item_revisions(
+    db: Session,
+    user: AuthContext,
+    order: Order,
+    operations: list[OrderItemRevisionOperation],
+) -> tuple[list[OrderItem], list[OrderItem], list[KitchenTicket]]:
+    if order.status not in {"sent_to_kitchen", "preparing", "ready"}:
+        raise CodedHTTPException(
+            409,
+            "Only products already sent to kitchen can be revised",
+            "ORDER_ITEMS_NOT_SENT",
+        )
+    ensure_order_products_mutable(db, order, "revising products")
+
+    operation_ids = [operation.item_id for operation in operations]
+    if len(operation_ids) != len(set(operation_ids)):
+        raise CodedHTTPException(
+            422,
+            "Each product can be revised only once per request",
+            "DUPLICATE_ITEM_REVISION",
+        )
+    candidates = {
+        item.id: item
+        for item in active_order_items(order)
+        if item.id in operation_ids
+    }
+    if len(candidates) != len(operation_ids):
+        raise CodedHTTPException(
+            404,
+            "One or more active order products were not found",
+            "ORDER_ITEM_NOT_FOUND",
+        )
+
+    cancelled_ids = {op.item_id for op in operations if op.type == "cancel"}
+    if not any(item.id not in cancelled_ids for item in active_order_items(order)):
+        raise CodedHTTPException(
+            409,
+            'Para cancelar todos los productos, usa "Cancelar pedido" en el men\u00fa de tres puntos.',
+            "ORDER_REQUIRES_CANCELLATION",
+        )
+    existing_tickets = list(db.scalars(
+        select(KitchenTicket).where(
+            KitchenTicket.order_id == order.id,
+            KitchenTicket.business_id == order.business_id,
+            KitchenTicket.branch_id == order.branch_id,
+        ).order_by(KitchenTicket.sequence).with_for_update()
+    ))
+    owners: dict[int, tuple[KitchenTicket, dict]] = {}
+    for ticket in existing_tickets:
+        for snapshot in effective_ticket_items(ticket):
+            owners[snapshot["item_id"]] = (ticket, snapshot)
+    if any(item_id not in owners for item_id in operation_ids):
+        raise CodedHTTPException(409, "No se encontr\u00f3 la comanda original del producto.", "ORDER_ITEM_COMMAND_MISSING")
+    modified_at = utcnow().isoformat()
+    audit_before = {item_id: item_audit_snapshot(item) for item_id, item in candidates.items()}
+
+    original_items: list[OrderItem] = []
+    replacement_items: list[OrderItem] = []
+    edit_pairs: list[tuple[OrderItem, OrderItem]] = []
+    cancelled_items: list[OrderItem] = []
+    for operation in operations:
+        original = candidates[operation.item_id]
+        original_items.append(original)
+        if operation.type == "edit":
+            replacement = build_order_item(
+                db,
+                order.business_id,
+                order.branch_id,
+                operation.replacement,
+                order.channel,
+                order.source,
+            )
+            original.status = "superseded"
+            replacement.replaces_item_id = original.id
+            order.items.append(replacement)
+            replacement_items.append(replacement)
+            edit_pairs.append((original, replacement))
+        else:
+            original.status = "cancelled"
+            original.cancellation_reason = (operation.reason or "").strip()
+            cancelled_items.append(original)
+
+    restore_order_items_stock(db, user, order, original_items)
+    db.flush()
+    if replacement_items:
+        commit_order_items_stock(db, user, order, replacement_items)
+    recalculate_order(db, order)
+
+    command_items: list[dict] = []
+    for original, replacement in edit_pairs:
+        item_snapshot = _ticket_items_snapshot(db, [replacement])[0]
+        if original.product_id == replacement.product_id:
+            item_snapshot["combo_components"] = deepcopy(owners[original.id][1].get("combo_components", []))
+        item_snapshot.update(
+            {
+                "action": "modified",
+                "previous_item_id": original.id,
+                "previous_name": original.product_name,
+                "previous_quantity": float(original.quantity),
+                "previous_variant_name": original.variant_name,
+                "removed_modifiers": retired_modifier_units(
+                    owners[original.id][1], item_snapshot,
+                    keep_history=owners[original.id][0].status in {"queued", "preparing"},
+                ),
+                "modified_at": modified_at,
+            }
+        )
+        command_items.append(item_snapshot)
+    for item in cancelled_items:
+        item_snapshot = deepcopy(owners[item.id][1])
+        item_snapshot.update(
+            {
+                "action": "cancelled",
+                "previous_item_id": item.id,
+                "status": "cancelled",
+                "cancellation_reason": item.cancellation_reason,
+                "modified_at": modified_at,
+                "line_total": float(item.line_total),
+                "promotion_discount": float(item.promotion_discount or 0),
+            }
+        )
+        command_items.append(item_snapshot)
+
+    if edit_pairs and cancelled_items:
+        kind = "revision"
+    elif cancelled_items:
+        kind = "cancellation"
+    else:
+        kind = "modification"
+    updated: dict[int, KitchenTicket] = {}
+    new_command_items = []
+    source_ticket_ids = set()
+    new_revisions = []
+    for after in command_items:
+        previous_id = after.get("previous_item_id", after["item_id"])
+        ticket, before = owners[previous_id]
+        if ticket.status in {"queued", "preparing"}:
+            context = deepcopy(ticket.context_snapshot or {})
+            context.setdefault("revisions", []).append({
+                "before": deepcopy(before), "after": deepcopy(after),
+                "created_at": modified_at, "created_by": user.user_id,
+            })
+            context["modified_at"] = modified_at
+            ticket.context_snapshot = context
+            updated[ticket.id] = ticket
+        else:
+            new_command_items.append(after)
+            source_ticket_ids.add(ticket.id)
+            new_revisions.append({"before": deepcopy(before), "after": deepcopy(after), "created_at": modified_at, "created_by": user.user_id})
+    for ticket in updated.values():
+        ticket.version += 1
+    sync_pending_kitchen_print_jobs(db, order, list(updated.values()))
+    new_tickets = create_kitchen_tickets(
+        db, order, [], kind=kind, items_snapshot=new_command_items,
+        context={"modified_at": modified_at, "source_ticket_ids": sorted(source_ticket_ids), "revisions": new_revisions, "created_by": user.user_id},
+    ) if new_command_items else []
+    tickets = [*updated.values(), *new_tickets]
+    if new_tickets:
+        order.status = "sent_to_kitchen"
+    sync_order_payment_status(db, order)
+    order.version += 1
+    audit(
+        db,
+        user,
+        "order.items_revised",
+        "order",
+        order.id,
+        order.business_id,
+        {
+            "snapshot_version": 1,
+            "order": order_identity_snapshot(order),
+            "operations": [
+                {
+                    "type": operation.type,
+                    "item_id": operation.item_id,
+                    "replacement_item_id": next(
+                        (
+                            replacement.id
+                            for original, replacement in edit_pairs
+                            if original.id == operation.item_id
+                        ),
+                        None,
+                    ),
+                    "reason": operation.reason,
+                    "before": audit_before[operation.item_id],
+                    "after": next(
+                        (item_audit_snapshot(replacement) for original, replacement in edit_pairs
+                         if original.id == operation.item_id),
+                        None,
+                    ),
+                }
+                for operation in operations
+            ],
+            "ticket_ids": [ticket.id for ticket in tickets],
+            "updated_ticket_ids": list(updated),
+            "created_ticket_ids": [ticket.id for ticket in new_tickets],
+        },
+        branch_id=order.branch_id,
+        actor_display_name=cash_actor_display_name(
+            db, user, business_id=order.business_id, branch_id=order.branch_id,
+        ),
+    )
+    db.flush()
+    for ticket in new_tickets:
+        prepare_pos_print_intent(db, order, ticket)
+    return replacement_items, cancelled_items, tickets
 
 
 ORDER_TRANSITIONS = {
@@ -1054,7 +1519,9 @@ def reverse_order_stock(db: Session, user: AuthContext, order: Order) -> None:
             select(StockMovement).where(
                 StockMovement.reference_type == "order",
                 StockMovement.reference_id == str(order.id),
-                StockMovement.movement_type == "sale_consumption",
+                StockMovement.movement_type.in_(
+                    ["sale_consumption", "item_revision_reversal"]
+                ),
             )
         )
     )
@@ -1066,13 +1533,21 @@ def reverse_order_stock(db: Session, user: AuthContext, order: Order) -> None:
     )
     if already_reversed:
         return
+    net_by_inventory: dict[int, Decimal] = {}
     for movement in movements:
+        net_by_inventory[movement.inventory_item_id] = (
+            net_by_inventory.get(movement.inventory_item_id, Decimal("0"))
+            + Decimal(str(movement.quantity_delta))
+        )
+    for inventory_id, net_delta in net_by_inventory.items():
+        if net_delta >= 0:
+            continue
         inventory = db.scalar(
-            select(InventoryItem).where(InventoryItem.id == movement.inventory_item_id).with_for_update()
+            select(InventoryItem).where(InventoryItem.id == inventory_id).with_for_update()
         )
         if not inventory:
             continue
-        restored = abs(Decimal(str(movement.quantity_delta)))
+        restored = abs(net_delta)
         inventory.quantity = Decimal(str(inventory.quantity)) + restored
         inventory.version += 1
         db.add(
@@ -1090,8 +1565,79 @@ def reverse_order_stock(db: Session, user: AuthContext, order: Order) -> None:
         )
 
 
-def transition_order(db: Session, user: AuthContext, order: Order, next_status: str) -> Order:
+def cancel_active_kitchen_tickets(
+    db: Session,
+    user: AuthContext,
+    order: Order,
+) -> list[KitchenTicket]:
+    tickets = list(
+        db.scalars(
+            select(KitchenTicket)
+            .where(
+                KitchenTicket.order_id == order.id,
+                KitchenTicket.business_id == order.business_id,
+                KitchenTicket.branch_id == order.branch_id,
+                KitchenTicket.status.in_(["queued", "preparing"]),
+            )
+            .with_for_update()
+        )
+    )
+    for ticket in tickets:
+        previous_status = ticket.status
+        ticket.status = "cancelled"
+        ticket.version += 1
+        audit(
+            db,
+            user,
+            "kitchen.cancelled",
+            "kitchen_ticket",
+            ticket.id,
+            ticket.business_id,
+            {"previous_status": previous_status, "order_id": order.id},
+        )
+    sync_pending_kitchen_print_jobs(db, order, tickets, cancel=True)
+    return tickets
+
+
+def release_current_order_table(db: Session, order: Order, status: str) -> None:
+    if not order.table_id or order.table_released_at is not None:
+        return
+    table = db.scalar(
+        select(RestaurantTable).where(
+            RestaurantTable.id == order.table_id,
+            RestaurantTable.business_id == order.business_id,
+            RestaurantTable.branch_id == order.branch_id,
+        ).with_for_update().execution_options(populate_existing=True)
+    )
+    if not table:
+        return
+    other_occupant = db.scalar(
+        select(Order.id).where(
+            Order.table_id == table.id,
+            Order.business_id == order.business_id,
+            Order.branch_id == order.branch_id,
+            Order.id != order.id,
+            Order.table_released_at.is_(None),
+            Order.status.notin_(["cancelled", "closed"]),
+        ).limit(1)
+    )
+    if other_occupant is None:
+        table.status = status
+        table.version += 1
+    order.table_released_at = utcnow()
+
+
+def transition_order(
+    db: Session,
+    user: AuthContext,
+    order: Order,
+    next_status: str,
+    *,
+    reason: str | None = None,
+) -> Order:
     if next_status == order.status:
+        if next_status == "cancelled":
+            cancel_active_kitchen_tickets(db, user, order)
         return order
     ensure_no_open_payment_evidence(db, order, "changing the order status")
     if next_status not in ORDER_TRANSITIONS.get(order.status, set()):
@@ -1111,29 +1657,42 @@ def transition_order(db: Session, user: AuthContext, order: Order, next_status: 
                 "All kitchen tickets must be ready before the order can be marked ready",
                 "KITCHEN_TICKETS_PENDING",
             )
+    cancellation_snapshot = None
     if next_status == "cancelled":
+        cancellation_snapshot = {
+            "snapshot_version": 1,
+            "order": order_identity_snapshot(order),
+            "reason": (reason or "").strip() or None,
+            "items": [item_audit_snapshot(item) for item in active_order_items(order)],
+            "total": str(order.total),
+            "paid_amount": str(db.scalar(select(func.coalesce(func.sum(Payment.amount), 0)).where(
+                Payment.business_id == order.business_id, Payment.order_id == order.id,
+                Payment.status == "confirmed",
+            ))),
+        }
         reverse_order_stock(db, user, order)
-        if order.table_id:
-            table = db.get(RestaurantTable, order.table_id)
-            if table:
-                table.status = "available"
-                table.version += 1
+        cancel_active_kitchen_tickets(db, user, order)
+        release_current_order_table(db, order, "available")
     order.status = next_status
     order.version += 1
     if next_status == "closed":
         order.closed_at = utcnow()
-        if order.table_id:
-            table = db.get(RestaurantTable, order.table_id)
-            if table:
-                table.status = "cleaning"
-                table.version += 1
-    audit(db, user, f"order.{next_status}", "order", order.id, order.business_id)
+        release_current_order_table(db, order, "cleaning")
+    audit(
+        db, user, f"order.{next_status}", "order", order.id, order.business_id,
+        cancellation_snapshot,
+        branch_id=order.branch_id,
+        actor_display_name=cash_actor_display_name(
+            db, user, business_id=order.business_id, branch_id=order.branch_id,
+        ) if next_status == "cancelled" else None,
+    )
     return order
 
 
 def add_payment(db: Session, user: AuthContext, order: Order, payload: PaymentCreate) -> Payment:
     if order.status in {"cancelled", "closed"}:
         raise HTTPException(status_code=409, detail="Cannot add a payment to this order")
+    ensure_final_delivery_fee(order)
     paid_total = money(
         db.scalar(
             select(func.coalesce(func.sum(Payment.amount), 0)).where(
@@ -1144,18 +1703,18 @@ def add_payment(db: Session, user: AuthContext, order: Order, payload: PaymentCr
     )
     if paid_total + money(payload.amount) > money(order.total):
         raise HTTPException(status_code=422, detail="Payment exceeds outstanding order amount")
-    cash_session_id = payload.cash_session_id
-    if payload.method == "cash" and cash_session_id is None:
-        raise HTTPException(status_code=422, detail="Select an open cash session for cash payments")
-    if cash_session_id:
-        cash_session = db.get(CashSession, cash_session_id)
-        if not cash_session or cash_session.status != "open" or cash_session.branch_id != order.branch_id:
-            raise HTTPException(status_code=422, detail="Cash session is not open for this branch")
+    cash_session = resolve_payment_cash_session(
+        db,
+        user,
+        order,
+        cash_session_id=payload.cash_session_id,
+        register_id=payload.register_id,
+    )
 
     payment = Payment(
         business_id=order.business_id,
         order_id=order.id,
-        cash_session_id=cash_session_id,
+        cash_session_id=cash_session.id,
         method=payload.method,
         amount=money(payload.amount),
         external_reference=payload.external_reference,
@@ -1163,6 +1722,7 @@ def add_payment(db: Session, user: AuthContext, order: Order, payload: PaymentCr
         created_by=user.user_id,
     )
     db.add(payment)
+    cash_session.version += 1
     db.flush()
     for allocation in payload.allocations:
         db.add(
@@ -1173,23 +1733,275 @@ def add_payment(db: Session, user: AuthContext, order: Order, payload: PaymentCr
                 amount=money(allocation.amount),
             )
         )
-    if cash_session_id:
-        db.add(
-            CashMovement(
-                cash_session_id=cash_session_id,
-                movement_type="sale",
-                payment_method=payload.method,
-                amount=money(payload.amount),
-                reference_type="order",
-                reference_id=str(order.id),
-                created_by=user.user_id,
-            )
-        )
     paid_total += money(payload.amount)
     order.payment_status = "paid" if paid_total >= money(order.total) else "partial"
     order.version += 1
-    audit(db, user, "payment.created", "payment", payment.id, order.business_id, {"order_id": order.id})
+    register_name = db.scalar(select(CashRegister.name).where(
+        CashRegister.id == cash_session.register_id,
+        CashRegister.business_id == order.business_id,
+        CashRegister.branch_id == order.branch_id,
+    ))
+    audit(
+        db, user, "payment.created", "payment", payment.id, order.business_id,
+        {
+            "order_id": order.id,
+            "cash_session_id": cash_session.id,
+            "cash_register_id": cash_session.register_id,
+            "cash_register_name": register_name,
+        },
+        branch_id=order.branch_id,
+    )
     return payment
+
+
+def assert_command_version(ticket: KitchenTicket, expected_version: int | None) -> None:
+    if expected_version is not None and ticket.version != expected_version:
+        raise CodedHTTPException(
+            409,
+            "La comanda cambi\u00f3. Revisa su contenido actualizado antes de continuar.",
+            "KITCHEN_TICKET_STALE",
+        )
+
+
+def complete_kitchen_command(
+    db: Session,
+    user: AuthContext,
+    order: Order,
+    ticket: KitchenTicket,
+    expected_status: str,
+    expected_version: int | None = None,
+) -> KitchenTicket:
+    assert_command_version(ticket, expected_version)
+    if order.status == "cancelled":
+        raise CodedHTTPException(409, "Order is cancelled", "ORDER_CANCELLED")
+    if ticket.status != expected_status:
+        raise CodedHTTPException(
+            409,
+            "Kitchen command changed on another terminal",
+            "KITCHEN_TICKET_STALE",
+        )
+    if ticket.status not in {"queued", "preparing"}:
+        raise CodedHTTPException(
+            409,
+            "Only an active kitchen command can be completed",
+            "KITCHEN_COMMAND_NOT_ACTIVE",
+        )
+    now = utcnow()
+    ticket.started_at = ticket.started_at or now
+    ticket.ready_at = now
+    ticket.status = "ready"
+    ticket.version += 1
+    remaining = db.scalar(
+        select(KitchenTicket.id).where(
+            KitchenTicket.order_id == order.id,
+            KitchenTicket.id != ticket.id,
+            KitchenTicket.status.in_(["queued", "preparing"]),
+        ).limit(1)
+    )
+    if remaining is None:
+        if order.table_released_at is not None:
+            order.status = "closed"
+            order.closed_at = order.closed_at or now
+        else:
+            order.status = "ready"
+    elif order.table_released_at is None:
+        order.status = "preparing"
+    order.version += 1
+    audit(
+        db,
+        user,
+        "kitchen.ready",
+        "kitchen_ticket",
+        ticket.id,
+        ticket.business_id,
+        {"order_id": order.id},
+    )
+    return ticket
+
+
+def reopen_kitchen_command(
+    db: Session,
+    user: AuthContext,
+    order: Order,
+    ticket: KitchenTicket,
+    expected_status: str,
+    expected_version: int | None = None,
+) -> KitchenTicket:
+    assert_command_version(ticket, expected_version)
+    if order.status == "cancelled":
+        raise CodedHTTPException(409, "Order is cancelled", "ORDER_CANCELLED")
+    if ticket.status != expected_status:
+        raise CodedHTTPException(
+            409,
+            "Kitchen command changed on another terminal",
+            "KITCHEN_TICKET_STALE",
+        )
+    if ticket.status not in {"ready", "served"}:
+        raise CodedHTTPException(
+            409,
+            "Only a completed kitchen command can be reopened",
+            "KITCHEN_COMMAND_NOT_COMPLETED",
+        )
+    ticket.status = "preparing"
+    ticket.version += 1
+    ticket.ready_at = None
+    ticket.started_at = ticket.started_at or utcnow()
+    if order.table_released_at is None and order.status != "closed":
+        order.status = "preparing"
+    order.version += 1
+    audit(
+        db,
+        user,
+        "kitchen.reopened",
+        "kitchen_ticket",
+        ticket.id,
+        ticket.business_id,
+        {"order_id": order.id},
+    )
+    return ticket
+
+
+def _ensure_table_order(order: Order) -> None:
+    if order.channel != "dine_in" or order.table_id is None:
+        raise CodedHTTPException(
+            409,
+            "This order is not assigned to a table",
+            "ORDER_NOT_TABLE_SERVICE",
+        )
+    if order.status == "cancelled":
+        raise CodedHTTPException(409, "Order is cancelled", "ORDER_CANCELLED")
+
+
+def _confirmed_payment_total(db: Session, order: Order) -> Decimal:
+    return money(
+        db.scalar(
+            select(func.coalesce(func.sum(Payment.amount), 0)).where(
+                Payment.order_id == order.id,
+                Payment.status == "confirmed",
+            )
+        )
+    )
+
+
+def start_table_checkout(db: Session, user: AuthContext, order: Order) -> Order:
+    _ensure_table_order(order)
+    if order.table_released_at is not None:
+        raise CodedHTTPException(409, "Table is already released", "TABLE_ALREADY_RELEASED")
+    if not active_order_items(order):
+        raise CodedHTTPException(
+            409,
+            "This table has no products",
+            "TABLE_HAS_NO_PRODUCTS",
+        )
+    if _confirmed_payment_total(db, order) > 0:
+        raise CodedHTTPException(
+            409,
+            "A table with payments cannot start checkout again",
+            "ORDER_HAS_PAYMENTS",
+        )
+    ensure_no_open_payment_evidence(db, order, "starting table checkout")
+    if order.checkout_started_at is None:
+        order.checkout_started_at = utcnow()
+        order.version += 1
+        create_checkout_print_job(db, order)
+        audit(db, user, "table.checkout_started", "order", order.id, order.business_id)
+    return order
+
+
+def reopen_table_checkout(db: Session, user: AuthContext, order: Order) -> Order:
+    _ensure_table_order(order)
+    if order.table_released_at is not None:
+        raise CodedHTTPException(409, "Table is already released", "TABLE_ALREADY_RELEASED")
+    if _confirmed_payment_total(db, order) > 0:
+        raise CodedHTTPException(
+            409,
+            "A table cannot be reopened after a payment",
+            "ORDER_HAS_PAYMENTS",
+        )
+    ensure_no_open_payment_evidence(db, order, "reopening table checkout")
+    if order.checkout_started_at is not None:
+        order.checkout_started_at = None
+        order.version += 1
+        invalidate_checkout_print_jobs(db, order)
+        audit(db, user, "table.checkout_reopened", "order", order.id, order.business_id)
+    return order
+
+
+def pay_table_checkout(
+    db: Session,
+    user: AuthContext,
+    order: Order,
+    payment_payloads: list[PaymentCreate],
+) -> list[Payment]:
+    _ensure_table_order(order)
+    if order.table_released_at is not None:
+        raise CodedHTTPException(409, "Table is already released", "TABLE_ALREADY_RELEASED")
+    if order.checkout_started_at is None:
+        raise CodedHTTPException(
+            409,
+            "Close the table before collecting payment",
+            "TABLE_CHECKOUT_NOT_STARTED",
+        )
+    ensure_no_open_payment_evidence(db, order, "collecting table payment")
+    already_paid = _confirmed_payment_total(db, order)
+    remaining = max(money(order.total) - already_paid, Decimal("0"))
+    requested_total = money(
+        sum((money(payload.amount) for payload in payment_payloads), Decimal("0"))
+    )
+    if requested_total != remaining:
+        raise CodedHTTPException(
+            422,
+            "Payment methods must cover the exact outstanding table total",
+            "TABLE_PAYMENT_TOTAL_MISMATCH",
+        )
+
+    payments = [add_payment(db, user, order, payload) for payload in payment_payloads]
+    db.flush()
+    if _confirmed_payment_total(db, order) < money(order.total):
+        raise CodedHTTPException(
+            409,
+            "The table payment did not settle the full balance",
+            "TABLE_PAYMENT_INCOMPLETE",
+        )
+
+    now = utcnow()
+    order.payment_status = "paid"
+    order.table_released_at = now
+    table = db.scalar(
+        select(RestaurantTable)
+        .where(
+            RestaurantTable.id == order.table_id,
+            RestaurantTable.business_id == order.business_id,
+            RestaurantTable.branch_id == order.branch_id,
+        )
+        .with_for_update()
+    )
+    if table:
+        table.status = "available"
+        table.version += 1
+    active_ticket = db.scalar(
+        select(KitchenTicket.id).where(
+            KitchenTicket.order_id == order.id,
+            KitchenTicket.status.in_(["queued", "preparing"]),
+        ).limit(1)
+    )
+    if active_ticket is None:
+        order.status = "closed"
+        order.closed_at = order.closed_at or now
+    order.version += 1
+    audit(
+        db,
+        user,
+        "table.paid_and_released",
+        "order",
+        order.id,
+        order.business_id,
+        {
+            "payment_ids": [payment.id for payment in payments],
+            "table_id": order.table_id,
+        },
+    )
+    return payments
 
 
 def split_amounts(total: Decimal, parts: int) -> list[Decimal]:
@@ -1202,16 +2014,7 @@ def split_amounts(total: Decimal, parts: int) -> list[Decimal]:
 
 
 def cash_session_expected(db: Session, session: CashSession) -> Decimal:
-    movements = list(db.scalars(select(CashMovement).where(CashMovement.cash_session_id == session.id)))
-    expected = money(session.opening_amount)
-    for movement in movements:
-        if movement.payment_method != "cash":
-            continue
-        if movement.movement_type in {"sale", "income"}:
-            expected += money(movement.amount)
-        elif movement.movement_type in {"withdrawal", "expense", "refund"}:
-            expected -= money(movement.amount)
-    return money(expected)
+    return money(cash_reconciliation(db, session)["cash_expected"])
 
 
 def create_reservation(db: Session, user: AuthContext, payload: ReservationCreate) -> Reservation:

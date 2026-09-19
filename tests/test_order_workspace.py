@@ -1,5 +1,8 @@
 from decimal import Decimal
 
+import pytest
+
+from app import api as api_module
 from app.database import SessionLocal
 from app.models import (
     InventoryItem,
@@ -513,7 +516,7 @@ def test_draft_batch_recalculates_promotions_without_stock_or_tickets(
         assert db.query(KitchenTicket).filter_by(order_id=order["id"]).count() == 0
 
 
-def test_batches_recalculate_payment_block_review_and_reverse_all_stock_once(
+def test_payments_lock_products_and_cancellation_reverses_stock_once(
     client,
     tenant,
     auth_headers,
@@ -544,36 +547,15 @@ def test_batches_recalculate_payment_block_review_and_reverse_all_stock_once(
         },
         headers={**auth_headers, "Idempotency-Key": "payment-batch-add"},
     )
-    assert batch.status_code == 201, batch.text
-    assert batch.json()["order"]["payment_status"] == "partial"
+    assert batch.status_code == 409, batch.text
+    assert batch.json()["code"] == "ORDER_HAS_PAYMENTS"
 
-    with SessionLocal.begin() as db:
-        evidence = PaymentEvidence(
-            business_id=tenant["business_id"],
-            order_id=order["id"],
-            provider="yape",
-            storage_path="private/evidence.webp",
-            image_sha256="a" * 64,
-            status="under_review",
-        )
-        db.add(evidence)
-
-    blocked = client.post(
-        f"/api/v1/orders/{order['id']}/item-batches",
-        json={
-            "expected_version": batch.json()["order"]["version"],
-            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
-        },
-        headers={**auth_headers, "Idempotency-Key": "payment-batch-blocked"},
-    )
-    assert blocked.status_code == 409
-    assert blocked.json()["code"] == "PAYMENT_EVIDENCE_UNDER_REVIEW"
-
-    with SessionLocal.begin() as db:
-        db.query(PaymentEvidence).filter_by(order_id=order["id"]).delete()
     cancelled = client.post(
         f"/api/v1/orders/{order['id']}/transition",
-        json={"status": "cancelled", "expected_version": batch.json()["order"]["version"]},
+        json={
+            "status": "cancelled",
+            "expected_version": paid.json()["order"]["version"],
+        },
         headers=auth_headers,
     )
     assert cancelled.status_code == 200, cancelled.text
@@ -595,8 +577,8 @@ def test_batches_recalculate_payment_block_review_and_reverse_all_stock_once(
             reference_id=str(order["id"]),
             movement_type="cancellation_reversal",
         ).all()
-        assert sum((abs(item.quantity_delta) for item in sale_movements), Decimal("0")) == Decimal("1.0")
-        assert sum((item.quantity_delta for item in reversal_movements), Decimal("0")) == Decimal("1.0")
+        assert sum((abs(item.quantity_delta) for item in sale_movements), Decimal("0")) == Decimal("0.5")
+        assert sum((item.quantity_delta for item in reversal_movements), Decimal("0")) == Decimal("0.5")
 
 
 def test_ready_is_blocked_until_every_ticket_is_ready(
@@ -637,7 +619,7 @@ def test_ready_is_blocked_until_every_ticket_is_ready(
     detail = client.get(f"/api/v1/orders/{order['id']}/detail", headers=auth_headers)
     assert detail.json()["order"]["status"] == "ready"
 
-    locked = client.post(
+    appended = client.post(
         f"/api/v1/orders/{order['id']}/item-batches",
         json={
             "expected_version": detail.json()["order"]["version"],
@@ -645,5 +627,251 @@ def test_ready_is_blocked_until_every_ticket_is_ready(
         },
         headers={**auth_headers, "Idempotency-Key": "ready-items-locked"},
     )
-    assert locked.status_code == 409
-    assert locked.json()["code"] == "ORDER_ITEMS_LOCKED"
+    assert appended.status_code == 201, appended.text
+    assert appended.json()["order"]["status"] == "sent_to_kitchen"
+    assert appended.json()["tickets"][0]["sequence"] == 2
+
+
+def test_cancelling_order_cancels_queued_and_preparing_tickets(
+    client,
+    tenant,
+    auth_headers,
+):
+    created = client.post(
+        "/api/v1/orders",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "dine_in",
+            "table_id": tenant["table_id"],
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
+        },
+        headers={**auth_headers, "Idempotency-Key": "cancel-tickets-create"},
+    )
+    assert created.status_code == 201, created.text
+    sent = confirm_and_send(
+        client,
+        created.json(),
+        auth_headers,
+        key="cancel-tickets-confirm",
+    )
+    batch = client.post(
+        f"/api/v1/orders/{created.json()['id']}/item-batches",
+        json={
+            "expected_version": sent["order"]["version"],
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
+        },
+        headers={**auth_headers, "Idempotency-Key": "cancel-tickets-batch"},
+    )
+    assert batch.status_code == 201, batch.text
+    first_ticket_id = sent["tickets"][0]["id"]
+    second_ticket_id = batch.json()["tickets"][0]["id"]
+    preparing = client.post(
+        f"/api/v1/kitchen/tickets/{first_ticket_id}/transition",
+        json={"status": "preparing", "expected_status": "queued"},
+        headers=auth_headers,
+    )
+    assert preparing.status_code == 200, preparing.text
+    detail = client.get(
+        f"/api/v1/orders/{created.json()['id']}/detail",
+        headers=auth_headers,
+    ).json()
+
+    cancelled = client.post(
+        f"/api/v1/orders/{created.json()['id']}/transition",
+        json={
+            "status": "cancelled",
+            "expected_version": detail["order"]["version"],
+        },
+        headers=auth_headers,
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "cancelled"
+
+    visible_tickets = client.get(
+        "/api/v1/kitchen/tickets",
+        params={"branch_id": tenant["branch_id"]},
+        headers=auth_headers,
+    )
+    assert visible_tickets.status_code == 200, visible_tickets.text
+    assert visible_tickets.json() == []
+    with SessionLocal() as db:
+        assert db.get(KitchenTicket, first_ticket_id).status == "cancelled"
+        assert db.get(KitchenTicket, second_ticket_id).status == "cancelled"
+        assert db.get(Order, created.json()["id"]).status == "cancelled"
+        assert db.get(RestaurantTable, tenant["table_id"]).status == "available"
+
+
+def test_cancelled_order_blocks_later_ticket_transition(
+    client,
+    tenant,
+    auth_headers,
+):
+    order = create_order(client, tenant, auth_headers, key="blocked-ticket-create")
+    sent = confirm_and_send(client, order, auth_headers, key="blocked-ticket-confirm")
+    ticket_id = sent["tickets"][0]["id"]
+    cancelled = client.post(
+        f"/api/v1/orders/{order['id']}/transition",
+        json={
+            "status": "cancelled",
+            "expected_version": sent["order"]["version"],
+        },
+        headers=auth_headers,
+    )
+    assert cancelled.status_code == 200, cancelled.text
+
+    blocked = client.post(
+        f"/api/v1/kitchen/tickets/{ticket_id}/transition",
+        json={"status": "preparing", "expected_status": "cancelled"},
+        headers=auth_headers,
+    )
+    assert blocked.status_code == 409, blocked.text
+    assert blocked.json()["code"] == "ORDER_CANCELLED"
+    with SessionLocal() as db:
+        assert db.get(Order, order["id"]).status == "cancelled"
+        assert db.get(KitchenTicket, ticket_id).status == "cancelled"
+
+
+@pytest.mark.parametrize("active_status", ["sent_to_kitchen", "preparing"])
+def test_dine_in_order_can_transfer_table_after_send(
+    client,
+    tenant,
+    auth_headers,
+    monkeypatch,
+    active_status,
+):
+    with SessionLocal.begin() as db:
+        target = RestaurantTable(
+            business_id=tenant["business_id"],
+            branch_id=tenant["branch_id"],
+            code=f"DEST-{active_status}",
+            name=f"Destino {active_status}",
+            capacity=4,
+        )
+        db.add(target)
+        db.flush()
+        target_table_id = target.id
+
+    created = client.post(
+        "/api/v1/orders",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "dine_in",
+            "table_id": tenant["table_id"],
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
+        },
+        headers={**auth_headers, "Idempotency-Key": f"transfer-create-{active_status}"},
+    )
+    assert created.status_code == 201, created.text
+    sent = confirm_and_send(
+        client,
+        created.json(),
+        auth_headers,
+        key=f"transfer-confirm-{active_status}",
+    )
+    current_order = sent["order"]
+    if active_status == "preparing":
+        transitioned = client.post(
+            f"/api/v1/orders/{created.json()['id']}/transition",
+            json={
+                "status": "preparing",
+                "expected_version": current_order["version"],
+            },
+            headers=auth_headers,
+        )
+        assert transitioned.status_code == 200, transitioned.text
+        current_order = transitioned.json()
+
+    stale = client.patch(
+        f"/api/v1/orders/{created.json()['id']}",
+        json={
+            "table_id": target_table_id,
+            "expected_version": current_order["version"] - 1,
+        },
+        headers=auth_headers,
+    )
+    assert stale.status_code == 409, stale.text
+
+    broadcasts = []
+
+    async def capture_broadcast(branch_id, event, payload):
+        broadcasts.append((branch_id, event, payload))
+
+    monkeypatch.setattr(api_module.hub, "broadcast", capture_broadcast)
+    moved = client.patch(
+        f"/api/v1/orders/{created.json()['id']}",
+        json={
+            "table_id": target_table_id,
+            "expected_version": current_order["version"],
+        },
+        headers=auth_headers,
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["status"] == active_status
+    assert moved.json()["table_id"] == target_table_id
+    assert moved.json()["version"] == current_order["version"] + 1
+    assert [event for _, event, _ in broadcasts] == [
+        "table.updated",
+        "table.updated",
+        "order.updated",
+    ]
+    with SessionLocal() as db:
+        assert db.get(RestaurantTable, tenant["table_id"]).status == "available"
+        assert db.get(RestaurantTable, target_table_id).status == "occupied"
+
+
+def test_waiter_can_register_kitchen_ticket_print(
+    client,
+    tenant,
+    auth_headers,
+):
+    order = create_order(client, tenant, auth_headers, key="waiter-print-create")
+    sent = confirm_and_send(client, order, auth_headers, key="waiter-print-confirm")
+    waiter_headers = {
+        **auth_headers,
+        "X-Dev-Role": "waiter",
+        "X-Dev-User": "waiter-test",
+    }
+    printed = client.post(
+        f"/api/v1/kitchen/tickets/{sent['tickets'][0]['id']}/print",
+        headers=waiter_headers,
+    )
+    assert printed.status_code == 200, printed.text
+    assert printed.json()["print_count"] == 1
+
+
+def test_kitchen_ticket_list_includes_dine_in_order_and_table_context(
+    client,
+    tenant,
+    auth_headers,
+):
+    created = client.post(
+        "/api/v1/orders",
+        json={
+            "branch_id": tenant["branch_id"],
+            "channel": "dine_in",
+            "table_id": tenant["table_id"],
+            "customer_name": "Mesa de Claudio",
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}],
+        },
+        headers={**auth_headers, "Idempotency-Key": "ticket-context-create"},
+    )
+    assert created.status_code == 201, created.text
+    sent = confirm_and_send(
+        client,
+        created.json(),
+        auth_headers,
+        key="ticket-context-confirm",
+    )
+
+    response = client.get(
+        "/api/v1/kitchen/tickets",
+        params={"branch_id": tenant["branch_id"]},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200, response.text
+    ticket = next(item for item in response.json() if item["id"] == sent["tickets"][0]["id"])
+    assert ticket["order_number"] == created.json()["number"]
+    assert ticket["channel"] == "dine_in"
+    assert ticket["customer_name"] == "Mesa de Claudio"
+    assert ticket["table_id"] == tenant["table_id"]
+    assert ticket["table_name"] == "Mesa 1"

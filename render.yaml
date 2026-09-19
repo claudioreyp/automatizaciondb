@@ -3,9 +3,11 @@ services:
     name: escalar-ai-pos-api
     branch: agent/escalar-ai-pos-api
     runtime: python
+    plan: free
+    region: oregon
+    autoDeployTrigger: "off"
     buildCommand: pip install -r requirements.txt
-    preDeployCommand: alembic upgrade head
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT --workers 1 --no-access-log --log-config logging.json
     healthCheckPath: /api/v1/health
     envVars:
       - key: PYTHON_VERSION
@@ -29,6 +31,16 @@ services:
       - key: INVITE_REDIRECT_URL
         sync: false
       - key: PUBLIC_API_BASE_URL
-        value: https://escalar-ai-pos-api.onrender.com/api/v1
+        value: https://api.escalarai.tech/api/v1
+      - key: POS_PUBLIC_BASE_URL
+        value: https://pos.escalarai.tech
+      - key: DEVICE_AUTH_SECRET
+        sync: false
+      - key: AUTH_ADMIN_SECRET
+        sync: false
+      - key: QZ_TRAY_CERTIFICATE
+        sync: false
+      - key: QZ_TRAY_PRIVATE_KEY
+        sync: false
       - key: LEGACY_PUBLIC_READS_ENABLED
         value: "false"

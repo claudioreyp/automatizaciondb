@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     supabase_owner_provision_function: str = "provision-pos-owner"
     invite_redirect_url: str = "http://localhost:5173/invitacion"
     public_api_base_url: str | None = None
+    pos_public_base_url: str | None = None
+    device_auth_secret: str | None = None
+    auth_admin_secret: str | None = None
     integration_service_token: str | None = None
     dev_auth_token: str | None = None
     legacy_public_reads_enabled: bool = False
