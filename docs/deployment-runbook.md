@@ -3,6 +3,13 @@
 Canonical Render service: `escalar-ai-pos-api`.
 Tracked branch: `agent/escalar-ai-pos-api`.
 
+Current hosting (later on 2026-09-19): both frontends are on the verified Vercel
+Pro team; the existing Render service is on `0.5c-512mb`, one instance, USD 7/month
+base, explicitly authorized by the user. No autoscaling or add-ons were enabled.
+Supabase Pro and all three domains are unchanged. Earlier Free/Hobby observations
+below are historical, not the current compute configuration. Paid hosting is not
+a guarantee of uninterrupted service or completion of the security checklist.
+
 ## Test release: 2026-09-19
 
 Personal, noncommercial tests only. Vercel Hobby is not the commercial hosting
@@ -61,7 +68,10 @@ Do not replay pending print jobs or historical integration events during checks.
 
 ## Pending commercial activation
 
-- Upgrade hosting for commercial use and continuous operation before real clients.
+- Hosting upgrade completed: Vercel Pro + paid Render instance. Monitor capacity,
+  included usage and overages; do not increase resources without a new budget.
+- Resolve the documented QZ private identity exposure with supervised rotation
+  and workstation reauthorization before commercial onboarding.
 - Configure SMTP separately; built-in Auth email is not a production invitation
   service. Password login and Admins password renewal do not require SMTP.
 - Confirm browser Maps key restrictions include the POS domain. Server route and
@@ -191,16 +201,31 @@ Pre-publication verification:
 - No live orders, payments, print claims or historical event acknowledgments were
   used to verify this feature. n8n and the WhatsApp gateway are unchanged.
 
-Deploy API first, then CLIENTES and Admins, using the existing services and domains.
-Record actual live revisions below only after health and UI verification.
+Published API first, then CLIENTES and Admins, on existing services and domains:
 
-The user subsequently requested commercial activation and reported purchasing
-Vercel Pro. This does not by itself certify commercial readiness. The existing
+| App | Application commit | Verified deployment |
+| --- | --- | --- |
+| API | `9cd640e43ade3816c33737141d197fee1edf03b3` | Render `dep-danhumrtqb8s73c00hq0`; paid-instance redeploy `dep-danhvk142hec73eik1pg` |
+| CLIENTES | `aa674b1b339ce042c15e68aa63ec1bf3e92e6fa2` | Vercel `dpl_CtVMLt6heq7sHxA7iYC96bbapqec` |
+| Admins | `e23204b2d7e2d92761555850c16039cc2a7cdac5` | Vercel `dpl_5cdMgwhgT2T6QVk3NRdVSMW1jjEw` |
+
+Live checks: API health 200 and updated OpenAPI; context, QR and administrative
+context reject unauthenticated requests with 401; exact POS CORS retained. Existing
+owner/superadmin sessions loaded the new profile and read-only summary over HTTPS.
+The real configured delivery displayed Por cotizar, not zero. A Yape text draft
+was cancelled without saving. Existing values were not modified. Live Storage
+remains private and Alembic remains `20260919_0023`. QR byte equality and write/error
+cases were tested against the isolated API, not by replacing a live restaurant QR.
+
+The user subsequently requested commercial activation; Vercel Pro was verified
+in the actual team dashboard. This does not by itself certify commercial readiness. The existing
 single-process API uses an in-memory realtime hub; moving it to distributed Vercel
 Functions needs an external coordination design and regression verification, even
 though Vercel now supports WebSockets. Additional hosting costs require a concrete
-budget. Keep the current API destination until the hosting decision is confirmed.
-The QZ identity exposure and other operational limits listed above remain open.
+budget. The user chose to retain Render and explicitly authorized its USD 7/month
+instance. The change completed successfully; dashboard confirms one instance and
+no autoscaling. No Vercel API migration was attempted. The QZ identity exposure
+and other operational limits listed above remain open.
 
 ## Safe rollback
 

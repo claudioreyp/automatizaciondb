@@ -3,7 +3,8 @@ services:
     name: escalar-ai-pos-api
     branch: agent/escalar-ai-pos-api
     runtime: python
-    plan: free
+    plan: 0.5c-512mb
+    numInstances: 1
     region: oregon
     autoDeployTrigger: "off"
     buildCommand: pip install -r requirements.txt
