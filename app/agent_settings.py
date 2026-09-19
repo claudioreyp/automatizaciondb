@@ -39,6 +39,7 @@ def set_menu_images(branch, images):
 def agent_response(branch):
     base = f"/api/v1/settings/branches/{branch.id}/agent"
     return {"branch_id": branch.id, "version": branch.version, "name": branch.agent_name,
+            "yape_number": branch.yape_number, "payment_recipient_name": branch.payment_recipient_name,
             "images": [{"id": item["id"], "url": f"{base}/images/{item['id']}?v={branch.version}"} for item in menu_images(branch)],
             "yape_qr_url": f"{base}/yape-qr?v={branch.version}" if branch.yape_qr_storage_path else None}
 
@@ -46,9 +47,11 @@ def agent_response(branch):
 class AgentUpdate(BaseModel):
     expected_version: int = Field(ge=1)
     name: str | None = Field(default=None, max_length=80)
+    yape_number: str | None = Field(default=None, max_length=40)
+    payment_recipient_name: str | None = Field(default=None, max_length=180)
     image_order: list[str] | None = None
 
-    @field_validator("name")
+    @field_validator("name", "yape_number", "payment_recipient_name")
     @classmethod
     def clean_name(cls, value):
         return value.strip() or None if value else None
@@ -82,7 +85,9 @@ def commit(db, branch, user, scope, key, signature):
     branch.version += 1
     result = agent_response(branch)
     audit(db, user, scope, "branch", branch.id, branch.business_id,
-          {"name": branch.agent_name, "image_ids": [i["id"] for i in menu_images(branch)], "yape_qr_configured": bool(branch.yape_qr_storage_path)},
+          {"name": branch.agent_name, "yape_number": branch.yape_number,
+           "payment_recipient_name": branch.payment_recipient_name,
+           "image_ids": [i["id"] for i in menu_images(branch)], "yape_qr_configured": bool(branch.yape_qr_storage_path)},
           branch_id=branch.id, actor_display_name=actor_display_name(db, user))
     save_idempotent_response(db, scope, key, branch.business_id, {"fingerprint": signature, "result": result})
     db.commit()
@@ -120,6 +125,9 @@ def update_agent(branch_id: int, payload: AgentUpdate, idempotency_key: str | No
     assert_version(branch.version, payload.expected_version)
     if "name" in payload.model_fields_set:
         branch.agent_name = payload.name
+    for field in ("yape_number", "payment_recipient_name"):
+        if field in payload.model_fields_set:
+            setattr(branch, field, getattr(payload, field))
     if payload.image_order is not None:
         images = {i["id"]: i for i in menu_images(branch)}
         if len(payload.image_order) != len(images) or set(payload.image_order) != set(images):

@@ -22,6 +22,7 @@ from .order_editing import delivery_service, edit_order_details, order_edit_poli
 from .order_folios import parse_order_folio
 from .product_access import POS_MODULES, POS_PLAN, full_pos_modules
 from .integration_package import integration_package
+from .agent_context import agent_context
 
 from .auth import (
     AuthContext,
@@ -1981,6 +1982,16 @@ def get_branch_integration_package(
         "integration": integration_package(base, branch.business_id, branch.id, credential.scopes),
         "credential": serialize_integration_credential(credential),
     }
+
+
+@api.get("/admin/branches/{branch_id}/agent-context", tags=["superadmin"])
+def get_admin_agent_context(
+    branch_id: int, response: Response,
+    user: AuthContext = Depends(require_roles("superadmin")), db: Session = Depends(get_db),
+):
+    branch = branch_for_user(db, user, branch_id)
+    response.headers["Cache-Control"] = "no-store"
+    return {"branch_id": branch.id, **agent_context(db, branch)}
 
 
 @api.get("/admin/onboarding/restaurants/status", tags=["superadmin"])
@@ -6764,6 +6775,7 @@ def ensure_integration_order_scope(integration: IntegrationAuthContext, order: O
 
 @api.get("/integrations/context", tags=["integrations"])
 def integration_context(
+    response: Response,
     branch_id: int | None = None,
     integration: IntegrationAuthContext = Depends(require_integration_scope("menu:read")),
     db: Session = Depends(get_db),
@@ -6771,7 +6783,9 @@ def integration_context(
     _, branch = integration_branch_from_auth(db, integration, branch_id)
     business = db.get(Business, branch.business_id)
     branch_payload = serialize_branch(branch)
+    response.headers["Cache-Control"] = "private, no-store"
     return {
+        **agent_context(db, branch),
         "business": {
             "id": business.id,
             "slug": business.slug,
@@ -6806,9 +6820,15 @@ async def integration_yape_qr(
         raise HTTPException(status_code=404, detail="Yape QR is not configured")
     try:
         data, content_type = await load_private_file(branch.yape_qr_storage_path)
-    except (FileNotFoundError, httpx.HTTPError) as exc:
+    except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Yape QR image not found") from exc
-    return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, no-store"})
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Yape QR image not found") from exc
+        raise HTTPException(status_code=503, detail="Yape QR storage is temporarily unavailable") from exc
+    except (httpx.HTTPError, OSError) as exc:
+        raise HTTPException(status_code=503, detail="Yape QR storage is temporarily unavailable") from exc
+    return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
 
 
 @api.get("/integrations/context/menu-card", tags=["integrations"])

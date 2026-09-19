@@ -2,6 +2,62 @@
 
 Guia operativa generica. Las decisiones transversales estan en `../../AGENTS.md`.
 
+## Contexto configurado desde el POS
+
+CLIENTES > Configuracion > Perfil del agente administra el nombre, la carta,
+el numero de Yape, su titular y el QR completo. Datos de sucursal administra
+direccion, telefono, enlace de Maps y coordenadas; Costos de envio administra
+tarifas y condiciones. Admins solo consulta este contexto por sucursal, sin
+duplicar formularios, y sigue administrando credenciales y rutas copiables.
+
+`GET /api/v1/integrations/context` requiere Bearer con `menu:read`. El token
+impone negocio/sucursal. Agrega estos bloques sin retirar `business` ni `branch`:
+
+- `agent`: nombre y version del perfil.
+- `location`: direccion, telefono, maps_url, latitude y longitude del local.
+  El origen personalizado de reparto permanece separado en delivery.policy.
+- `payments`: metodos por modalidad, datos heredados de Plin y `yape` con number,
+  recipient_name, qr_configured, qr_url, qr_authentication y qr_scope.
+- `delivery`: enabled, mode, fee, fee_status, requires_quote, requires_destination,
+  configuration_version, tarifas, minimum_order_amount, free_delivery_threshold,
+  policy y bands. Lee BranchSettings; source=legacy_branch solo cuando todavia no
+  existe configuracion POS. La consulta no crea ni modifica configuracion.
+
+`delivery.fee` es la tarifa configurada de fixed/free, sujeta a cobertura, minimo
+y condiciones, no una cotizacion de un pedido. En quote es null/pending_quote;
+distance/bands/neighborhoods devuelven null/destination_required con sus reglas.
+Deshabilitado devuelve null/disabled. Nunca interpretar null como cero. No usar
+`branch.delivery_fee` para el contrato nuevo: se conserva solo por compatibilidad.
+Esta entrega no cambia el calculo ni el registro de pedidos de integracion.
+
+Descarga del QR (respuesta binaria, no JSON):
+
+```sh
+curl --fail --show-error \
+  -H "Authorization: Bearer $POS_INTEGRATION_TOKEN" \
+  https://api.escalarai.tech/api/v1/integrations/context/yape-qr \
+  --output yape-qr.png
+```
+
+Usar el Content-Type devuelto (PNG/JPEG/WEBP) al enviar la imagen. Resolver qr_url
+contra el origen de la API, no contra pos.escalarai.tech ni admin.escalarai.tech.
+La futura integracion descargara el archivo con su token; no debe enviar al
+consumidor el token ni una URL con credenciales. No se modifico n8n para hacerlo.
+404 indica QR ausente/no encontrado; 503 indica almacenamiento indisponible y
+requiere reintentar la lectura, nunca afirmar que se envio la imagen.
+
+El archivo permanece en Storage privado `impulsa-private`; PostgreSQL guarda su
+referencia. Las claves de servidor nunca salen al navegador. La descarga usa
+`Cache-Control: private, no-store` y valida el ambito en cada solicitud. Las rutas
+publicas de la carta siguen disponibles por compatibilidad.
+
+`GET /api/v1/admin/branches/{id}/agent-context` exige superadmin, no devuelve
+tokens ni rutas privadas de Storage y permite consultar negocios suspendidos.
+`GET/PATCH /api/v1/settings/branches/{id}/agent` agrega `yape_number` (40) y
+`payment_recipient_name` (180), opcionales; PATCH exige version e idempotencia.
+Omitir conserva; null/vacio elimina solo el texto, no el QR ni los metodos.
+No requiere migracion ni restablece datos existentes.
+
 ## Alta desde Admins
 
 1. Ingresar con el superadministrador y abrir Negocios > Nuevo restaurante.

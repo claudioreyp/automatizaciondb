@@ -166,6 +166,42 @@ Platform references: [Render custom domains](https://render.com/docs/custom-doma
 [Supabase SMTP](https://supabase.com/docs/guides/auth/auth-smtp),
 [React Router advisory](https://github.com/advisories/GHSA-qwww-vcr4-c8h2).
 
+## Agent configuration release (2026-09-19)
+
+CLIENTES now maintains the optional Yape number and recipient beside the full QR.
+Admins reads the same branch configuration through the superadmin-only context
+endpoint. The integration context adds payments, location and POS delivery rules;
+legacy fields and public catalog routes remain compatible. See
+`access-integration.md` for the authenticated binary QR download contract.
+
+Pre-publication verification:
+
+- Private backup `deployment-20260919T234046Z`: 51 tables / 824 rows, uploads and
+  configuration preserved locally and excluded from Git.
+- Supabase remains `vgxbymduddknaxczudxj`, revision `20260919_0023`; the
+  `impulsa-private` bucket remains private. No schema migration or data rewrite.
+- API: 733 tests passed, 2 PostgreSQL-specific tests skipped in this run.
+- CLIENTES: 757 Vitest tests passed; Admins: 25 passed; both lint and builds passed.
+- Isolated real-API Playwright: 6 desktop/tablet/mobile cases passed, plus 3 final
+  profile checks after layout polish. Uploaded/downloaded QR bytes matched.
+- Admins isolated Playwright: 15 cases passed. Read-only context, pending delivery,
+  retained drafts, idempotent recovery, branch isolation and stale responses covered.
+- Grouped desktop/mobile visual review and targeted Impeccable detector passed.
+  Existing bundle-size warnings remain; no new dependencies were introduced.
+- No live orders, payments, print claims or historical event acknowledgments were
+  used to verify this feature. n8n and the WhatsApp gateway are unchanged.
+
+Deploy API first, then CLIENTES and Admins, using the existing services and domains.
+Record actual live revisions below only after health and UI verification.
+
+The user subsequently requested commercial activation and reported purchasing
+Vercel Pro. This does not by itself certify commercial readiness. The existing
+single-process API uses an in-memory realtime hub; moving it to distributed Vercel
+Functions needs an external coordination design and regression verification, even
+though Vercel now supports WebSockets. Additional hosting costs require a concrete
+budget. Keep the current API destination until the hosting decision is confirmed.
+The QZ identity exposure and other operational limits listed above remain open.
+
 ## Safe rollback
 
 Render keeps the last healthy instance serving traffic when build or
