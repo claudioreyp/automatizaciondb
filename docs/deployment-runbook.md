@@ -86,6 +86,13 @@ for local testing. Public signup remains disabled.
 | API | `1d332cf2d12f56e4760fcd8f15d95a461f6f8514` | Render `dep-danb3v6gekts738ce53g` |
 
 Subsequent documentation/test-script commits do not change application code.
+The final Vercel Git builds are also READY and assigned to production: CLIENTES
+`08eae200dfe4d7c108b4d6166a586ac29ce996f6` /
+`dpl_ChTr8L93XkTTdV1RNFM7py6S5ts2`, Admins
+`00cc18458745cb04b342d69250544ae0a344f74d` /
+`dpl_GPXZzNfawXTyn8a9uLReD9Zb2kTM`. Deep links and API health were rechecked as HTTP
+200 after this promotion. Render remains on the application commit above because
+the later API commits contain only documentation and opt-in verification scripts.
 Vercel production branches match the existing `agent/escalar-ai-*` branches.
 Render remains manually deployed. Vercel's technical preview addresses may require
 Vercel authentication; use the custom domains for POS testing.
