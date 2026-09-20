@@ -44,7 +44,7 @@ La consulta idempotente de una creacion previamente confirmada sigue funcionando
 
 - 787 Pytest aprobados; cinco pruebas opcionales PostgreSQL omitidas en esta corrida.
   Las pruebas usan SQLite aislado; no se ejecutaron migraciones en la base de uso.
-- 90 pruebas gateway/workflow aprobadas y TypeScript validado al preparar la entrega.
+- 94 pruebas gateway/workflow aprobadas, TypeScript y build correctos.
   Incluyen modalidad inventada, Americana/Yape sin sustituto aceptado, media/destino,
   rafagas durante respuesta lenta, chats simultaneos, estados terminales, proteccion
   de confirmaciones y regresiones previas de comprobantes, relay y escritura.
@@ -60,4 +60,46 @@ gateway compilado. El script verifica version publicada y ausencia de ejecucione
 activas antes del PUT y no repite una publicacion incierta. No sobrescribe staticData.
 Las pruebas de webhook con identidades tecnicas no equivalen a verificar la recepcion
 visual en un telefono. WhatsApp necesita el equipo/gateway encendidos y vinculados.
-Resultados y versiones definitivos se registraran tras la activacion verificada.
+
+## Resultado del 2026-09-20
+
+- API publicada: `d3853dd700f2d73a42ab5c1de0a48b452adf5262`, repositorio
+  `claudioreyp/automatizaciondb`, rama `agent/escalar-ai-pos-api`.
+  Render `dep-dao6ag3m8hqs73den2vg` en el servicio existente, sin migracion ni
+  cambios de configuracion. Health HTTPS 200 y rechazo real 422
+  `ORDER_CHANNEL_REQUIRED` con cuerpo incompleto, sin crear pedido.
+- Workflow activo: `e6d442a7-0a92-4762-a48a-a43947bdc3e7`. Verificado contra el
+  artefacto preparado; 105 nodos, mismas credenciales/modelo/memoria y monitor
+  duplicado deshabilitado. La publicacion no sobrescribe conversaciones.
+- Nueve turnos tecnicos finales via webhook autenticado: alternativa Americana
+  no aceptada, modalidad ausente, rechazo de comer en local, recojo, direccion y
+  referencia de delivery, envio por cotizar, carta y bloqueo de consulta ajena.
+  El QR solo salio tras completar seleccion/modalidad/destino; bytes identicos al
+  endpoint privado del POS. Cada respuesta devolvio su turno y `outcome=none`.
+  No se enviaron comprobantes, mensajes reales, cobros, pedidos ni impresiones.
+- Durante la comprobacion se corrigieron dos regresiones antes de reconectar el
+  gateway: referencias dinamicas `$(name)` bloqueaban el task runner al calcular
+  el resultado; ahora se generan referencias literales. La guarda de cotizacion
+  se restringe a la ruta de pago para no interceptar mensajes antes del agente.
+  Hay pruebas para ambos casos. No se repitieron escrituras inciertas.
+- Gateway compilado y reiniciado solamente en `127.0.0.1:3008`. Registro de relay
+  identico antes/despues por SHA256, sin cambiar activacion ni borrar sesiones.
+  Codigo y fixture permanecen en el workspace del gateway; este directorio no
+  tiene un repositorio Git configurado, no se afirma una publicacion Git de el.
+- Se revisaron los archivos nuevos contra los secretos privados conocidos: sin
+  coincidencias. Respaldos y recibos de prueba permanecen excluidos de Git.
+
+## Limites pendientes
+
+- WhatsApp pide escaneo en `http://127.0.0.1:3008/api/bots/impulsa/qr?format=view`.
+  Gateway saludable no equivale a telefono vinculado. Falta la conversacion
+  controlada y comprobacion visual en el telefono tras ese escaneo.
+- Las cinco pruebas PostgreSQL opcionales no se ejecutaron: no habia URL de
+  pruebas aisladas configurada y Docker Desktop no tenia el motor iniciado.
+  No se uso la base de produccion como sustituto. No hay migracion en esta tarea.
+- Efectivo, comprobantes, adiciones, continuidad y concurrencia se verificaron
+  con servicios/datos aislados; no se crearon nuevos pedidos reales para probarlos.
+- Las guardas conservan decisiones respaldadas; borradores antiguos sin evidencia
+  requieren aclaracion antes de pagar. Pedidos ya registrados no se reescriben.
+- La calidad conversacional requiere seguir observando ejemplos nuevos; estas
+  pruebas no garantizan que toda expresion posible se interprete perfectamente.
