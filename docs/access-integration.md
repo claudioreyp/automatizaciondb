@@ -157,6 +157,10 @@ se rotan, revocan ni reducen automaticamente durante esta actualizacion.
 
 ## Consulta y recuperacion
 
+La emision adicional y su recuperacion ante respuestas perdidas se documentan en
+`additional-credentials.md`. El token queda vinculado al ID exacto de credencial,
+no a la ultima credencial que aparezca en una lista.
+
 - En el restaurante de Admins, seleccionar sucursal y Ver APIs de una credencial.
   `GET /admin/branches/{id}/integration?credential_id=...` devuelve configuracion
   filtrada por sus permisos, sin el secreto. Solo el superadministrador accede.

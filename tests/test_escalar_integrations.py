@@ -568,6 +568,15 @@ def test_yape_requires_real_image_and_human_approval_emits_durable_event(
     assert future_events.status_code == 200
     assert future_events.json() == []
 
+    filtered_events = client.get(
+        "/api/v1/integrations/events",
+        params={"event_types": ["payment.approved", "payment.rejected"]},
+        headers=integration_headers(token),
+    )
+    assert filtered_events.status_code == 200
+    assert any(item["id"] == payment_event["id"] for item in filtered_events.json())
+    assert all(item["event_type"] in {"payment.approved", "payment.rejected"} for item in filtered_events.json())
+
     acknowledged = client.post(
         f"/api/v1/integrations/events/{payment_event['id']}/ack",
         headers=integration_headers(token, f"ack-{payment_event['id']}"),

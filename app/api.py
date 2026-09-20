@@ -23,6 +23,7 @@ from .order_folios import parse_order_folio
 from .product_access import POS_MODULES, POS_PLAN, full_pos_modules
 from .integration_package import integration_package
 from .agent_context import agent_context
+from .credential_operations import issuance_fingerprint, issuance_record, operation_scope, validate_operation_key
 
 from .auth import (
     AuthContext,
@@ -2031,10 +2032,27 @@ def list_integration_credentials(
 def create_integration_credential(
     payload: IntegrationCredentialCreate,
     response: Response,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: AuthContext = Depends(require_roles("superadmin")),
     db: Session = Depends(get_db),
 ):
     branch = branch_for_user(db, user, payload.branch_id)
+    response.headers["Cache-Control"] = "no-store"
+    fingerprint = issuance_fingerprint(payload)
+    if idempotency_key is not None:
+        validate_operation_key(idempotency_key)
+        # Serialize issuance receipts on PostgreSQL without storing the token.
+        db.execute(select(Business.id).where(Business.id == branch.business_id).with_for_update()).scalar_one()
+        previous = issuance_record(db, user.user_id, branch.business_id, idempotency_key)
+        if previous:
+            if previous.response_body.get("request_hash") != fingerprint:
+                raise HTTPException(409, "La clave de operacion ya se uso con otros datos")
+            existing = db.get(IntegrationCredential, previous.response_body["credential_id"])
+            if not existing:
+                raise HTTPException(409, "La emision requiere revision administrativa")
+            response.status_code = 200
+            return {**serialize_integration_credential(existing), "operation_id": idempotency_key,
+                    "status": "created", "secret_available": False}
     token, prefix, token_hash = issue_integration_token()
     credential = IntegrationCredential(
         business_id=branch.business_id,
@@ -2048,6 +2066,12 @@ def create_integration_credential(
     )
     db.add(credential)
     db.flush()
+    if idempotency_key is not None:
+        db.add(IdempotencyRecord(
+            business_id=branch.business_id, scope=operation_scope(user.user_id),
+            idempotency_key=idempotency_key, response_code=201,
+            response_body={"request_hash": fingerprint, "credential_id": credential.id, "branch_id": branch.id},
+        ))
     audit(
         db,
         user,
@@ -2057,9 +2081,45 @@ def create_integration_credential(
         branch.business_id,
         {"branch_id": branch.id, "scopes": payload.scopes},
     )
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # The unique receipt also protects databases without row-level locks.
+        db.rollback()
+        branch = branch_for_user(db, user, payload.branch_id)
+        previous = issuance_record(db, user.user_id, branch.business_id, idempotency_key) if idempotency_key else None
+        if not previous:
+            raise
+        if previous.response_body.get("request_hash") != fingerprint:
+            raise HTTPException(409, "La clave de operacion ya se uso con otros datos")
+        existing = db.get(IntegrationCredential, previous.response_body["credential_id"])
+        if not existing:
+            raise HTTPException(409, "La emision requiere revision administrativa")
+        response.status_code = 200
+        return {**serialize_integration_credential(existing), "operation_id": idempotency_key,
+                "status": "created", "secret_available": False}
+    return {**serialize_integration_credential(credential), "token": token,
+            "operation_id": idempotency_key, "status": "created", "secret_available": True}
+
+
+@api.get("/admin/integration-credentials/operations/{operation_id}", tags=["admin"])
+def integration_credential_operation(
+    operation_id: str,
+    branch_id: int,
+    response: Response,
+    user: AuthContext = Depends(require_roles("superadmin")),
+    db: Session = Depends(get_db),
+):
+    validate_operation_key(operation_id)
+    branch = branch_for_user(db, user, branch_id)
     response.headers["Cache-Control"] = "no-store"
-    return {**serialize_integration_credential(credential), "token": token}
+    record = issuance_record(db, user.user_id, branch.business_id, operation_id)
+    if not record or record.response_body.get("branch_id") != branch.id:
+        return {"operation_id": operation_id, "status": "not_found"}
+    credential = db.get(IntegrationCredential, record.response_body["credential_id"])
+    return {"operation_id": operation_id, "status": "created" if credential else "requires_review",
+            "credential": serialize_integration_credential(credential) if credential else None,
+            "secret_available": False}
 
 
 @api.post("/admin/integration-credentials/{credential_id}/rotate", tags=["admin"])
@@ -7427,6 +7487,7 @@ def integration_events(
     branch_id: int | None = None,
     pending_only: bool = True,
     created_after: datetime | None = None,
+    event_types: list[str] | None = Query(default=None, max_length=16),
     limit: int = Query(default=50, ge=1, le=200),
     integration: IntegrationAuthContext = Depends(require_integration_scope("events:read")),
     db: Session = Depends(get_db),
@@ -7445,6 +7506,8 @@ def integration_events(
         statement = statement.where(IntegrationEvent.acknowledged_at.is_(None))
     if created_after is not None:
         statement = statement.where(IntegrationEvent.created_at >= created_after)
+    if event_types:
+        statement = statement.where(IntegrationEvent.event_type.in_(event_types))
     events = list(db.scalars(statement))
     for event in events:
         event.delivery_attempts += 1
