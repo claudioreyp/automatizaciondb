@@ -184,6 +184,8 @@ def serialize_order(order: Order) -> dict:
         "delivery_fee": float(order.delivery_fee or 0),
         "delivery_quote_id": order.delivery_quote_id,
         "delivery_fee_status": order.delivery_fee_status,
+        "known_total": float(order.total or 0),
+        "final_total": None if order.delivery_fee_status == "pending_quote" else float(order.total or 0),
         "total": float(order.total or 0),
         "notes": order.notes,
         "external_reference": order.external_reference,
@@ -535,7 +537,7 @@ def build_order_item(
     linked_groups_by_id = {group.id: group for group in linked_groups}
     selections_by_group: dict[int, int] = {}
     selections_by_modifier: dict[int, int] = {}
-    for selection in line.modifiers:
+    for selection in (selected for selected in line.modifiers for _ in range(selected.quantity)):
         if not product:
             sanitized_modifiers.append(selection.model_dump(mode="json"))
             modifier_total += money(selection.price_delta)
@@ -768,6 +770,16 @@ def create_order(
             raise HTTPException(status_code=422, detail="Delivery quotes can only be used for delivery orders")
         apply_delivery_quote_to_order(db, order, payload.delivery_quote_id)
         recalculate_order(db, order)
+    if payload.allow_pending_delivery_quote:
+        from .agent_checkout import AGENT_SOURCES
+        if (order.source not in AGENT_SOURCES or order.channel != "delivery" or not branch_settings
+                or branch_settings.delivery_mode != "quote" or not branch_settings.pos_delivery):
+            raise HTTPException(422, "Pending delivery is only allowed for WhatsApp orders with quotation pricing")
+        order.delivery_fee_status = "pending_quote"
+        order.delivery_fee = Decimal("0")
+        recalculate_order(db, order)
+    if payload.quoted_total is not None and money(payload.quoted_total) != money(order.total):
+        raise CodedHTTPException(409, "The price changed; confirm the new total before payment", "ORDER_QUOTE_CHANGED")
     if order.source == "pos":
         ensure_final_delivery_fee(order)
     order.folio = reserve_order_folio(db, branch.business_id)
@@ -979,7 +991,11 @@ def commit_order_stock(db: Session, user: AuthContext, order: Order) -> None:
     commit_order_items_stock(db, user, order, active_order_items(order))
 
 
-def ensure_final_delivery_fee(order: Order) -> None:
+def ensure_final_delivery_fee(order: Order, *, allow_agent_pending: bool = False) -> None:
+    if allow_agent_pending:
+        from .agent_checkout import pending_delivery_allowed
+        if pending_delivery_allowed(order):
+            return
     if order.delivery_fee_status == "pending_quote" or order.delivery_fee is None:
         raise CodedHTTPException(
             409,
@@ -989,7 +1005,7 @@ def ensure_final_delivery_fee(order: Order) -> None:
 
 
 def confirm_order(db: Session, user: AuthContext, order: Order) -> Order:
-    ensure_final_delivery_fee(order)
+    ensure_final_delivery_fee(order, allow_agent_pending=True)
     if order.status == "confirmed":
         return order
     if order.status not in {"draft", "pending_confirmation"}:
@@ -1123,11 +1139,13 @@ def ensure_no_open_payment_evidence(
     db: Session,
     order: Order,
     action: str,
+    *, initial_only: bool = False,
 ) -> None:
     evidence_under_review = db.scalar(
         select(PaymentEvidence.id).where(
             PaymentEvidence.order_id == order.id,
             PaymentEvidence.status.in_(OPEN_PAYMENT_EVIDENCE_STATUSES),
+            *([PaymentEvidence.payment_request_id.is_(None)] if initial_only else []),
         ).limit(1)
     )
     if evidence_under_review is not None:
@@ -1171,9 +1189,9 @@ def ensure_order_products_mutable(
 
 
 def send_order_to_kitchen(db: Session, user: AuthContext, order: Order) -> list[KitchenTicket]:
-    ensure_final_delivery_fee(order)
+    ensure_final_delivery_fee(order, allow_agent_pending=True)
     db.flush()
-    ensure_no_open_payment_evidence(db, order, "sending the order to kitchen")
+    ensure_no_open_payment_evidence(db, order, "sending the order to kitchen", initial_only=True)
     existing = list(
         db.scalars(
             select(KitchenTicket)
@@ -1212,7 +1230,7 @@ def sync_order_payment_status(db: Session, order: Order) -> Decimal:
             )
         )
     )
-    if paid_total >= money(order.total) and money(order.total) > 0:
+    if paid_total >= money(order.total) and money(order.total) > 0 and order.delivery_fee_status != "pending_quote":
         order.payment_status = "paid"
     elif paid_total > 0:
         order.payment_status = "partial"
@@ -1639,6 +1657,9 @@ def transition_order(
         if next_status == "cancelled":
             cancel_active_kitchen_tickets(db, user, order)
         return order
+    if next_status in {"dispatched", "delivered", "closed"}:
+        from .agent_checkout import ensure_dispatch
+        ensure_dispatch(db, order)
     ensure_no_open_payment_evidence(db, order, "changing the order status")
     if next_status not in ORDER_TRANSITIONS.get(order.status, set()):
         raise HTTPException(status_code=409, detail=f"Cannot transition {order.status} to {next_status}")
@@ -1692,7 +1713,7 @@ def transition_order(
 def add_payment(db: Session, user: AuthContext, order: Order, payload: PaymentCreate) -> Payment:
     if order.status in {"cancelled", "closed"}:
         raise HTTPException(status_code=409, detail="Cannot add a payment to this order")
-    ensure_final_delivery_fee(order)
+    ensure_final_delivery_fee(order, allow_agent_pending=True)
     paid_total = money(
         db.scalar(
             select(func.coalesce(func.sum(Payment.amount), 0)).where(
@@ -1734,7 +1755,7 @@ def add_payment(db: Session, user: AuthContext, order: Order, payload: PaymentCr
             )
         )
     paid_total += money(payload.amount)
-    order.payment_status = "paid" if paid_total >= money(order.total) else "partial"
+    order.payment_status = "paid" if paid_total >= money(order.total) and order.delivery_fee_status != "pending_quote" else "partial"
     order.version += 1
     register_name = db.scalar(select(CashRegister.name).where(
         CashRegister.id == cash_session.register_id,

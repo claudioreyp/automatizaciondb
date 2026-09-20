@@ -703,7 +703,7 @@ def test_alembic_has_a_single_head():
     config = Config(str(repository_root / "alembic.ini"))
     config.set_main_option("script_location", str(repository_root / "migrations"))
     heads = ScriptDirectory.from_config(config).get_heads()
-    assert heads == ["20260919_0023"]
+    assert heads == ["20260920_0024"]
 
 
 def test_table_cannot_reference_an_area_from_another_branch(client, tenant, auth_headers):

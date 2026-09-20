@@ -65,6 +65,7 @@ class PrintOrder(BaseModel):
     manual_discount: float
     promotion_discount: float
     delivery_fee: float
+    delivery_fee_status: str = "final"
     total: float
     items: list[PrintItem]
     payments: list[dict] = Field(default_factory=list)
@@ -194,6 +195,7 @@ def aware(value: datetime) -> datetime:
 
 def order_snapshot(order: Order) -> dict:
     return PrintOrder(
+        delivery_fee_status=order.delivery_fee_status or "final",
         **{key: getattr(order, key) for key in (
             "id", "business_id", "branch_id", "version", "status", "payment_status",
             "payment_method", "number", "folio", "channel", "source", "customer_name",
@@ -222,7 +224,10 @@ def content_digest(snapshot: dict, *, kitchen: bool = False) -> str:
     if not kitchen:
         keys += ("items", "subtotal", "discount", "manual_discount", "promotion_discount",
                  "delivery_fee", "total")
-    return digest({key: snapshot[key] for key in keys})
+    content = {key: snapshot[key] for key in keys}
+    if not kitchen and snapshot.get("delivery_fee_status") == "pending_quote":
+        content["delivery_fee_status"] = "pending_quote"
+    return digest(content)
 
 
 def local_printer_config(settings: BranchSettings | None) -> dict | None:

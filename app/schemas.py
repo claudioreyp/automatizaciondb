@@ -482,7 +482,8 @@ class TableUpdate(ApiModel):
 
 class ModifierSelection(ApiModel):
     modifier_id: int | None = None
-    name: str
+    name: str = ""
+    quantity: int = Field(default=1, ge=1, le=20)
     price_delta: Decimal = Decimal("0")
 
 
@@ -509,6 +510,8 @@ class OrderCreate(ApiModel):
     whatsapp_message_id: str | None = None
     delivery_address: dict | None = None
     delivery_quote_id: str | None = None
+    allow_pending_delivery_quote: bool = False
+    quoted_total: Decimal | None = Field(default=None, ge=0)
     delivery_fee: Decimal = Field(default=Decimal("0"), ge=0)
     discount: Decimal = Field(default=Decimal("0"), ge=0)
     notes: str | None = None
@@ -720,6 +723,7 @@ class EvidenceReview(ApiModel):
     approve: bool
     note: str | None = None
     register_id: int | None = None
+    expected_version: int | None = None
 
 
 class IntegrationEvidenceCreate(EvidenceMetadata):

@@ -23,6 +23,8 @@ from .order_folios import parse_order_folio
 from .product_access import POS_MODULES, POS_PLAN, full_pos_modules
 from .integration_package import integration_package
 from .agent_context import agent_context
+from .agent_checkout import (ensure_dispatch, ensure_request_upload, payment_request, ready_event,
+    requests_for_order, review_request, serialize_request)
 from .credential_operations import issuance_fingerprint, issuance_record, operation_scope, validate_operation_key
 
 from .auth import (
@@ -1154,6 +1156,8 @@ def serialize_order_summary(
         "total": float(order.total or 0),
         "delivery_fee": float(order.delivery_fee or 0),
         "requires_review": requires_review,
+        "delivery_fee_status": order.delivery_fee_status,
+        "final_total": None if order.delivery_fee_status == "pending_quote" else float(order.total or 0),
         "paid_amount": float(money(paid_amount)),
         "item_count": len(active_order_items(order)),
         "version": order.version,
@@ -4346,6 +4350,7 @@ def get_order_detail(
             "remaining": float(max(money(order.total) - paid_total, Decimal("0"))),
         },
         "payment_evidence": [serialize_payment_evidence(item) for item in evidence],
+        "payment_requests": [serialize_request(item) for item in requests_for_order(db, order)],
         "tickets": [serialize_ticket(ticket, order=order) for ticket in tickets],
         "edit_policy": order_edit_policy(db, order),
     }
@@ -4634,7 +4639,9 @@ async def transition_order_endpoint(
     assert_version(order.version, payload.expected_version)
     previous_status = order.status
     transition_order(db, user, order, payload.status, reason=payload.reason)
-    if order.status != previous_status and order.status in {"ready", "dispatched", "delivered", "cancelled"}:
+    if order.status != previous_status and order.status == "ready":
+        ready_event(db, order)
+    elif order.status != previous_status and order.status in {"dispatched", "delivered", "cancelled"}:
         create_integration_event(
             db,
             order,
@@ -4920,7 +4927,7 @@ async def complete_kitchen_command_endpoint(
     previous_order_status = order.status
     complete_kitchen_command(db, user, order, ticket, payload.expected_status, payload.expected_version)
     if previous_order_status != "ready" and order.status in {"ready", "closed"}:
-        create_integration_event(db, order, "order.ready", {"status": "ready"})
+        ready_event(db, order)
     db.flush()
     result = {
         "command": serialize_scoped_command(db, ticket, order),
@@ -5075,7 +5082,7 @@ async def transition_ticket(
         order.status = "preparing"
     order.version += 1
     if previous_order_status != "ready" and order.status in {"ready", "closed"}:
-        create_integration_event(db, order, "order.ready", {"status": "ready"})
+        ready_event(db, order)
     audit(db, user, f"kitchen.{payload.status}", "kitchen_ticket", ticket.id, ticket.business_id)
     db.commit()
     result = serialize_ticket(ticket, order=order)
@@ -6055,6 +6062,9 @@ async def transition_delivery(
     if payload.status != assignment.status and payload.status not in allowed.get(assignment.status, set()):
         raise HTTPException(status_code=409, detail="Invalid delivery transition")
     previous_status = assignment.status
+    if payload.status in {"dispatched", "delivered"}:
+        ensure_dispatch(db, order)
+        ensure_no_open_payment_evidence(db, order, "dispatching the order")
     assignment.status = payload.status
     if payload.status == "dispatched":
         assignment.dispatched_at = utcnow()
@@ -6200,6 +6210,7 @@ def ensure_payment_evidence_upload_allowed(db: Session, order: Order) -> None:
         select(PaymentEvidence.status)
         .where(
             PaymentEvidence.order_id == order.id,
+            PaymentEvidence.payment_request_id.is_(None),
             PaymentEvidence.status.in_([*ORDER_REVIEW_EVIDENCE_STATUSES, "paid"]),
         )
         .order_by(PaymentEvidence.created_at.desc(), PaymentEvidence.id.desc())
@@ -6225,6 +6236,8 @@ def serialize_payment_evidence(evidence: PaymentEvidence) -> dict:
         "business_id": evidence.business_id,
         "order_id": evidence.order_id,
         "provider": evidence.provider,
+        "payment_request_id": evidence.payment_request_id,
+        "expected_amount": (evidence.analysis or {}).get("expected_amount"),
         "amount_detected": float(evidence.amount_detected) if evidence.amount_detected is not None else None,
         "operation_number": evidence.operation_number,
         "security_code": evidence.security_code,
@@ -6360,6 +6373,7 @@ async def upload_payment_evidence(
 async def review_payment_evidence(
     evidence_id: int,
     payload: EvidenceReview,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier")),
     db: Session = Depends(get_db),
 ):
@@ -6367,14 +6381,38 @@ async def review_payment_evidence(
         db,
         user,
         evidence_id,
-        for_update=True,
+        for_update=False,
     )
     order = scoped_order_for_user(db, user, evidence.order_id, for_update=True)
+    evidence = scoped_payment_evidence_for_user(db, user, evidence_id, for_update=True)
+    if evidence.payment_request_id:
+        from .agent_checkout_api import replay, finish
+        if payload.expected_version is None:
+            raise HTTPException(422, "expected_version is required for an additional receipt")
+        scope = f"payment-request-review:{evidence.id}"
+        previous, digest = replay(db, order, scope, idempotency_key, payload)
+        if previous is not None:
+            return previous
+        event = review_request(db, user, order, evidence, payload)
+        db.flush()
+        result = {"order": serialize_order(order), "evidence": serialize_payment_evidence(evidence),
+                  "notification": {"event_id": event.id if event else None, "queued": bool(event),
+                                   "recipient_available": bool(order.whatsapp_chat_id or order.customer_phone)}}
+        return await finish(db, order, scope, idempotency_key, digest, result)
+    initial_review_digest = None
+    initial_review_scope = f"initial-payment-review:{evidence.id}"
+    if idempotency_key:
+        from .agent_checkout_api import replay
+        previous, initial_review_digest = replay(db, order, initial_review_scope, idempotency_key, payload)
+        if previous is not None:
+            return previous
+    assert_version(order.version, payload.expected_version)
     recipient_available = bool(order.whatsapp_chat_id or order.customer_phone)
     other_paid_evidence = db.scalar(
         select(PaymentEvidence.id).where(
             PaymentEvidence.order_id == order.id,
             PaymentEvidence.id != evidence.id,
+            PaymentEvidence.payment_request_id.is_(None),
             PaymentEvidence.status == "paid",
         ).limit(1)
     )
@@ -6413,7 +6451,7 @@ async def review_payment_evidence(
             if event_type
             else None
         )
-        return {
+        result = {
             "evidence": serialize_payment_evidence(evidence),
             "order": serialize_order(order),
             "notification": {
@@ -6428,6 +6466,11 @@ async def review_payment_evidence(
                 "acknowledged": bool(notification_event and notification_event.acknowledged_at),
             },
         }
+        if initial_review_digest:
+            save_idempotent_response(db, initial_review_scope, idempotency_key, order.business_id,
+                {"request_digest": initial_review_digest, "result": result})
+            db.commit()
+        return result
     evidence.reviewed_by = user.user_id
     evidence.reviewed_at = utcnow()
     notification_event: IntegrationEvent | None = None
@@ -6436,7 +6479,7 @@ async def review_payment_evidence(
         evidence.status = "rejected"
         evidence.rejection_reason = payload.note or "Rejected by cashier"
         order.payment_status = "rejected"
-        if order.status not in {"cancelled", "closed"}:
+        if order.status not in {"cancelled", "closed"} and not requests_for_order(db, order):
             released_table_id = order.table_id
             db.flush()
             transition_order(db, user, order, "cancelled")
@@ -6450,7 +6493,7 @@ async def review_payment_evidence(
     else:
         if not evidence.image_sha256 or not evidence.storage_path:
             raise HTTPException(status_code=409, detail="Payment evidence has no persisted image")
-        amount = order.total
+        amount = money((evidence.analysis or {}).get("expected_amount", order.total))
         remaining = money(order.total) - money(
             db.scalar(
                 select(func.coalesce(func.sum(Payment.amount), 0)).where(
@@ -6482,6 +6525,7 @@ async def review_payment_evidence(
                 .where(
                     PaymentEvidence.order_id == order.id,
                     PaymentEvidence.id != evidence.id,
+                    PaymentEvidence.payment_request_id.is_(None),
                     PaymentEvidence.status.in_(ORDER_REVIEW_EVIDENCE_STATUSES),
                 )
                 .with_for_update()
@@ -6493,7 +6537,7 @@ async def review_payment_evidence(
             other_evidence.reviewed_by = user.user_id
             other_evidence.reviewed_at = superseded_at
         tickets = send_order_to_kitchen(db, user, order)
-        if recipient_available:
+        if recipient_available and tickets:
             notification_event = create_integration_event(
                 db,
                 order,
@@ -6501,11 +6545,13 @@ async def review_payment_evidence(
                 {
                     "evidence_id": evidence.id,
                     "payment_id": payment.id,
+                    "sent_to_kitchen": True,
+                    "purpose": "initial",
                     "status": order.status,
                     "message": (
                         "¡Pago confirmado! Tu pedido fue aprobado y ya está en preparación. "
                         + (
-                            "Te avisaremos cuando salga con nuestro repartidor. 🍕"
+                            "Te avisaremos cuando esté listo. 🍕"
                             if order.channel == "delivery"
                             else "Te avisaremos cuando esté listo para que puedas venir al local. 🍕"
                         )
@@ -6513,7 +6559,7 @@ async def review_payment_evidence(
                 },
             )
     audit(db, user, f"payment_evidence.{evidence.status}", "payment_evidence", evidence.id, evidence.business_id)
-    db.commit()
+    db.flush()
     result = {
         "evidence": serialize_payment_evidence(evidence),
         "order": serialize_order(load_order(db, order.id)),
@@ -6529,6 +6575,10 @@ async def review_payment_evidence(
             "acknowledged": bool(notification_event and notification_event.acknowledged_at),
         },
     }
+    if initial_review_digest:
+        save_idempotent_response(db, initial_review_scope, idempotency_key, order.business_id,
+            {"request_digest": initial_review_digest, "result": result})
+    db.commit()
     if released_table_id is not None:
         released_table = db.get(RestaurantTable, released_table_id)
         if released_table is not None:
@@ -7302,6 +7352,8 @@ async def integration_upload_payment_evidence(
     looks_like_payment_receipt: bool | None = Form(default=None),
     analysis_warnings: str | None = Form(default=None),
     whatsapp_message_id: str | None = Form(default=None),
+    payment_request_id: str | None = Form(default=None),
+    sender: str | None = Form(default=None),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     integration: IntegrationAuthContext = Depends(require_integration_scope("payments:write")),
     db: Session = Depends(get_db),
@@ -7314,15 +7366,31 @@ async def integration_upload_payment_evidence(
         raise HTTPException(status_code=422, detail="security_code must contain exactly three digits")
     order = load_order(db, order_id, for_update=True)
     ensure_integration_order_scope(integration, order)
+    target = payment_request(db, order, payment_request_id) if payment_request_id else None
+    if target or sender:
+        from .agent_checkout import assert_sender
+        assert_sender(order, sender)
+    data = await file.read(10 * 1024 * 1024 + 1)
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(413, "Payment evidence exceeds 10 MB")
+    from .agent_checkout import fingerprint
+    upload_digest = fingerprint({"request": payment_request_id, "sha256": hashlib.sha256(data).hexdigest(),
+        "provider": provider, "amount": amount_detected, "operation": operation_number, "code": security_code,
+        "occurred_at": occurred_at, "recipient": recipient, "message": whatsapp_message_id, "sender": sender,
+        "looks_like_receipt": looks_like_payment_receipt, "warnings": analysis_warnings})
     scope = f"integration-evidence-upload:{order.id}"
     existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
+        if existing.get("request_fingerprint") and existing["request_fingerprint"] != upload_digest:
+            raise HTTPException(409, "Idempotency key belongs to another receipt")
         return existing
-    ensure_payment_evidence_upload_allowed(db, order)
+    if target:
+        ensure_request_upload(db, order, target)
+    else:
+        ensure_payment_evidence_upload_allowed(db, order)
     content_type = file.content_type or "application/octet-stream"
     if not content_type.startswith("image/"):
         raise HTTPException(status_code=422, detail="A real payment evidence image is required")
-    data = await file.read()
     if not data:
         raise HTTPException(status_code=422, detail="Payment evidence image is empty")
     if len(data) > 10 * 1024 * 1024:
@@ -7361,6 +7429,7 @@ async def integration_upload_payment_evidence(
     receipt_detected = all(detection_flags) if detection_flags else True
     analysis = {
         **analysis,
+        "expected_amount": float(target.amount if target else order.total),
         "workflow_looks_like_payment_receipt": looks_like_payment_receipt,
         "receipt_detected": receipt_detected,
     }
@@ -7399,6 +7468,7 @@ async def integration_upload_payment_evidence(
     evidence = PaymentEvidence(
         business_id=order.business_id,
         order_id=order.id,
+        payment_request_id=target.id if target else None,
         storage_path=storage_path,
         image_sha256=image_sha256,
         analysis=analysis,
@@ -7427,12 +7497,16 @@ async def integration_upload_payment_evidence(
             ) from exc
         raise HTTPException(status_code=409, detail="Payment operation number was already used") from exc
     user = AuthContext("integration", "owner", order.business_id, order.branch_id)
-    order.payment_method = provider.lower()
-    if receipt_detected:
+    if target:
+        target.status = "under_review" if receipt_detected else "rejected"
+        target.version += 1
+    else:
+        order.payment_method = provider.lower()
+    if receipt_detected and not target:
         if order.status in {"draft", "pending_confirmation"}:
             confirm_order(db, user, order)
         order.payment_status = "evidence_received"
-    else:
+    elif not receipt_detected and not target:
         if order.status == "draft":
             order.status = "pending_confirmation"
         order.payment_status = "invalid_evidence"
@@ -7449,6 +7523,7 @@ async def integration_upload_payment_evidence(
         "order": serialize_order(order),
         "requires_human_review": receipt_detected,
         "receipt_detected": receipt_detected,
+        "request_fingerprint": upload_digest,
     }
     save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
     audit(

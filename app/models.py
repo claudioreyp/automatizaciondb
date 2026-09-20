@@ -751,15 +751,21 @@ class PaymentEvidence(Base, TimestampMixin):
             "uq_payment_evidence_one_open_per_order",
             "order_id",
             unique=True,
-            postgresql_where=text("status IN ('evidence_received', 'under_review')"),
-            sqlite_where=text("status IN ('evidence_received', 'under_review')"),
+            postgresql_where=text("payment_request_id IS NULL AND status IN ('evidence_received', 'under_review')"),
+            sqlite_where=text("payment_request_id IS NULL AND status IN ('evidence_received', 'under_review')"),
         ),
+        Index("uq_payment_evidence_open_request", "payment_request_id", unique=True,
+              postgresql_where=text("payment_request_id IS NOT NULL AND status IN ('evidence_received', 'under_review')"),
+              sqlite_where=text("payment_request_id IS NOT NULL AND status IN ('evidence_received', 'under_review')")),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id", ondelete="CASCADE"), index=True)
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"), index=True)
     provider: Mapped[str] = mapped_column(String(30), index=True)
+    payment_request_id: Mapped[str | None] = mapped_column(
+        ForeignKey("order_payment_requests.id"), index=True
+    )
     storage_path: Mapped[str] = mapped_column(Text)
     amount_detected: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     operation_number: Mapped[str | None] = mapped_column(String(120))
@@ -775,6 +781,22 @@ class PaymentEvidence(Base, TimestampMixin):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     analysis: Mapped[dict] = mapped_column(JSON, default=dict)
     warnings: Mapped[list] = mapped_column(JSON, default=list)
+
+
+class OrderPaymentRequest(Base, TimestampMixin):
+    __tablename__ = "order_payment_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"), index=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    purpose: Mapped[str] = mapped_column(String(20))
+    method: Mapped[str] = mapped_column(String(20), default="yape")
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    status: Mapped[str] = mapped_column(String(30), default="pending")
+    snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
+    payment_id: Mapped[int | None] = mapped_column(ForeignKey("payments.id"), unique=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class AuditEvent(Base):
