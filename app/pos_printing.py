@@ -145,6 +145,7 @@ class PosPrintingResponse(BaseModel):
 class PosQzResponse(BaseModel):
     mode: Literal["signed", "manual-approval"]
     certificate: str | None
+    identity: dict | None = None
 
 
 class PosPrintClaim(BaseModel):

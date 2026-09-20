@@ -126,7 +126,7 @@ def get_order_printing(order_id: int, user: AuthContext = Depends(get_current_us
     return response
 
 
-@router.get("/orders/{order_id}/printing/qz", response_model=PosQzResponse)
+@router.get("/orders/{order_id}/printing/qz", response_model=PosQzResponse, response_model_exclude_unset=True)
 def get_order_qz(order_id: int, user: AuthContext = Depends(get_current_user),
                  db: Session = Depends(get_db)):
     _order(db, user, order_id, discovery=True)

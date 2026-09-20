@@ -419,7 +419,7 @@ def test_qz_endpoints_fail_closed_without_secrets(client, auth_headers):
     signature = client.post(
         "/api/v1/settings/printing/qz/sign",
         headers=auth_headers,
-        json={"payload": "request-to-sign"},
+        json={"payload": '{"call":"printers.detail","params":{}}'},
     )
     assert certificate.status_code == 503
     assert signature.status_code == 503

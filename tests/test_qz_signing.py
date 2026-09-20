@@ -14,7 +14,7 @@ from app.qz_signing import qz_connection_settings, qz_sign_payload
 from test_command_workflow import create_order
 
 
-VARIABLES = ("QZ_TRAY_CERTIFICATE", "QZ_TRAY_PRIVATE_KEY", "QZ_TRAY_CERTIFICATE_FILE", "QZ_TRAY_PRIVATE_KEY_FILE")
+VARIABLES = ("QZ_TRAY_CERTIFICATE", "QZ_TRAY_PRIVATE_KEY", "QZ_TRAY_CERTIFICATE_FILE", "QZ_TRAY_PRIVATE_KEY_FILE", "QZ_REQUIRE_SIGNING", "QZ_TRAY_TRUST_MODE")
 
 
 def identity(key=None, start=-1, end=1):
@@ -64,7 +64,9 @@ def test_identity_sources_and_exact_sha512_signature(monkeypatch, tmp_path, sour
         else:
             (tmp_path / ".env.local").write_text(
                 "QZ_TRAY_CERTIFICATE_FILE=cert.pem\nQZ_TRAY_PRIVATE_KEY_FILE=key.pem\n", encoding="utf-8")
-    assert qz_connection_settings() == {"mode": "signed", "certificate": cert}
+    assert qz_connection_settings()["certificate"] == cert
+    assert qz_connection_settings()["mode"] == "signed"
+    assert qz_connection_settings()["identity"]["trust"] == "self-signed"
     payload = json.dumps({"call": "printers.detail", "timestamp": 123, "params": {"name": "Cocina ñ"}}, ensure_ascii=False)
     private.public_key().verify(base64.b64decode(qz_sign_payload(payload)), payload.encode(), padding.PKCS1v15(), hashes.SHA512())
 
@@ -121,7 +123,10 @@ def test_settings_and_order_use_same_identity_and_keep_scope(client, tenant, aut
     for url in (settings_url, order_url):
         response = client.get(url, headers=auth_headers)
         assert response.status_code == 200
-        assert response.json() == {"mode": "signed", "certificate": cert}
+        assert response.json()["mode"] == "signed"
+        assert response.json()["certificate"] == cert
+        assert response.json()["identity"]["trust"] == "self-signed"
+        assert response.headers["cache-control"] == "no-store"
         assert "PRIVATE KEY" not in response.text
     payload = json.dumps({"call": "printers.detail", "params": {}})
     response = client.post(f"/api/v1/settings/printing/qz/sign?branch_id={tenant['branch_id']}",
@@ -161,9 +166,9 @@ def test_actual_digest_protocol_signs_exact_hash_for_each_role(client, tenant, a
                                 body["payload"].encode(), padding.PKCS1v15(), hashes.SHA512())
 
 
-@pytest.mark.parametrize("role", ["cashier", "waiter", "kitchen"])
+@pytest.mark.parametrize("role", ["superadmin", "owner", "manager", "cashier", "waiter", "kitchen"])
 def test_hashed_operations_retain_printing_allowlist_and_legacy_compatibility(client, tenant, auth_headers, signing_spy, role):
-    url = f"/api/v1/settings/printing/qz/sign?branch_id={tenant['branch_id']}"
+    url = f"/api/v1/settings/printing/qz/sign?branch_id={tenant['branch_id']}&business_id={tenant['business_id']}"
     headers = {**auth_headers, "X-Dev-Role": role}
     pixel = {"type": "pixel", "format": "html", "flavor": "plain", "data": "<p>Ticket</p>"}
     thermal = {**pixel, "type": "raw", "options": {"language": "ESCPOS"}}
@@ -236,16 +241,16 @@ def test_hashed_signing_keeps_business_branch_and_role_scope(client, tenant, aut
 
 
 @pytest.mark.parametrize("branch_scoped", [False, True])
-def test_legacy_admin_hash_is_compatible_but_explicit_body_cannot_bypass_binding(client, tenant, auth_headers, signing_spy, branch_scoped):
+def test_admin_also_requires_known_print_content(client, tenant, auth_headers, signing_spy, branch_scoped):
     url = "/api/v1/settings/printing/qz/sign"
     if branch_scoped:
         url += f"?branch_id={tenant['branch_id']}"
     body = hash_request({"call": "printers.detail", "timestamp": 123})
-    for wire in ({"payload": body["payload"]}, body):
-        assert client.post(url, headers=auth_headers, json=wire).status_code == 200
-        signing_spy.assert_called_with(body["payload"])
+    assert client.post(url, headers=auth_headers, json={"payload": body["payload"]}).status_code == 422
+    assert client.post(url, headers=auth_headers, json=body).status_code == 200
+    signing_spy.assert_called_with(body["payload"])
     assert client.post(url, headers=auth_headers, json={**body, "request": "{}"}).status_code == 422
-    assert signing_spy.call_count == 2
+    assert signing_spy.call_count == 1
 
 
 @pytest.mark.parametrize("role", ["cashier", "waiter", "kitchen"])
@@ -290,7 +295,7 @@ def test_operational_print_rejects_alternate_destinations_even_with_name(client,
 
 @pytest.mark.parametrize("role", ["superadmin", "owner", "manager"])
 @pytest.mark.parametrize("branch_scoped", [False, True])
-def test_named_printer_restriction_does_not_change_admin_signing_contract(client, tenant, auth_headers, signing_spy, role, branch_scoped):
+def test_admin_cannot_sign_alternate_destinations(client, tenant, auth_headers, signing_spy, role, branch_scoped):
     url = f"/api/v1/settings/printing/qz/sign?business_id={tenant['business_id']}"
     if branch_scoped:
         url += f"&branch_id={tenant['branch_id']}"
@@ -301,6 +306,5 @@ def test_named_printer_restriction_does_not_change_admin_signing_contract(client
         ]}, "timestamp": 123})
         for wire in ({"payload": body["request"]}, {"payload": body["payload"]}, body):
             response = client.post(url, headers=headers, json=wire)
-            assert response.status_code == 200, response.text
-            signing_spy.assert_called_with(wire["payload"])
-    assert signing_spy.call_count == 9
+            assert response.status_code in {403, 422}, response.text
+    signing_spy.assert_not_called()

@@ -983,11 +983,13 @@ def get_whatsapp_settings(
 @router.get("/branches/{branch_id}/printing/qz")
 def get_qz_connection_settings(
     branch_id: int,
+    response: Response,
     user: AuthContext = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     branch = scoped_branch(db, user, branch_id)
     require_settings_permission(db, user, branch.business_id, "printing_runtime")
+    response.headers["Cache-Control"] = "no-store"
     return qz_connection_settings()
 
 
@@ -1007,18 +1009,21 @@ def download_qz_activation(
 
 @router.get("/printing/qz/certificate")
 def get_qz_certificate(
+    response: Response,
     business_id: int | None = None,
     user: AuthContext = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     resolved = _business_id(user, business_id)
     require_settings_permission(db, user, resolved, "printing")
+    response.headers["Cache-Control"] = "no-store"
     return {"certificate": qz_certificate()}
 
 
 @router.post("/printing/qz/sign")
 def sign_qz_payload(
     payload: QZSignRequest,
+    response: Response,
     business_id: int | None = None,
     branch_id: int | None = None,
     user: AuthContext = Depends(get_current_user),
@@ -1039,42 +1044,42 @@ def sign_qz_payload(
         branch = scoped_branch(db, user, branch_id)
         if branch.business_id != resolved:
             raise HTTPException(status_code=403, detail="Branch is outside business scope")
-        roles = require_settings_permission(db, user, resolved, "printing_runtime")
-        if not roles.intersection({"superadmin", "owner", "manager"}):
-            # Operational signing is not authority to access files, USB or sockets.
-            try:
-                request = json.loads(payload.request if payload.request is not None else payload.payload)
-            except (ValueError, TypeError):
-                raise HTTPException(status_code=422, detail="Invalid QZ printing request")
-            call = request.get("call") if isinstance(request, dict) else None
-            if not isinstance(call, str) or call not in {"printers.find", "printers.getDefault", "printers.detail", "print"}:
-                raise HTTPException(status_code=403, detail="QZ operation is not allowed")
-            if call == "print":
-                params = request.get("params") or {}
-                printer = params.get("printer") if isinstance(params, dict) else None
-                if (not isinstance(printer, dict) or set(printer) != {"name"}
-                        or not isinstance(printer.get("name"), str) or not printer["name"].strip()):
-                    # QZ gives host/file precedence even when a name is present.
-                    raise HTTPException(status_code=403, detail="Only named installed printers are allowed")
-                data = params.get("data") if isinstance(params, dict) else None
-                if not isinstance(data, list) or not data or not all(
-                    isinstance(item, dict) and (
-                        (item.get("format") == "html" and item.get("flavor") == "plain"
-                         and isinstance(item.get("data"), str) and (
-                             item.get("type") == "pixel" or (
-                                 item.get("type") == "raw" and isinstance(item.get("options"), dict)
-                                 and item["options"].get("language") == "ESCPOS"
-                             )
-                         )) or (
-                             item.get("type") == "raw" and item.get("format") == "command"
-                             and item.get("flavor") == "hex"
-                             and item.get("data") in ("1B40", "0A0A0A1D5601", "0A1D564100")
-                         )
-                    ) for item in data
-                ):
-                    raise HTTPException(status_code=403, detail="Only thermal HTML and exact ESC/POS initialization/feed/cut are allowed")
+        require_settings_permission(db, user, resolved, "printing_runtime")
     else:
         require_settings_permission(db, user, resolved, "printing")
+    # The shared company identity must never become an arbitrary signing oracle,
+    # even for restaurant administrators. Keep legacy JSON, not opaque hashes.
+    try:
+        request = json.loads(payload.request if payload.request is not None else payload.payload)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="Invalid QZ printing request") from None
+    call = request.get("call") if isinstance(request, dict) else None
+    if not isinstance(call, str) or call not in {"printers.find", "printers.getDefault", "printers.detail", "print"}:
+        raise HTTPException(status_code=403, detail="QZ operation is not allowed")
+    if call == "print":
+        params = request.get("params") or {}
+        printer = params.get("printer") if isinstance(params, dict) else None
+        if (not isinstance(printer, dict) or set(printer) != {"name"}
+                or not isinstance(printer.get("name"), str) or not printer["name"].strip()):
+            raise HTTPException(status_code=403, detail="Only named installed printers are allowed")
+        data = params.get("data")
+        if not isinstance(data, list) or not data or not all(
+            isinstance(item, dict) and (
+                (item.get("format") == "html" and item.get("flavor") == "plain"
+                 and isinstance(item.get("data"), str) and (
+                     item.get("type") == "pixel" or (
+                         item.get("type") == "raw" and isinstance(item.get("options"), dict)
+                         and item["options"].get("language") == "ESCPOS"
+                     )
+                 )) or (
+                     item.get("type") == "raw" and item.get("format") == "command"
+                     and item.get("flavor") == "hex"
+                     and item.get("data") in ("1B40", "0A0A0A1D5601", "0A1D564100")
+                 )
+            ) for item in data
+        ):
+            raise HTTPException(status_code=403, detail="Only thermal HTML and exact ESC/POS initialization/feed/cut are allowed")
+    response.headers["Cache-Control"] = "no-store"
     return {"signature": qz_sign_payload(payload.payload)}
 
 
