@@ -45,6 +45,8 @@ se responde a consulta, no mediante aviso automatico.
 - Aplicada en el proyecto EscalarAI existente; 51 tablas de datos anteriores
   comparadas sin diferencias. RLS activo, anon/authenticated sin SELECT directo.
   Rol temporal de ensayo eliminado. Sin reescribir pagos historicos.
+- API: 754 pruebas Pytest aprobadas y 5 omitidas en la corrida general. Las
+  comprobaciones PostgreSQL se ejecutaron por separado: 18 aprobadas en total.
 - CLIENTES: lint/build, 763 pruebas Vitest, 66 Playwright de Pedidos entre
   escritorio/tablet/movil. Revision visual agrupada y detector Impeccable sin
   hallazgos. Advertencia de bundle preexistente permanece.
@@ -60,10 +62,36 @@ El script local de preparacion respalda el workflow publicado y rechaza version
 distinta o segundo intento incierto. No reemplazar staticData, memoria ni claves.
 Conservar el estado durable del relay y su fecha de activacion al reiniciar.
 
-Estado pendiente de completar en esta entrega: commits/despliegues y comprobacion
-real de WhatsApp. No confundir pruebas simuladas con entrega fisica de imagen o
-avisos. Las pruebas finales requieren mensajes nuevos identificados y coordinacion
-para no despachar impresion automatica; no se haran pagos bancarios.
+Publicacion comprobada el 2026-09-20:
+
+| Componente | Version |
+| --- | --- |
+| API / GitHub | `e0574daa261a56994275dfc77180d5605002bd5c` |
+| Render, servicio existente | `dep-dao1lquk1f9s73abgk5g`, Live |
+| CLIENTES / GitHub | `211ac25be8c84855f84861066f21ecca41f0eb46` |
+| Vercel CLIENTES | `2xt2LcXa7tMx4XCfvfBqBusNua2o`, Ready en pos.escalarai.tech |
+| Agente Pizza House | `7ea5eabe-637d-409e-b517-d707e1656a0f`, publicado y activo |
+| Supabase / Alembic | `20260920_0024` |
+
+Salud, catalogo y preview autenticos respondieron 200, con alcance 2/2; acceso
+anonimo al catalogo fue rechazado. Pedidos y Descargar aplicacion responden en el
+dominio del POS. El webhook sin secreto rechazo 403; consultas tecnicas de carta,
+metodos y estado respondieron 200. La carta produjo la accion pos_menu y la
+descarga privada vigente produjo una imagen con el texto adjunto esperado.
+Numero, titular y QR reales estaban configurados; QR privado JPEG disponible.
+No se crearon pedidos ni se enviaron WhatsApp durante esas consultas sinteticas.
+
+Gateway levantado solo en 127.0.0.1:3008. Tras escaneo del usuario se verificaron
+connected, sessionReady y messageBusReady. Se conservaron credenciales y estado
+durable del relay, incluida activacion 2026-09-20T01:46:39.933Z. Antes del arranque
+no habia eventos elegibles pendientes; no se reconocieron eventos historicos.
+Payment Approval Monitor permanece deshabilitado en este unico workflow.
+
+Pendiente de validacion fisica: carta y presencia de escritura desde otro telefono,
+checkout completo con efectivo/Yape, extras y avisos tras revision/cocina. No
+confundir pruebas simuladas con entrega fisica. Estas pruebas requieren mensajes
+nuevos identificados y coordinar antes las impresiones automaticas. No realizar
+pagos bancarios. Mantener este equipo y el gateway encendidos.
 
 Rollback: volver a codigo compatible, sin revertir la migracion aditiva ni
 restaurar una base antigua sobre nuevas escrituras. Detener gateway ante resultado

@@ -1,5 +1,12 @@
 # Pizza House: conexion de n8n y gateway QR
 
+## Actualizacion 2026-09-20
+
+La publicacion ampliada, contratos, migracion y pruebas actuales se registran en
+[Checkout ampliado del agente](agent-checkout-release.md). Sustituye las reglas
+anteriores de envio por cotizar y avisos. CLIENTES/API y solo este workflow fueron
+actualizados; Admins, credenciales y otros workflows se conservaron.
+
 ## Estado al 2026-09-19 (America/Lima)
 
 Se actualizo el workflow existente **Agente Pizza House**, ID `HstQEpRLMqONt6v4`,
@@ -68,10 +75,12 @@ y habia dos productos. Numero, titular y QR aun no estaban configurados; la desc
 de QR devolvio 404. La consulta de prueba sobre Yape respondio honestamente que
 faltaban datos. No se subio un QR ficticio al negocio real.
 
-Delivery estaba **Por cotizar**, con importe `null`, no gratuito. El flujo no
-registra ni pide pagar un delivery sin cotizacion confirmada. No se agrego un
-calculador de tarifas variables. Para probar pedidos completos, usar recojo/local
-o configurar una tarifa real autorizada desde el POS; no inventar un importe.
+Delivery estaba **Por cotizar**, con importe `null`, no gratuito. Desde la
+ampliacion del 2026-09-20, WhatsApp puede registrar los productos en ese modo y
+dejar el envio pendiente de confirmacion por el encargado. Yape de productos
+requiere comprobante y aprobacion humana antes de cocina; envio se paga aparte.
+No despachar sin costo/metodo confirmado y aprobacion si el envio se paga con
+Yape. Tarifas variables sin resultado siguen bloqueadas; no inventar importes.
 
 ## Gateway y notificaciones
 
@@ -86,7 +95,9 @@ se autentica antes de procesar el mensaje y las referencias de pedidos antiguos
 se comprueban contra sucursal, negocio y remitente antes de reutilizarlas.
 
 **Payment Approval Monitor** queda deshabilitado solo en este workflow. El relay
-local es el unico emisor de avisos de pago, listo, despacho, entrega y cancelacion.
+local es el unico emisor. Desde el 2026-09-20 solo notifica pago aprobado con
+envio efectivo a cocina y pedido completamente listo. No envia avisos por
+despacho, entrega, rechazo, cancelacion ni fijacion del costo de envio.
 Conserva fecha de activacion y entregas en el archivo de estado v2 dentro de
 `sessions`; consulta `created_after` y `event_types`, sin consumir eventos previos.
 No borrar el archivo de estado/lock ni restaurar una copia vieja sobre entregas
@@ -96,7 +107,7 @@ Se persiste `uncertain` antes de enviar, `sent` tras confirmacion de WhatsApp y
 `acked` tras la API. Si falla el ACK se reintenta solo ese ACK; una entrega incierta
 queda para revision sin reenvio automatico. Los avisos muestran folio, no ID interno.
 
-## Verificacion y limites
+## Verificacion inicial y limites (2026-09-19)
 
 - API: 742 pruebas Pytest aprobadas, 3 omitidas de PostgreSQL. Los ensayos PG no
   pudieron ejecutarse: usuario limitado sin CREATE SCHEMA y acceso de migracion
