@@ -7169,6 +7169,8 @@ async def integration_create_order(
     if existing:
         return existing
     requested_source = (payload.source or "").strip().lower()
+    from .integration_order_validation import validate_integration_fulfillment
+    validate_integration_fulfillment(payload)
     source = requested_source if requested_source in {"agent", "n8n", "whatsapp", "whatsapp_agent"} else "integration"
     payload = payload.model_copy(update={"source": source})
     order = create_order(db, user, payload)

@@ -133,6 +133,7 @@ def test_integration_menu_and_orders_use_digital_service_channels(
             "branch_id": tenant["branch_id"],
             "channel": "delivery",
             "source": "pos",
+            "delivery_address": {"address": "Calle Prueba 123", "reference": "Puerta azul"},
             "items": [{"product_id": tenant["product_id"], "quantity": 1}],
         },
         headers=integration_headers(credential["token"], "digital-delivery-order"),
@@ -151,6 +152,7 @@ def test_integration_menu_and_orders_use_digital_service_channels(
         json={
             "branch_id": tenant["branch_id"],
             "channel": "delivery",
+            "delivery_address": {"address": "Calle Prueba 123", "reference": "Puerta azul"},
             "items": [{"product_id": tenant["product_id"], "quantity": 1}],
         },
         headers=integration_headers(credential["token"], "pos-only-delivery-order"),

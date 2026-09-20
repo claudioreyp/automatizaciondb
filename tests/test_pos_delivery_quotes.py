@@ -372,6 +372,7 @@ def test_pending_legacy_quote_cannot_be_charged_confirmed_or_sent(client, tenant
     assert order(client, tenant, auth_headers, legacy["id"]).status_code == 409
     created = client.post("/api/v1/integrations/orders/draft", headers={"X-Integration-Token": "test-integration-token", "Idempotency-Key": "pending"}, json={
         "branch_id": tenant["branch_id"], "channel": "delivery", "delivery_quote_id": legacy["id"],
+        "delivery_address": deepcopy(DESTINATION),
         "items": [{"product_id": tenant["product_id"], "quantity": 1}],
     })
     assert created.status_code == 201, created.text

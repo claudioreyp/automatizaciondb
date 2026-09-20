@@ -24,6 +24,7 @@ def setup(client, tenant, auth_headers, quote=False, method="yape"):
         "channel": "delivery" if quote else "counter", "payment_method": method,
         "whatsapp_chat_id": PHONE + "@c.us", "customer_phone": PHONE,
         "allow_pending_delivery_quote": quote,
+        "delivery_address": {"address": "Calle Prueba 123", "reference": "Puerta azul"} if quote else None,
         "items": [{"product_id": tenant["product_id"], "quantity": 1}]}
     result = client.post("/api/v1/integrations/orders/draft", json=body,
         headers={**headers, "Idempotency-Key": "initial"})
