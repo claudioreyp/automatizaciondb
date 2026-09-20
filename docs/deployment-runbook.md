@@ -227,6 +227,19 @@ instance. The change completed successfully; dashboard confirms one instance and
 no autoscaling. No Vercel API migration was attempted. The QZ identity exposure
 and other operational limits listed above remain open.
 
+## Pizza House QR connection (2026-09-19)
+
+Subsequently authorized: API `27128c9` deployed on Render
+`dep-danjcebm8hqs73bhb9r0`, then Admins `9b38677` on Vercel
+`9kjBCCbR7V2FbsbFbSyg5kDWuDGF`. Existing services/domains were reused. No schema,
+CLIENTES or DNS changes. The existing Pizza House workflow now uses its additional
+private credential; the local gateway is connected after the user's QR scan.
+
+See [Pizza House connection](pizza-house-qr-integration.md) for published workflow
+version, fresh Yape context, single-emitter event delivery, verification and pending
+end-to-end WhatsApp tests. This later authorization supersedes the earlier scope
+restriction on n8n/gateway, not the outstanding security or commercial limitations.
+
 ## Safe rollback
 
 Render keeps the last healthy instance serving traffic when build or

@@ -2,19 +2,25 @@
 
 ## Alcance
 
+Documento historico de la homologacion aislada. Para el estado conectado actual
+de Pizza House y sus credenciales privadas, consultar
+[Conexion de Pizza House](pizza-house-qr-integration.md). Este documento no debe
+usarse para sobrescribir la version publicada del workflow.
+
 El workflow local `Agente de Escalar AI - Homologacion` (`yxkVU1GUqlPsWod1`) es la copia aislada para validar el cambio desde Fudo hacia Escalar AI POS. Permanece inactivo y usa el webhook de prueba `escalar-ai-pos-homologacion`.
 
 El workflow productivo y el gateway QR no se modifican durante la homologacion. El corte se realiza unicamente despues de superar las pruebas funcionales y de seguridad.
 
 ## Configuracion de n8n
 
-Configurar estas variables en n8n, sin escribir secretos dentro de los nodos:
+Configurar identidad y base por workflow, sin afectar variables de otros negocios:
 
 - `ESCALAR_POS_API_BASE`: URL publica terminada en `/api/v1`.
-- `ESCALAR_POS_API_TOKEN`: token opaco emitido para una sola sucursal.
 - `ESCALAR_RESTAURANT_NAME`: nombre comercial mostrado al cliente.
 
-El token se muestra una sola vez al crearlo desde Admins. La base de datos conserva solo su hash.
+El token se muestra una sola vez al crearlo desde Admins. La base de datos conserva
+solo su hash. Guardarlo en una credencial privada HTTP Header Auth de n8n con
+`Authorization: Bearer ...`, nunca en variables compartidas, prompts o codigo.
 
 Scopes recomendados para el agente conversacional:
 
@@ -41,11 +47,13 @@ No conceder `inventory:write` al agente que atiende consumidores. Los ajustes de
 ## Corte controlado
 
 1. Crear una credencial de integracion para la sucursal con los scopes anteriores.
-2. Configurar las variables de n8n y desplegar la API con sus migraciones.
+2. Configurar la credencial privada y los valores propios del workflow. Desplegar
+   una API compatible; migraciones solo por separado y cuando sean necesarias.
 3. Probar saludo, carta, agotados, delivery, ubicacion, efectivo, Yape con y sin imagen, reservas y prompt injection contra el webhook de homologacion.
 4. Aprobar y rechazar una evidencia desde CLIENTES, comprobando que WhatsApp reciba un solo evento.
 5. Verificar que un fallo de escritura nunca produzca una confirmacion verbal.
 6. Cambiar el webhook del restaurante solamente despues de aprobar la homologacion.
 7. Mantener el workflow anterior disponible para rollback durante la ventana inicial.
 
-Cada restaurante recibira una copia completa de la plantilla validada. Solo cambian el tenant, la credencial de sucursal y las variables de identidad del restaurante.
+Cada restaurante recibira una copia completa de la plantilla validada. Solo cambian
+el tenant, la credencial de sucursal y la identidad obtenida de su contexto del POS.
