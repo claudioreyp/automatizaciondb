@@ -240,6 +240,54 @@ version, fresh Yape context, single-emitter event delivery, verification and pen
 end-to-end WhatsApp tests. This later authorization supersedes the earlier scope
 restriction on n8n/gateway, not the outstanding security or commercial limitations.
 
+## Official QZ preparation release (2026-09-20)
+
+Published compatible code only, API first and CLIENTES second. No QZ purchase,
+real CSR generation, official certificate issuance, secret replacement or terminal
+trust change was performed. The exposed self-signed identity still requires the
+coordinated rotation described in [QZ official activation](qz-official-activation.md).
+The official Verified by QZ result is NOT active or physically verified yet.
+
+| App | Application commit | Verified deployment |
+| --- | --- | --- |
+| API | `a17c2c1533315cc97b407946634e70cdd3836359` | Render `dep-dao3s78ae00c73altii0`, Live |
+| CLIENTES | `a2b7875641a2a42c50b1d9d8760fecca8597246f` | Vercel `dpl_2c4LqczvsYv27xiPeJjyyryiAt8D`, Ready / Production / Current |
+
+Previous runtime commits: API `e0574da`, CLIENTES `211ac25`. Existing branches,
+services, domains, private configuration and instance sizes were retained. Git
+Credential Manager used claudioreyp, not the differently scoped connectors. The
+Vercel connector lacked permission for the team; verified its Git deployment in
+the signed-in dashboard instead. No duplicate project or access grant was created.
+
+Verification:
+
+- API: 776 Pytest passed, five existing isolated-PostgreSQL cases skipped;
+  compileall passed. No schema/domain persistence changes require a migration.
+- CLIENTES: 775 Vitest passed, lint/build passed; existing >500 kB chunk warning.
+- Printing workspace: 36 Playwright cases passed on desktop/tablet/mobile with
+  mocked API and QZ. Synthetic tests cover private material rejection, trusted
+  chain validation, expired intermediates, key mismatch, missing production
+  identity, restricted signing for every role, changed identity, late signatures,
+  limited reconnect, blocked permission and uncertain dispatch/ACK behavior.
+- Grouped visual review preserved the settings layout and responsive overflow
+  behavior; final targeted Impeccable detector returned no findings. Screenshots
+  and test artifacts remain local and excluded from Git.
+- Staged changes checked for secret/configuration artifacts and whitespace errors.
+  Only the PUBLIC vendor trust root is committed, not the new/old private key.
+- HTTPS API health returns 200/ok; OpenAPI exposes optional PosQzResponse.identity;
+  unauthenticated branch QZ discovery returns 401, without private material.
+- POS settings deep link returns 200; published chunks include certificate details
+  and expiry instructions. Signed-in Pizza House settings retained its existing
+  Printer POS-80 and printing preferences. Native authorization was pending; no
+  permission was accepted and the verification tab was closed without printing.
+
+No orders, payments, print jobs or historical event deliveries were created or
+replayed. Admins, n8n, gateway, database, DNS and subscriptions were not changed.
+Physical paper, official QZ recognition, OS-user/employee switching, restarts,
+PWA, a clean workstation, macOS and Linux remain pending the issued certificate
+and coordinated activation. Do not attribute prior self-signed evidence to this
+official transition or claim that every device is already authorized.
+
 ## Safe rollback
 
 Render keeps the last healthy instance serving traffic when build or
