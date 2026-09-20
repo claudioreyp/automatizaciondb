@@ -117,3 +117,65 @@ webhook publicado uso el mismo chat tecnico para carta -> Dame una hamburguesa -
 Tienen hamburguesas? -> carta otra vez: imagen, texto, texto, imagen. Las respuestas
 indicaron ausencia de hamburguesas y alternativas reales del catalogo. No creo
 pedidos ni envio mensajes a consumidores. Gateway conectado al terminar.
+
+## Correccion de recepcion Yape (2026-09-20)
+
+Version final publicada y comparada con el artefacto preparado:
+`66c45f97-e09e-4891-9a3d-077c7c2d41e9`, mismo workflow y credenciales.
+Respaldos privados anteriores y recibos de actualizacion en `backups`, excluidos
+de Git. No se reemplazo staticData ni se borraron memoria, sesiones o entregas.
+
+Causas reproducidas con los cuerpos reales de los nodos anteriores:
+
+- Prepare Payment Pricing devolvia solo JSON, eliminando el binario antes de
+  Payment Evidence Has Image. Vision nunca recibia la captura.
+- Build Order Validation Actions devolvia el pedido a awaiting_confirmation.
+  La siguiente captura ya no encontraba la compra esperando evidencia Yape.
+- El ejemplo JSON del agente omitia variant_name aunque una instruccion posterior
+  lo exigia. La prueba real detecto Personal en la respuesta, pero no en el carrito;
+  la API rechazo correctamente cotizar una seleccion incompleta.
+
+Correccion: conservar bytes, clasificar por separado imagen ajena/fallo de vision,
+aceptar formatos estructurados o textuales, retener el pedido y metodo confirmado,
+y reparar solo el estado heredado del fallo. El contrato ahora incluye variante en
+items y adiciones. Los importes, titular y fecha extraidos no aprueban un pago ni
+descalifican por si solos el aspecto de comprobante. El encargado mantiene la
+decision. Se retiran frases como captura real y se conservan solo folios que la
+API scoped confirmo, no IDs ni numeros propuestos por el modelo.
+
+Verificacion:
+
+- 52 pruebas gateway/workflow, incluyendo reproduccion del fallo anterior,
+  persistencia entre mensajes, imagen ajena -> captura, fallo de vision -> captura,
+  formatos OpenAI, datos de pago distintos, texto sin archivo, reparacion limitada,
+  efectivo y solicitudes independientes. TypeScript sin errores.
+- 29 Pytest aislados de checkout/integraciones. Regresion adicional: monto/titular
+  distintos se conservan en revision humana; repetir la misma peticion devuelve el
+  mismo resultado. Un pedido, un comprobante, cero pagos/comandas/impresiones/eventos.
+- Prueba real autorizada mediante el webhook autenticado publicado, sin usar un
+  telefono de consumidor: compra -> confirmacion -> Yape -> imagen de tienda ->
+  solicitud de captura -> declaracion sin imagen -> comprobante de simulacion.
+  Vision reconocio la imagen ajena y luego el comprobante. El mismo carrito quedo
+  registrado como folio #27, PRUEBA TECNICA - NO PREPARAR, S/30, evidence_received,
+  comprobante under_review con codigo 085, paid_amount=0, tickets=[], sin envio a
+  cocina. No hubo transferencias bancarias ni aprobacion humana. Se conservo esa
+  prueba identificada; no aprobarla ni prepararla como pedido real.
+- Consulta posterior del mismo chat devolvio pedido #27, Pizza Peperoni Personal,
+  recojo y comprobante en revision. No creo otra compra. La primera seleccion
+  incompleta de variante fallo antes de escribir y fue corregida en la misma compra.
+- Gateway connected/sessionReady/messageBusReady; unico relay y monitor duplicado
+  deshabilitado. No se consumieron eventos historicos ni se reinicio WhatsApp.
+
+Transformadores locales en Impulsa/scripts: pizza-house-yape-evidence-code.mjs,
+pizza-house-yape-evidence-patch.mjs y pizza-house-yape-contract-patch.mjs. El
+generador principal de checkout incorpora estas correcciones. El publicador usa
+version esperada, respaldo y registro de intento para reconciliar respuestas
+perdidas; nunca publica secretos ni reescribe memoria. Las revisiones intermedias
+d4dd7591-f503-4453-8702-2fa4f6fbde90 y 99702fd8-741f-4792-92d0-a30d7f1983f1
+quedan sustituidas por la version final.
+
+Limites: prueba real de webhook/API y modelo, no entrega fisica desde otro telefono.
+Autenticidad bancaria sigue siendo una comprobacion humana. No se cambiaron
+runtime API, esquema, CLIENTES, Admins, otros workflows ni credenciales. No hizo
+falta desplegar Render/Vercel. Los fallos de vision o proveedor todavia pueden
+pedir reenviar, pero no borran la eleccion Yape ni confirman un registro inexistente.

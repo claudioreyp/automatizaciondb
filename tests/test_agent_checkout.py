@@ -5,7 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from app.database import SessionLocal
-from app.models import (BranchSettings, IntegrationEvent, KitchenTicket, Order, Payment, PaymentEvidence, Product,
+from app.models import (BranchSettings, IntegrationEvent, KitchenTicket, Order, Payment, PaymentEvidence, PrintJob, Product,
                         Modifier, ModifierGroup, ProductModifierGroup)
 from test_escalar_integrations import create_credential, integration_headers
 
@@ -70,6 +70,37 @@ def test_preview_has_no_order_or_stock_side_effects(client, tenant, auth_headers
     assert not catalog["products"][0]["available"]
     assert "recipe" not in catalog["products"][0]
     assert "ingredients" not in catalog
+
+
+def test_receipt_shape_is_not_payment_approval_and_retry_cannot_duplicate(client, tenant, auth_headers):
+    headers, order = setup(client, tenant, auth_headers)
+    data = {"provider": "yape", "looks_like_payment_receipt": "true", "sender": PHONE,
+        "amount_detected": "100", "operation_number": "TEST-RECEIPT-NO-PAYMENT",
+        "security_code": "085", "recipient": "OTRO TITULAR DE PRUEBA",
+        "whatsapp_message_id": "isolated-receipt-message"}
+    files = {"file": ("PRUEBA-SIN-VALOR.png", b"\x89PNG\r\n\x1a\nreceipt-test-only", "image/png")}
+    endpoint = f"/api/v1/integrations/orders/{order['id']}/payment-evidence"
+    request_headers = {**headers, "Idempotency-Key": "same-receipt-attempt"}
+    first = client.post(endpoint, headers=request_headers, data=data, files=files)
+    assert first.status_code == 201, first.text
+    result = first.json()
+    assert result["requires_human_review"] is True
+    assert result["evidence"]["status"] == "under_review"
+    assert result["evidence"]["security_code"] == "085"
+    assert result["evidence"]["amount_detected"] == 100
+    assert result["order"]["sent_to_kitchen_at"] is None
+    assert result["order"]["total"] == 20
+    assert result["order"]["payment_status"] == "evidence_received"
+    repeated = client.post(endpoint, headers=request_headers, data=data, files=files)
+    assert repeated.status_code == 201
+    assert repeated.json() == result
+    with SessionLocal() as db:
+        assert db.query(Order).count() == 1
+        assert db.query(PaymentEvidence).count() == 1
+        assert db.query(Payment).count() == 0
+        assert db.query(KitchenTicket).count() == 0
+        assert db.query(PrintJob).count() == 0
+        assert db.query(IntegrationEvent).count() == 0
 
 
 def test_initial_and_extra_receipts_coexist_and_review_in_order(client, tenant, auth_headers):
