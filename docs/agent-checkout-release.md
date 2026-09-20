@@ -179,3 +179,120 @@ Autenticidad bancaria sigue siendo una comprobacion humana. No se cambiaron
 runtime API, esquema, CLIENTES, Admins, otros workflows ni credenciales. No hizo
 falta desplegar Render/Vercel. Los fallos de vision o proveedor todavia pueden
 pedir reenviar, pero no borran la eleccion Yape ni confirman un registro inexistente.
+
+## Indicador de escritura (2026-09-20)
+
+Cambio local en Impulsa/src/typing.ts y src/gateway.ts, sin modificar el workflow,
+API, CLIENTES, Admins ni credenciales. Antes se usaba startTyping con duracion de
+15 segundos; su promesa espera ese plazo. El finally esperaba esa promesa despues
+del envio y podia mantener la presencia aunque la respuesta ya estuviera entregada.
+
+Ahora whileTyping limita la presencia a la preparacion de la respuesta. El inicio
+no impone una duracion; el stop explicito espera solo el inicio pendiente, cancela
+refrescos y es idempotente. La parada termina antes del bucle de envios, no despues
+del ACK. Los errores y las respuestas suprimidas tambien limpian la presencia.
+No se agregaron demoras ni se alteraron la cola de conversacion o los envios.
+
+Verificacion: 56 pruebas gateway/workflow aprobadas, npm run check y npm run build
+correctos. Los casos adicionales cubren ACK lento, multiples acciones, refrescos
+encolados, stop repetido, errores, respuesta vacia y procesamiento posterior.
+
+Activacion local completada a las 13:57 America/Lima. Tras bloqueo del primer
+comando, el usuario autorizo expresamente reiniciar solo el gateway. Se verifico
+su proceso y ausencia de trafico reciente, se detuvo mediante PowerShell y se
+inicio oculto el launcher persistente con el nuevo build. PID 31052, un solo
+proceso y relay; escucha exclusiva 127.0.0.1:3008. Estado connected, sessionReady y
+messageBusReady, sin QR nuevo ni mensajes pendientes de agrupar. No se borro la
+sesion. Fecha de activacion (2026-09-20T01:46:39.933Z) y huella SHA256 del registro
+durable de entregas identicas antes y despues. El build cargado contiene
+whileTyping y startTyping sin duracion. No se enviaron mensajes de prueba a
+consumidores. La comprobacion visual del indicador en un telefono sigue pendiente;
+no confundir las pruebas de ciclo de vida con evidencia fisica de WhatsApp.
+
+## Conversacion y eleccion de pago (2026-09-20)
+
+Version activa final `557b6118-cda3-4b64-bbc4-b27fb640c9b3`, mismo workflow
+`HstQEpRLMqONt6v4`. Version previa respaldada `66c45f97-e09e-4891-9a3d-077c7c2d41e9`;
+revisiones intermedias a1af5122-6f67-4a9e-8d23-3683df4db691 y
+cefa7f78-2a2b-45c8-b7f8-673599305260 reemplazadas. Lectura posterior confirma version
+publicada, nodos y conexiones iguales al artefacto preparado. Regenerar desde el
+transformador completo reproduce todos los parametros y conexiones, sin diferencias
+de credenciales. No se envio staticData en la actualizacion ni se borraron recuerdos.
+
+Causas comprobadas con codigo publicado y casos de las capturas:
+
+- El detector de pagos se ejecutaba antes de incorporar modalidad/productos. Si el
+  carrito no estaba completo, Yape iba a una frase fija y no guardaba la eleccion.
+  El cliente quedaba atrapado entre confirmar y volver a elegir pago.
+- El envio de carta dependia ademas de intent=consult_menu. Un turno mixto como
+  Familiar / mandame la carta podia clasificarse prepare_order y perder la imagen.
+- El resumen estructurado omitia variante y opciones; responder modalidad/pago
+  podia reemplazar una seleccion valida por otra incompleta generada por el modelo.
+- El filtro final quitaba los emojis originales y agregaba uno a TODOS los textos,
+  incluso ante frustracion. Las frases fijas de confirmacion agravaban la repeticion.
+
+Correccion:
+
+- Conservar requestedPaymentMethod dentro de la sesion de compra, con deteccion
+  de elecciones explicitas, negaciones, preguntas y metodos ambiguos. Reconocer
+  recojo en el local, para llevar, consumo en local y Yapeeee. No es autorizacion de
+  pago ni prueba bancaria. La nueva compra descarta decisiones de la anterior.
+- El carrito nuevo pasa primero por contexto/modelo/resolucion y despues por
+  Resolve Checkout Payment. Reutilizar la cotizacion y validacion existentes; las
+  imagenes de comprobante y los pagos de pedidos ya registrados conservan su ruta
+  anterior. No hay doble paso de creacion, nuevos endpoints ni cambios de cobros.
+- QR solo con importe actual validado, metodo habilitado y datos reales del POS.
+  El efectivo sigue entrando por Prepare Deferred Checkout Submission y validacion
+  existente. Una consulta de disponibilidad no autoriza una escritura por recordar
+  CASH. Un fallo de precio no puede emitir un QR ni anunciar registro.
+- Requerimiento de carta independiente del intent, tambien en la salida de pago.
+  Gateway expande pos_menu a las imagenes actuales en orden con el texto de la
+  primera. El filtro conserva privacidad, autorizacion y folios comprobados.
+- Preguntas concretas para tamano/opciones faltantes, segun errores conocidos de
+  preview. Errores desconocidos o indisponibilidad no se convierten en preguntas
+  inventadas ni filtran detalles internos. Sin emojis forzados en textos normales.
+
+Verificacion:
+
+- 72 pruebas gateway/workflow, npm run check y npm run build aprobados. Incluyen
+  reproduccion de la version anterior, mensajes combinados/separados, persistencia,
+  omision de variantes por el modelo, negaciones, metodo deshabilitado, error de
+  precio, delivery incompleto, efectivo, nueva compra y conservacion de credenciales.
+- Once turnos reales de webhook/modelo repartidos entre cinco identidades sinteticas
+  distintas: secuencia de las capturas; compra + recojo/Yape/carta; Yape antes de
+  indicar tamano; compra completa en un solo mensaje; carta seguida de pregunta de
+  hamburguesas. Las cuatro compras devolvieron QR actual por S/45 sin pedir otra
+  confirmacion. La compra incompleta pregunto exactamente el tamano y con Familiar
+  paso al QR sin preguntar de nuevo el pago. Las consultas de producto devolvieron
+  texto sin reenviar carta; el mensaje mixto incluyo carta y QR.
+- La primera prueba combinada anterior compartia accidentalmente el identificador
+  normalizado con otra prueba. No se utilizo como evidencia de aislamiento: se
+  repitieron los escenarios con sufijos numericos distintos y se verificaron sus
+  estados independientes. No se tocaron conversaciones reales para simularlos.
+- Cuatro carritos sinteticos quedaron awaiting_yape_evidence, TAKEAWAY, YAPE y sin
+  submittedSaleId; el de consultas quedo collecting y sin venta. No se enviaron
+  imagenes de comprobante ni solicitudes de efectivo en pruebas reales.
+- Un turno adicional en el chat de la prueba tecnica anterior pidio compra nueva
+  Familiar/Yape. Recibio QR por S/45, no el importe previo de S/30. La respuesta de
+  estado del pedido tecnico #27 (ID28) permanecio identica antes/despues. La nueva
+  compra sigue siendo un carrito, no otra venta registrada.
+- Comparacion SHA256 de todos los QR retornados con el endpoint autenticado actual.
+  Gateway descargo tambien la galeria real: una imagen WEBP, 194972 bytes, con
+  Aqui esta nuestra carta y el emoji solicitado en el caption. No se enviaron estas
+  pruebas a WhatsApp ni se consumieron eventos/impresiones para comprobarlas.
+- Gateway connected/sessionReady/messageBusReady, sin lotes pendientes; no hubo
+  reinicio de WhatsApp en esta correccion. El monitor duplicado sigue deshabilitado.
+
+Artefactos locales en Impulsa/scripts: pizza-house-conversation-code.mjs,
+pizza-house-conversation-patch.mjs, release-pizza-conversation.mjs,
+check-pizza-conversation-live.mjs y check-pizza-new-purchase-live.mjs. El generador
+principal incorpora el parche; las pruebas estan en tests/pizza-house-conversation.test.ts.
+Respaldos, payloads y recibos privados en Apis/backups, fuera de Git. No se publica
+el token ni la memoria en codigo. El gateway no tiene un repositorio Git utilizable;
+no afirmar que estos archivos locales se subieron a GitHub. El workflow si esta
+publicado y comprobado. API runtime, CLIENTES, Admins y esquema no cambiaron.
+
+Limites: evidencia de modelo/webhook/API/bytes y pruebas automatizadas, no entrega
+visual en un telefono durante esta verificacion. No afirmar que un modelo nunca
+se equivocara; los precios, permisos, comprobantes y escrituras siguen protegidos
+por contratos deterministas. No hubo pagos bancarios ni ventas nuevas en estas pruebas.
