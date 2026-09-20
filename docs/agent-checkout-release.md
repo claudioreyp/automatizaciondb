@@ -96,3 +96,24 @@ pagos bancarios. Mantener este equipo y el gateway encendidos.
 Rollback: volver a codigo compatible, sin revertir la migracion aditiva ni
 restaurar una base antigua sobre nuevas escrituras. Detener gateway ante resultado
 incierto, sin borrar sesion ni registro de entregas.
+
+## Correccion de consulta de productos (2026-09-20)
+
+Version posterior publicada del mismo workflow:
+`35707f89-c22c-41f6-bf8d-7ab951599126`. El envio de carta ya no depende solamente
+del intent consult_menu: exige solicitud actual o aceptacion de una oferta
+reciente del mismo chat. Las consultas de productos conservan customer_reply,
+incluido producto ausente/agotado y alternativas reales. Una peticion mixta puede
+recibir imagen y respuesta, sin descartar la consulta.
+
+Solo cambiaron Build POS Agent Context, Restaurant Agent y Build Standard Actions.
+Se conservaron conexiones, memoria, credenciales, escrituras y monitor desactivado;
+no fue necesario modificar ni redesplegar API, CLIENTES o el gateway.
+Transformador local: scripts/pizza-house-menu-intent-patch.mjs en Impulsa.
+Respaldo privado del workflow anterior y recibo de version conservados en backups.
+
+41 pruebas locales y chequeo TypeScript aprobados. La prueba autenticada sobre el
+webhook publicado uso el mismo chat tecnico para carta -> Dame una hamburguesa ->
+Tienen hamburguesas? -> carta otra vez: imagen, texto, texto, imagen. Las respuestas
+indicaron ausencia de hamburguesas y alternativas reales del catalogo. No creo
+pedidos ni envio mensajes a consumidores. Gateway conectado al terminar.
