@@ -23,7 +23,7 @@ from .order_folios import parse_order_folio
 from .product_access import POS_MODULES, POS_PLAN, full_pos_modules
 from .integration_package import integration_package
 from .agent_context import agent_context
-from .agent_checkout import (ensure_dispatch, ensure_request_upload, payment_request, ready_event,
+from .agent_checkout import (AGENT_SOURCES, ensure_dispatch, ensure_request_upload, payment_request, ready_event,
     requests_for_order, review_request, serialize_request)
 from .credential_operations import issuance_fingerprint, issuance_record, operation_scope, validate_operation_key
 
@@ -6187,11 +6187,16 @@ def evidence_values(metadata: dict, analysis: dict) -> dict:
     confidence = metadata.get("confidence")
     if confidence is None:
         confidence = analysis.get("confidence")
+    security_code = metadata.get("security_code") or analysis.get("security_code")
+    if isinstance(security_code, str):
+        security_code = security_code.strip()
+    if not isinstance(security_code, str) or len(security_code) != 3 or not security_code.isascii() or not security_code.isdigit():
+        security_code = None
     return {
         "provider": metadata.get("provider") or analysis.get("provider") or "unknown",
         "amount_detected": money(amount) if amount not in {None, ""} else None,
         "operation_number": metadata.get("operation_number") or analysis.get("operation_number"),
-        "security_code": metadata.get("security_code") or analysis.get("security_code"),
+        "security_code": security_code,
         "whatsapp_message_id": metadata.get("whatsapp_message_id"),
         "occurred_at": parsed_datetime(metadata.get("occurred_at") or analysis.get("occurred_at")),
         "recipient": metadata.get("recipient") or analysis.get("recipient"),
@@ -7364,14 +7369,22 @@ async def integration_upload_payment_evidence(
         raise HTTPException(status_code=422, detail="Idempotency-Key is required")
     if provider.lower() not in {"yape", "plin"}:
         raise HTTPException(status_code=422, detail="provider must be yape or plin")
-    if security_code is not None and (len(security_code) != 3 or not security_code.isdigit()):
+    if security_code is not None and (len(security_code) != 3 or not security_code.isascii() or not security_code.isdigit()):
         raise HTTPException(status_code=422, detail="security_code must contain exactly three digits")
     order = load_order(db, order_id, for_update=True)
     ensure_integration_order_scope(integration, order)
     target = payment_request(db, order, payment_request_id) if payment_request_id else None
-    if target or sender:
+    initial_agent_receipt = target is None and order.source in AGENT_SOURCES
+    if target or sender or initial_agent_receipt:
         from .agent_checkout import assert_sender
         assert_sender(order, sender)
+    if initial_agent_receipt:
+        if order.payment_method != "yape" or provider.lower() != "yape":
+            raise CodedHTTPException(409, "This order is not awaiting a Yape receipt", "PAYMENT_METHOD_NOT_YAPE")
+        if looks_like_payment_receipt is not True:
+            raise CodedHTTPException(422, "Classify the image as a payment receipt before upload", "PAYMENT_RECEIPT_REQUIRED")
+        if not whatsapp_message_id or not whatsapp_message_id.strip():
+            raise CodedHTTPException(422, "WhatsApp message ID is required", "WHATSAPP_MESSAGE_ID_REQUIRED")
     data = await file.read(10 * 1024 * 1024 + 1)
     if len(data) > 10 * 1024 * 1024:
         raise HTTPException(413, "Payment evidence exceeds 10 MB")
@@ -7406,8 +7419,9 @@ async def integration_upload_payment_evidence(
     )
     if duplicate_image:
         raise HTTPException(status_code=409, detail="This payment evidence image was already used")
-    storage_path = await store_private_file(data, file.filename or "evidence.png", content_type)
     analysis = await analyze_payment_image(data, content_type)
+    if initial_agent_receipt and analysis.get("available") is True and analysis.get("looks_like_payment_receipt") is not True:
+        raise CodedHTTPException(422, "The image could not be confirmed as a payment receipt", "PAYMENT_RECEIPT_REQUIRED")
     supplied_warnings: list[str] = []
     if analysis_warnings:
         try:
@@ -7429,6 +7443,8 @@ async def integration_upload_payment_evidence(
         if isinstance(flag, bool)
     ]
     receipt_detected = all(detection_flags) if detection_flags else True
+    if initial_agent_receipt and not receipt_detected:
+        raise CodedHTTPException(422, "The image is not a payment receipt", "PAYMENT_RECEIPT_REQUIRED")
     analysis = {
         **analysis,
         "expected_amount": float(target.amount if target else order.total),
@@ -7467,6 +7483,7 @@ async def integration_upload_payment_evidence(
                 )[:10],
             }
         )
+    storage_path = await store_private_file(data, file.filename or "evidence.png", content_type)
     evidence = PaymentEvidence(
         business_id=order.business_id,
         order_id=order.id,

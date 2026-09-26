@@ -37,6 +37,7 @@ def upload(client, headers, order, request_id=None, key=None):
     response = client.post(f"/api/v1/integrations/orders/{order['id']}/payment-evidence",
         headers={**headers, "Idempotency-Key": key},
         data={"provider": "yape", "looks_like_payment_receipt": "true", "sender": PHONE,
+              "whatsapp_message_id": f"wamid-{key}",
               **({"payment_request_id": request_id} if request_id else {})},
         files={"file": ("test.png", b"\x89PNG\r\n\x1a\n" + key.encode(), "image/png")})
     assert response.status_code == 201, response.text

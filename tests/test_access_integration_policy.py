@@ -98,6 +98,10 @@ def test_packages_are_scoped_match_real_routes_and_never_recover_secrets(client,
     result = client.get(url, params={"credential_id": item["id"]}, headers=ADMIN)
     package = result.json()["integration"]
     assert "inventory:write" not in package["scopes"]
+    assert {
+        "menu_card_gallery_image", "customer_catalog", "preview_order", "customer_order_state",
+        "add_order_items", "revise_order_items", "choose_delivery_payment",
+    } <= package["endpoints"].keys()
     assert item["token"] not in result.text and "token_hash" not in result.text
     assert result.headers["cache-control"] == "no-store"
     assert client.get(url, params={"credential_id": other["id"]}, headers=ADMIN).status_code == 404

@@ -462,6 +462,8 @@ def test_yape_requires_real_image_and_human_approval_emits_durable_event(
         f"/api/v1/integrations/orders/{order_id}/payment-evidence",
         data={
             "provider": "yape",
+            "sender": "51999999999",
+            "looks_like_payment_receipt": "true",
             "amount_detected": "20.00",
             "operation_number": "YP-000001",
             "security_code": "228",
@@ -483,7 +485,8 @@ def test_yape_requires_real_image_and_human_approval_emits_durable_event(
 
     duplicate_evidence = client.post(
         f"/api/v1/integrations/orders/{order_id}/payment-evidence",
-        data={"provider": "yape", "operation_number": "YP-000002"},
+        data={"provider": "yape", "sender": "51999999999", "looks_like_payment_receipt": "true",
+              "whatsapp_message_id": "wamid-proof-002", "operation_number": "YP-000002"},
         files={"file": ("second.png", b"not-an-image", "image/png")},
         headers=integration_headers(token, "evidence-image-002"),
     )
@@ -595,7 +598,7 @@ def test_yape_requires_real_image_and_human_approval_emits_durable_event(
         json={
             "branch_id": tenant["branch_id"],
             "channel": "counter",
-            "source": "n8n",
+            "source": "integration",
             "external_reference": "payment-without-whatsapp-recipient",
             "payment_method": "yape",
             "items": [{"product_id": tenant["product_id"], "quantity": 1}],
@@ -634,7 +637,7 @@ def test_yape_requires_real_image_and_human_approval_emits_durable_event(
     )
 
 
-def test_non_receipt_image_is_not_confirmed_and_leaves_an_operational_note(
+def test_non_receipt_image_is_rejected_without_order_mutation(
     client, tenant, auth_headers
 ):
     credential = create_credential(client, tenant, auth_headers)
@@ -666,6 +669,7 @@ def test_non_receipt_image_is_not_confirmed_and_leaves_an_operational_note(
         f"/api/v1/integrations/orders/{order_id}/payment-evidence",
         data={
             "provider": "yape",
+            "sender": "51988888888",
             "looks_like_payment_receipt": "false",
             "analysis_warnings": '["La imagen contiene un personaje animado."]',
             "whatsapp_message_id": "wamid-invalid-image",
@@ -673,18 +677,13 @@ def test_non_receipt_image_is_not_confirmed_and_leaves_an_operational_note(
         files={"file": ("pokemon.png", b"\x89PNG\r\n\x1a\nnot-a-receipt", "image/png")},
         headers=integration_headers(token, "invalid-image-001"),
     )
-    assert uploaded.status_code == 201, uploaded.text
-    body = uploaded.json()
-    assert body["receipt_detected"] is False
-    assert body["requires_human_review"] is False
-    assert body["evidence"]["status"] == "not_a_receipt"
-    assert body["evidence"]["amount_detected"] is None
-    assert body["evidence"]["operation_number"] is None
-    assert body["evidence"]["security_code"] is None
-    assert body["order"]["status"] == "pending_confirmation"
-    assert body["order"]["payment_status"] == "invalid_evidence"
-    assert "no parece ser un comprobante" in body["order"]["notes"]
+    assert uploaded.status_code == 422, uploaded.text
+    assert uploaded.json()["code"] == "PAYMENT_RECEIPT_REQUIRED"
     with SessionLocal() as db:
+        order = db.get(Order, order_id)
+        assert order.status == "draft"
+        assert order.payment_status != "invalid_evidence"
+        assert db.query(PaymentEvidence).filter_by(order_id=order_id).count() == 0
         assert db.query(KitchenTicket).filter_by(order_id=order_id).count() == 0
 
 

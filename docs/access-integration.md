@@ -150,6 +150,22 @@ intencional. Un reintento tecnico conserva exactamente clave y cuerpo. Un segund
 pedido realmente solicitado usa otra clave. Consultar el esquema de cada cuerpo en
 `/docs` de la API correspondiente; no inventar nombres de productos o importes.
 
+El paquete copiable incluye las rutas vigentes del agente: catalogo apto para el
+consumidor, galeria privada de la carta, preview sin escritura, estado del pedido
+del remitente, adiciones, revisiones y eleccion del pago del envio. `customer-state`
+requiere `sender` y `orders:read`; las modificaciones del pedido requieren
+`orders:write`. La galeria y el catalogo requieren `menu:read`.
+
+Para el comprobante **inicial** de un pedido con origen agente/WhatsApp,
+`POST /integrations/orders/{order_id}/payment-evidence` requiere imagen, remitente
+vinculado (`sender`), `whatsapp_message_id`, `provider=yape`, metodo Yape vigente y
+`looks_like_payment_receipt=true`, ademas de `payments:write` e
+`Idempotency-Key`. Una imagen no clasificada o rechazada por el analisis devuelve
+error sin cambiar el pedido ni guardar comprobante. El numero de operacion, monto,
+fecha, destinatario y codigo de seguridad de tres digitos solo se conservan cuando
+son legibles; la aprobacion sigue siendo exclusivamente humana. Las solicitudes
+`payment_request_id` de adiciones/envio mantienen su contrato anterior.
+
 Los permisos predeterminados son `menu:read`, `inventory:read`, `orders:read`,
 `orders:write`, `payments:write`, `reservations:write` y `events:read`.
 No incluyen ajustes de stock ni cambios de disponibilidad. Tokens anteriores no
