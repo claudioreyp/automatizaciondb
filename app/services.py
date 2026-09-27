@@ -188,6 +188,7 @@ def serialize_order(order: Order) -> dict:
         "final_total": None if order.delivery_fee_status == "pending_quote" else float(order.total or 0),
         "total": float(order.total or 0),
         "notes": order.notes,
+        "recent_modification": getattr(order, "_recent_modification", None),
         "external_reference": order.external_reference,
         "whatsapp_chat_id": order.whatsapp_chat_id,
         "whatsapp_message_id": order.whatsapp_message_id,
@@ -1160,6 +1161,9 @@ def ensure_order_products_mutable(
     db: Session,
     order: Order,
     action: str,
+    *,
+    allow_confirmed_payment: bool = False,
+    allow_open_initial_evidence: bool = False,
 ) -> None:
     if order.status in {"cancelled", "closed"} or order.table_released_at is not None:
         raise CodedHTTPException(
@@ -1179,13 +1183,22 @@ def ensure_order_products_mutable(
             Payment.status == "confirmed",
         ).limit(1)
     )
-    if has_payment is not None:
+    if has_payment is not None and not allow_confirmed_payment:
         raise CodedHTTPException(
             409,
             "Order products cannot change after a payment",
             "ORDER_HAS_PAYMENTS",
         )
-    ensure_no_open_payment_evidence(db, order, action)
+    if allow_open_initial_evidence:
+        other_evidence = db.scalar(select(PaymentEvidence.id).where(
+            PaymentEvidence.order_id == order.id,
+            PaymentEvidence.status.in_(OPEN_PAYMENT_EVIDENCE_STATUSES),
+            PaymentEvidence.payment_request_id.is_not(None),
+        ).limit(1))
+        if other_evidence is not None:
+            raise CodedHTTPException(409, f"Resolve the payment evidence review before {action}", "PAYMENT_EVIDENCE_UNDER_REVIEW")
+    else:
+        ensure_no_open_payment_evidence(db, order, action)
 
 
 def send_order_to_kitchen(db: Session, user: AuthContext, order: Order) -> list[KitchenTicket]:
@@ -1244,6 +1257,8 @@ def append_order_item_batch(
     user: AuthContext,
     order: Order,
     lines: list[OrderLineInput],
+    *,
+    allow_paid_addition: bool = False,
 ) -> tuple[list[OrderItem], list[KitchenTicket]]:
     if order.status not in {
         "draft",
@@ -1258,7 +1273,7 @@ def append_order_item_batch(
             "Order can no longer receive products",
             "ORDER_ITEMS_LOCKED",
         )
-    ensure_order_products_mutable(db, order, "adding products")
+    ensure_order_products_mutable(db, order, "adding products", allow_confirmed_payment=allow_paid_addition)
 
     previous_status = order.status
     new_items = [
@@ -1272,9 +1287,25 @@ def append_order_item_batch(
         )
         for line in lines
     ]
-    order.items.extend(new_items)
+    freeze_paid_pricing = bool(allow_paid_addition and db.scalar(select(Payment.id).where(
+        Payment.order_id == order.id, Payment.status == "confirmed").limit(1)))
+    if freeze_paid_pricing:
+        draft = Order(business_id=order.business_id, branch_id=order.branch_id, channel=order.channel,
+                      source=order.source, status="draft", delivery_fee=0, manual_discount=0)
+        draft.items.extend(new_items)
+        recalculate_order(db, draft)
+        for item in list(draft.items):
+            draft.items.remove(item)
+            order.items.append(item)
+        order.subtotal = money(order.subtotal + draft.subtotal)
+        order.discount = money(order.discount + draft.discount)
+        order.promotion_discount = money(order.promotion_discount + draft.promotion_discount)
+        order.applied_promotions = [*(order.applied_promotions or []), *(draft.applied_promotions or [])]
+        order.total = money(order.total + draft.total)
+    else:
+        order.items.extend(new_items)
+        recalculate_order(db, order)
     db.flush()
-    recalculate_order(db, order)
 
     tickets: list[KitchenTicket] = []
     if previous_status in {"confirmed", "sent_to_kitchen", "preparing", "ready"}:
@@ -1316,6 +1347,8 @@ def apply_order_item_revisions(
     user: AuthContext,
     order: Order,
     operations: list[OrderItemRevisionOperation],
+    *,
+    allow_paid_price_neutral: bool = False,
 ) -> tuple[list[OrderItem], list[OrderItem], list[KitchenTicket]]:
     if order.status not in {"sent_to_kitchen", "preparing", "ready"}:
         raise CodedHTTPException(
@@ -1323,7 +1356,10 @@ def apply_order_item_revisions(
             "Only products already sent to kitchen can be revised",
             "ORDER_ITEMS_NOT_SENT",
         )
-    ensure_order_products_mutable(db, order, "revising products")
+    ensure_order_products_mutable(db, order, "revising products", allow_confirmed_payment=allow_paid_price_neutral)
+    original_total = money(order.total)
+    paid_pricing = {item.id: (item.unit_price, item.line_total, item.promotion_discount, deepcopy(item.promotion_snapshot))
+                    for item in order.items} if allow_paid_price_neutral else {}
 
     operation_ids = [operation.item_id for operation in operations]
     if len(operation_ids) != len(set(operation_ids)):
@@ -1398,6 +1434,17 @@ def apply_order_item_revisions(
     if replacement_items:
         commit_order_items_stock(db, user, order, replacement_items)
     recalculate_order(db, order)
+    if allow_paid_price_neutral:
+        for item in order.items:
+            if item.status in INACTIVE_ORDER_ITEM_STATUSES and item.id in paid_pricing:
+                item.promotion_discount, item.promotion_snapshot = paid_pricing[item.id][2:]
+        unchanged_items_repriced = any(
+            item.id not in operation_ids and item.id in paid_pricing
+            and (item.unit_price, item.line_total, item.promotion_discount, item.promotion_snapshot) != paid_pricing[item.id]
+            for item in active_order_items(order)
+        )
+        if money(order.total) != original_total or unchanged_items_repriced:
+            raise CodedHTTPException(409, "A paid order price change requires staff review", "PAID_ORDER_PRICE_CHANGE_REQUIRES_STAFF")
 
     command_items: list[dict] = []
     for original, replacement in edit_pairs:
@@ -1517,6 +1564,59 @@ def apply_order_item_revisions(
     for ticket in new_tickets:
         prepare_pos_print_intent(db, order, ticket)
     return replacement_items, cancelled_items, tickets
+
+
+def apply_unsent_agent_item_revisions(
+    db: Session,
+    user: AuthContext,
+    order: Order,
+    operations: list[OrderItemRevisionOperation],
+) -> None:
+    """Revise a confirmed WhatsApp order before its first kitchen command."""
+    if order.status != "confirmed" or order.sent_to_kitchen_at is not None or db.scalar(
+        select(KitchenTicket.id).where(KitchenTicket.order_id == order.id).limit(1)
+    ) is not None:
+        raise CodedHTTPException(409, "The order has already been sent to kitchen", "ORDER_ITEMS_ALREADY_SENT")
+    ensure_order_products_mutable(db, order, "revising products", allow_open_initial_evidence=True)
+    operation_ids = [operation.item_id for operation in operations]
+    if len(operation_ids) != len(set(operation_ids)):
+        raise CodedHTTPException(422, "Each product can be revised only once per request", "DUPLICATE_ITEM_REVISION")
+    candidates = {item.id: item for item in active_order_items(order) if item.id in operation_ids}
+    if len(candidates) != len(operation_ids):
+        raise CodedHTTPException(404, "One or more active order products were not found", "ORDER_ITEM_NOT_FOUND")
+    cancelled_ids = {operation.item_id for operation in operations if operation.type == "cancel"}
+    if not any(item.id not in cancelled_ids for item in active_order_items(order)):
+        raise CodedHTTPException(409, "Cancel the order instead of removing its last product", "ORDER_REQUIRES_CANCELLATION")
+    before_total = money(order.total)
+    historical_promotions = {item.id: (item.promotion_discount, deepcopy(item.promotion_snapshot)) for item in order.items}
+    originals = [candidates[operation.item_id] for operation in operations]
+    replacements = []
+    for operation in operations:
+        original = candidates[operation.item_id]
+        if operation.type == "edit":
+            replacement = build_order_item(db, order.business_id, order.branch_id,
+                                           operation.replacement, order.channel, order.source)
+            original.status = "superseded"
+            replacement.replaces_item_id = original.id
+            order.items.append(replacement)
+            replacements.append(replacement)
+        else:
+            original.status = "cancelled"
+            original.cancellation_reason = (operation.reason or "").strip()
+    restore_order_items_stock(db, user, order, originals)
+    db.flush()
+    if replacements:
+        commit_order_items_stock(db, user, order, replacements)
+    recalculate_order(db, order)
+    for item in order.items:
+        if item.status in INACTIVE_ORDER_ITEM_STATUSES and item.id in historical_promotions:
+            item.promotion_discount, item.promotion_snapshot = historical_promotions[item.id]
+    if money(order.total) != before_total:
+        raise CodedHTTPException(409, "The receipt amount cannot change while it is under review", "PAYMENT_EVIDENCE_AMOUNT_LOCKED")
+    order.version += 1
+    audit(db, user, "order.items_revised", "order", order.id, order.business_id,
+          {"item_ids": operation_ids, "replacement_item_ids": [item.id for item in replacements]},
+          branch_id=order.branch_id)
 
 
 ORDER_TRANSITIONS = {

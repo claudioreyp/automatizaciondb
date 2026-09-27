@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, selectinload
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 from .order_editing import delivery_service, edit_order_details, order_edit_policy
+from .agent_order_changes import attach_recent_agent_order_changes
 from .order_folios import parse_order_folio
 from .product_access import POS_MODULES, POS_PLAN, full_pos_modules
 from .integration_package import integration_package
@@ -58,7 +59,7 @@ from .database import get_db
 from .catalog_availability import product_selection_unavailable_reason, selection_unavailable_reason, set_product_availability, sync_variant_availability
 from .dashboard_report import dashboard_report
 from .errors import CodedHTTPException
-from .command_revisions import effective_ticket_items
+from .command_revisions import effective_ticket_context, effective_ticket_items
 from .models import (
     AuditEvent,
     Branch,
@@ -1105,7 +1106,7 @@ def serialize_ticket(
     table_name: str | None = None,
     created_by_name: str | None = None,
 ) -> dict:
-    context = {key: value for key, value in (ticket.context_snapshot or {}).items()
+    context = {key: value for key, value in effective_ticket_context(ticket).items()
                if key != "_pos_printing"}
     return {
         "id": ticket.id,
@@ -1161,6 +1162,7 @@ def serialize_order_summary(
         "paid_amount": float(money(paid_amount)),
         "item_count": len(active_order_items(order)),
         "version": order.version,
+        "recent_modification": getattr(order, "_recent_modification", None),
     }
 
 
@@ -4103,7 +4105,9 @@ def list_orders(
                 Order.customer_phone.ilike(pattern),
             )
         )
-    return [serialize_order(item) for item in db.scalars(statement)]
+    orders = list(db.scalars(statement))
+    attach_recent_agent_order_changes(db, orders)
+    return [serialize_order(item) for item in orders]
 
 
 @api.get("/orders/workspace", tags=["orders"])
@@ -4201,6 +4205,7 @@ def orders_workspace(
         )
         .group_by(Payment.order_id)
     ).all()) if order_ids else {}
+    attach_recent_agent_order_changes(db, orders)
     return {
         "day": local_day.isoformat(),
         "period": period,
@@ -4253,6 +4258,7 @@ def get_order_endpoint(
 ):
     order = load_order(db, order_id)
     ensure_branch_scope(user, order.business_id, order.branch_id)
+    attach_recent_agent_order_changes(db, [order])
     return serialize_order(order)
 
 
@@ -4263,6 +4269,7 @@ def get_order_detail(
     db: Session = Depends(get_db),
 ):
     order = scoped_order_for_user(db, user, order_id)
+    attach_recent_agent_order_changes(db, [order])
     payments = list(
         db.scalars(
             select(Payment)
@@ -7208,6 +7215,13 @@ async def integration_patch_order(
         return existing
     user = AuthContext("integration", "owner", order.business_id, order.branch_id)
     assert_version(order.version, payload.expected_version)
+    if "table_id" in payload.model_fields_set and order.status in {"cancelled", "closed", "delivered"}:
+        raise CodedHTTPException(409, "The table assignment is locked", "ORDER_TABLE_ASSIGNMENT_LOCKED")
+    from .agent_order_changes import kitchen_was_completed
+    if order.source in AGENT_SOURCES and kitchen_was_completed(db, order):
+        raise CodedHTTPException(409, "The kitchen command was completed; only additions are allowed", "KITCHEN_ALREADY_COMPLETED")
+    if order.source in AGENT_SOURCES and order.status not in {"draft", "pending_confirmation"}:
+        raise CodedHTTPException(409, "Use the confirmed order change operation or add products", "AGENT_ORDER_CHANGE_REQUIRED")
     ensure_no_open_payment_evidence(db, order, "editing the order")
     if order.created_by == "integration" and order.source in {"pos", "manual"}:
         order.source = "integration"
@@ -7238,6 +7252,9 @@ async def integration_patch_order(
             )
     for key, value in changes.items():
         setattr(order, key, value)
+    if order.channel == "delivery" and order.source in AGENT_SOURCES:
+        from .integration_order_validation import validate_delivery_destination
+        validate_delivery_destination(order.delivery_address)
     recalculate_order(db, order)
     order.version += 1
     audit(db, user, "integration.order_updated", "order", order.id, order.business_id)

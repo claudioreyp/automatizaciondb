@@ -179,6 +179,8 @@ def review_request(db, user, order, evidence, payload):
             order.status = "sent_to_kitchen"
             for ticket in tickets:
                 prepare_pos_print_intent(db, order, ticket)
+            from .agent_order_changes import record_agent_order_change
+            record_agent_order_change(db, user, order, "agent.items_added")
         payment = add_payment(db, user, order, PaymentCreate(method="yape", amount=request.amount,
             register_id=payload.register_id, external_reference=evidence.operation_number,
             note=payload.note or f"Approved {request.purpose} receipt"))

@@ -11,11 +11,11 @@ from uuid import UUID, uuid4
 from fastapi.encoders import jsonable_encoder
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from .command_revisions import effective_ticket_items
+from .command_revisions import effective_ticket_context, effective_ticket_items
 from .models import (
     Branch, BranchSettings, Business, DiningArea, KitchenTicket, Membership, Order, Payment,
     PrintJob, RestaurantTable, StaffMember, utcnow,
@@ -321,7 +321,7 @@ def build_print_payload(db: Session, order: Order, ticket: KitchenTicket | None,
     """Capture one document identically for automatic and explicitly requested jobs."""
     business = db.get(Business, order.business_id)
     branch = db.get(Branch, order.branch_id)
-    context = snapshot_context if snapshot_context is not None else ((ticket.context_snapshot or {}) if ticket else {})
+    context = snapshot_context if snapshot_context is not None else (effective_ticket_context(ticket) if ticket else {})
     author = recorded_print_actor(context)
     table_context = {"table_id": context.get("table_id", order.table_id),
                      "table_name": context.get("table_name"),
@@ -371,6 +371,58 @@ def build_print_payload(db: Session, order: Order, ticket: KitchenTicket | None,
         created_by_name=author, table_name=context.get("table_name"),
         paid_amount=paid, remaining_amount=max(0, round(float(order.total) - paid, 2)),
     ).model_dump(mode="json")
+
+
+def refresh_unclaimed_fulfillment_print_jobs(db: Session, order: Order, tickets: list[KitchenTicket]) -> None:
+    """Refresh only the original, never-claimed print work after a channel change."""
+    by_ticket = {ticket.id: ticket for ticket in tickets}
+    intent_ids = {definition["id"] for ticket in tickets
+                  for definition in (ticket.context_snapshot or {}).get(INTENT, {}).get("jobs", [])}
+    if not by_ticket and not intent_ids:
+        return
+    jobs = list(db.scalars(select(PrintJob).where(
+        PrintJob.business_id == order.business_id, PrintJob.branch_id == order.branch_id,
+        PrintJob.order_id == order.id,
+        or_(PrintJob.kitchen_ticket_id.in_(by_ticket), PrintJob.id.in_(intent_ids)),
+    ).with_for_update().execution_options(populate_existing=True)))
+    by_job = {job.id: job for job in jobs}
+    current_order = order_snapshot(order)
+
+    def refreshed(payload, kind, ticket):
+        value = deepcopy(payload)
+        value["order"] = {**value.get("order", {}), **current_order}
+        paid = float(value.get("paid_amount", value["order"].get("paid_amount", 0)))
+        remaining = max(0, round(float(order.total) - paid, 2))
+        value["remaining_amount"] = remaining
+        value["order"]["remaining_amount"] = remaining
+        if kind == "kitchen_ticket" and value.get("ticket"):
+            context = effective_ticket_context(ticket)
+            value["ticket"]["context"] = {**value["ticket"].get("context", {}),
+                **{key: deepcopy(context.get(key)) for key in ("channel", "delivery_address", "notes")}}
+            value["ticket"]["version"] = ticket.version
+        guard = {"order": content_digest(current_order, kitchen=kind == "kitchen_ticket"),
+                 "ticket_version": ticket.version}
+        return value, guard
+
+    updated = set()
+    for ticket in tickets:
+        context = deepcopy(ticket.context_snapshot or {})
+        intent = context.get(INTENT, {})
+        for definition in intent.get("jobs", []):
+            job = by_job.get(definition["id"])
+            if job is not None and (not is_local_job(job) or job.status != "pending"):
+                continue
+            payload, guard = refreshed(definition["payload"], definition["job_type"], ticket)
+            definition["payload"], definition["guard"] = payload, guard
+            if job is not None:
+                job.payload = {**job.payload, **payload, "_guard": {**job.payload.get("_guard", {}), **guard}}
+                updated.add(job.id)
+        ticket.context_snapshot = context
+    for job in jobs:
+        if job.id in updated or not is_local_job(job) or job.status != "pending" or job.kitchen_ticket_id not in by_ticket:
+            continue
+        payload, guard = refreshed(job.payload, job.job_type, by_ticket[job.kitchen_ticket_id])
+        job.payload = {**payload, "_guard": {**payload.get("_guard", {}), **guard}}
 
 
 def create_checkout_print_job(db: Session, order: Order) -> PrintJob | None:

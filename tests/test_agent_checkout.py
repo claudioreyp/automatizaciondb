@@ -236,7 +236,7 @@ def test_prepared_line_is_protected_and_customer_state_reports_exact_balance(cli
     assert paid.status_code in (200, 201), paid.text
     state = client.get(f"/api/v1/integrations/orders/{order['id']}/customer-state", params={"sender": PHONE}, headers=headers).json()
     assert state["paid_amount"] == 20 and state["remaining_amount"] == 0
-    assert not state["allowed_actions"]["add_items"]
+    assert state["allowed_actions"]["add_items"]
 
 
 def test_shipping_yape_is_independent_and_blocks_all_dispatch_until_review(client, tenant, auth_headers):

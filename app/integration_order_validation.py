@@ -10,7 +10,11 @@ def validate_integration_fulfillment(payload):
         raise CodedHTTPException(422, "Select how the customer will receive the order", "ORDER_CHANNEL_REQUIRED")
     if payload.channel != "delivery":
         return
-    destination = payload.delivery_address or {}
+    validate_delivery_destination(payload.delivery_address)
+
+
+def validate_delivery_destination(destination):
+    destination = destination or {}
     def text(value):
         return value.strip() if isinstance(value, str) else ""
 

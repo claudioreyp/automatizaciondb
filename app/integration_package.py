@@ -20,6 +20,7 @@ ROUTES = (
     ("payment_evidence", "POST", "/orders/{order_id}/payment-evidence", "payments:write"),
     ("order_status", "GET", "/orders/{order_id}/status", "orders:read"),
     ("customer_order_state", "GET", "/orders/{order_id}/customer-state", "orders:read"),
+    ("change_order_fulfillment", "PATCH", "/orders/{order_id}/fulfillment", "orders:write"),
     ("add_order_items", "POST", "/orders/{order_id}/item-batches", "orders:write"),
     ("revise_order_items", "POST", "/orders/{order_id}/item-revisions", "orders:write"),
     ("choose_delivery_payment", "PATCH", "/orders/{order_id}/delivery-payment", "orders:write"),

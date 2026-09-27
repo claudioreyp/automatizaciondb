@@ -16,7 +16,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from .auth import AuthContext, ensure_branch_scope, ensure_business_scope
-from .command_revisions import effective_ticket_items
+from .command_revisions import effective_ticket_context, effective_ticket_items
 from .errors import CodedHTTPException
 from .printing_settings import PRINTING_JSON_DEFAULTS, printing_json
 from .qz_signing import qz_certificate, qz_sign_payload
@@ -1095,13 +1095,13 @@ def kitchen_print_snapshot(order: Order, ticket: KitchenTicket) -> dict:
         "version": ticket.version,
         "order_folio": order.folio,
         "order_number": order.number,
-        "context": deepcopy({key: value for key, value in (ticket.context_snapshot or {}).items()
+        "context": deepcopy({key: value for key, value in effective_ticket_context(ticket).items()
                              if key != "_pos_printing"}),
     }
 
 
 def sync_pending_kitchen_print_jobs(
-    db: Session, order: Order, tickets: list[KitchenTicket], *, cancel: bool = False,
+    db: Session, order: Order, tickets: list[KitchenTicket], *, cancel: bool = False, preserve_local: bool = False,
 ) -> None:
     statement = select(PrintJob).where(
         PrintJob.business_id == order.business_id,
@@ -1119,6 +1119,8 @@ def sync_pending_kitchen_print_jobs(
     jobs = db.scalars(statement.with_for_update().execution_options(populate_existing=True))
     for job in jobs:
         if (job.payload or {}).get("_transport") == "pos-local-v1":
+            if preserve_local and not cancel:
+                continue
             # Local automatic documents are immutable. A revision invalidates the
             # pending version rather than silently replacing its claimed content.
             job.status = "cancelled"

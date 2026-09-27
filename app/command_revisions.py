@@ -37,6 +37,16 @@ def effective_ticket_items(ticket: KitchenTicket) -> list[dict]:
     return items
 
 
+def effective_ticket_context(ticket: KitchenTicket) -> dict:
+    """Project current fulfillment without replacing the original context."""
+    context = deepcopy(ticket.context_snapshot or {})
+    current = context.get("fulfillment_current") or {}
+    for key in ("channel", "delivery_address", "notes"):
+        if key in current:
+            context[key] = deepcopy(current[key])
+    return context
+
+
 def retired_modifier_units(before: dict, after: dict, *, keep_history: bool) -> list[dict]:
     """Store absolute retired units so later quantity edits cannot multiply history."""
     previous = deepcopy(before.get("removed_modifiers", [])) if keep_history else []
