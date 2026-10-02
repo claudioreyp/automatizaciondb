@@ -1,16 +1,20 @@
 # Activación de marca, cobro de mesas y archivado
 
-Fecha de preparación: 2026-10-02. Cambios implementados en CLIENTES y Apis.
+Fecha de preparación y activación: 2026-10-02. Cambios implementados en CLIENTES y Apis.
 Las decisiones de producto permanecen en `../../AGENTS.md`.
 
 ## Estado y autorización
 
-La migración `20261002_0025` agrega únicamente `restaurant_tables.archived_at`
-y su índice. Su revisión anterior es `20260920_0024`. No se aplicó a la base
-operativa, no se publicaron aplicaciones y no se recuperó todavía el folio #65.
-Esas operaciones requieren autorización específica del usuario, como establece
-el plan aprobado. Las pruebas usan SQLite aislado, respuestas HTTP simuladas y
-transporte de impresión simulado; no crearon pedidos, cobros ni impresiones reales.
+El usuario autorizó específicamente respaldo, migración, publicación de API y
+CLIENTES y recuperación del folio #65. La migración `20261002_0025` agrega
+únicamente `restaurant_tables.archived_at` y su índice; se aplicó sobre
+`20260920_0024`. API `3162a64` está Live en Render y CLIENTES `9ff1601` está
+Ready / Production en Vercel. Esta autorización no se extiende a otras bases,
+otros despliegues ni cambios de n8n, gateway o credenciales.
+
+Las pruebas aisladas no crearon pedidos ni cobros reales. La única recuperación
+operativa fue el folio #65, con `payments: []`: liberó su mesa sin otro cobro y
+generó una cuenta de cliente para su primer ciclo de cierre, pendiente de impresión.
 
 El modelo nuevo necesita la columna antes de iniciar la API actualizada, incluso
 para lecturas de mesas. Publicar CLIENTES después de actualizar la base y la API.
@@ -26,6 +30,30 @@ con aislamiento `REPEATABLE READ`, sin usar la columna nueva. El archivo JSON
 se releyó y comparó íntegramente, con conteos y SHA-256 verificados; se copiaron
 configuraciones privadas y archivos subidos. No se restauró aún en PostgreSQL
 aislado. Repetir el respaldo antes de activar si hubo nuevas escrituras.
+
+Para esta activación se repitió el respaldo en
+`backups/pos-tables-release-20261002T190716Z-ff3227`: 52 tablas / 2599 filas,
+revisión 0024, JSON/SQL NULL diferenciados y archivos/configuración privados.
+Los hashes y la lectura íntegra del JSON y ZIP pasaron. La credencial temporal de
+migración había vencido; se usó la sesión existente del SQL Editor del proyecto
+Supabase autorizado, sin modificar credenciales ni permisos del rol operativo.
+
+El SQL de Alembic se generó con el inspector real, con nombres calificados,
+guardias de identidad/revisión, transacción y tiempos máximos de bloqueo. Se
+ensayó sobre copias de las 52 tablas en un esquema desechable: 2599 filas y 104
+comparaciones exactas antes/después, incluidos JSON NULL y SQL NULL. `ROLLBACK`
+retiró la copia y se comprobó que public continuaba en 0024. El ensayo `LIKE`
+no copia FK, triggers ni RLS; no se presenta como restauración integral de un
+pg_dump. Docker Desktop no pudo iniciar su motor; la restauración del JSON en
+otro PostgreSQL y las pruebas específicas de concurrencia PostgreSQL siguen
+sin verificarse. Sus protecciones tienen pruebas SQLite y HTTP aisladas.
+
+La activación bloqueó brevemente solo `restaurant_tables` en su transacción,
+comparó una copia temporal de todas sus columnas originales y confirmó la
+revisión 0025. La verificación posterior de solo lectura comparó las 52 tablas
+contra el respaldo: todos los valores originales y 2599 filas conservaron sus
+huellas. Las 27 mesas tienen el nuevo marcador NULL. RLS continúa activo y el rol
+API no tiene CREATE en public. Reporte privado: `postmigration-verification.json`.
 
 1. Identificar la base y sucursal autorizadas y registrar la revisión Alembic
    actual, sin mostrar la conexión privada. Detener escrituras durante el cambio.
@@ -75,12 +103,22 @@ no tenga 0025. Este ajuste no necesita transferir imágenes ni cambiar configura
    Comprobar liberación y pagos originales sin duplicados; comandas pendientes
    de cocina permanecen. Un reintento recupera el resultado, no otra impresión.
 
+Recuperación realizada el 2026-10-02 desde **Liberar mesa** del POS publicado:
+folio #65, ID real 66, negocio/sucursal 2/2, mesa ID 22 (Mesa 1). Lectura previa:
+pedido versión 14, mesa versión 4, una sola cuenta vigente, S/ 33.50 pagados
+en dos pagos confirmados (S/ 3.50 cash y S/ 30.00 Yape), saldo cero y sin cierre
+ni liberación. Lectura posterior: pedido versión 16, mesa versión 5, cierre y
+liberación confirmados, mesa `available`. Los dos pagos y la comanda permanecen
+exactamente iguales. Se agregó únicamente un `customer_receipt`, pendiente:
+la impresora configurada Xprinter XP-E200L no está disponible en este equipo.
+No se reintentó despacho, no se cambió la impresora ni se imprimió otra comanda.
+Reportes privados `recovery-65-before.json` y `recovery-65-after.json`.
+
 ## Verificación registrada
 
-- CLIENTES: suite completa 811 pruebas; lint y build correctos. Las regresiones
-  posteriores del botón de recuperación y concurrencia se verificaron junto con
-  el archivo completo de Pedidos: 52 pruebas correctas. Lint y build finales
-  también correctos.
+- CLIENTES: suite final completa 814 pruebas; lint y build correctos. El archivo
+  completo de Pedidos incluye 52 pruebas. Iconos y manifest verificados tanto en
+  fuentes como en dist.
 - API: suite completa 871 pruebas y 8 omitidas; entre ellas, tres pruebas nuevas
   de concurrencia que requieren PostgreSQL aislado.
   La corrección posterior de ocupación con pedidos históricos entregados pasa
@@ -90,12 +128,19 @@ no tenga 0025. Este ajuste no necesita transferir imágenes ni cambiar configura
 - Navegador aislado: 15 combinaciones de cinco casos en escritorio, tablet y móvil,
   con borrador/guardar/salir, zonas con mesas, editor, cobro y marca.
 - PWA: cinco PNG, hashes de originales/derivados, metadata y manifest verificados.
+  La producción publicada pasó el verificador anónimo: manifest, cinco PNG,
+  dos logos originales, raíz y 14 rutas SPA coinciden con el build local.
   La instalación física y la actualización del icono por el sistema operativo
   quedan por comprobar tras publicar; no se cambia la identidad instalada.
 - Revisión visual: logos legibles y controles de borrado accesibles en las tres
   resoluciones. El detector Impeccable informó advertencias del CSS existente
   y su documentación de diseño desactualizada; no se amplió este ajuste para
   rediseñar otras pantallas.
+
+Despliegues comprobados: Render `dep-db0065btqb8s73e19lug` / `3162a64` Live;
+Vercel `dpl_ALYHKd59VNWEPjxCqTa7YMCoThgU` / `9ff1601` Ready / Production / Current.
+La API pública responde health 200 y expone el nuevo DELETE de mesas.
+Auto-Deploy de Render permanece Off; no se modificó configuración de servicios.
 
 ## Reversión
 
