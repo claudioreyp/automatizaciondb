@@ -354,7 +354,7 @@ def test_integration_cannot_reassign_a_table_after_order_is_final(
         headers=integration_headers(credential["token"], "final-table-patch"),
     )
     assert rejected.status_code == 409, rejected.text
-    assert rejected.json()["code"] == "ORDER_TABLE_ASSIGNMENT_LOCKED"
+    assert rejected.json()["code"] == "AGENT_ORDER_ADDITIONS_ONLY"
     with SessionLocal() as db:
         order = db.get(Order, created.json()["id"])
         assert order.table_id == tenant["table_id"]
@@ -790,7 +790,7 @@ def test_integration_human_handoff_creates_a_durable_event(client, tenant, auth_
 
     requested = client.post(
         f"/api/v1/integrations/orders/{created.json()['id']}/request-human",
-        params={"reason": "customer_requested_order_change"},
+        params={"reason": "customer_requested_human"},
         headers=integration_headers(token, "human-request-001"),
     )
     assert requested.status_code == 200, requested.text

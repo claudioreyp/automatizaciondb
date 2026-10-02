@@ -189,6 +189,7 @@ def serialize_order(order: Order) -> dict:
         "total": float(order.total or 0),
         "notes": order.notes,
         "recent_modification": getattr(order, "_recent_modification", None),
+        "recent_agent_addition": getattr(order, "_recent_agent_addition", None),
         "external_reference": order.external_reference,
         "whatsapp_chat_id": order.whatsapp_chat_id,
         "whatsapp_message_id": order.whatsapp_message_id,
@@ -1110,7 +1111,8 @@ def create_kitchen_tickets(
     ticket_context = _ticket_context_snapshot(db, order)
     if context:
         ticket_context.update(context)
-    ticket_context["created_by_name"] = print_actor_name(db, order, ticket_context.get("created_by"))
+    ticket_context["created_by_name"] = ("Agente de WhatsApp" if ticket_context.get("agent_addition") is True
+                                        else print_actor_name(db, order, ticket_context.get("created_by")))
     ticket = KitchenTicket(
         business_id=order.business_id,
         branch_id=order.branch_id,
@@ -1259,6 +1261,8 @@ def append_order_item_batch(
     lines: list[OrderLineInput],
     *,
     allow_paid_addition: bool = False,
+    preserve_existing_pricing: bool = False,
+    ticket_context: dict | None = None,
 ) -> tuple[list[OrderItem], list[KitchenTicket]]:
     if order.status not in {
         "draft",
@@ -1287,7 +1291,7 @@ def append_order_item_batch(
         )
         for line in lines
     ]
-    freeze_paid_pricing = bool(allow_paid_addition and db.scalar(select(Payment.id).where(
+    freeze_paid_pricing = preserve_existing_pricing or bool(allow_paid_addition and db.scalar(select(Payment.id).where(
         Payment.order_id == order.id, Payment.status == "confirmed").limit(1)))
     if freeze_paid_pricing:
         draft = Order(business_id=order.business_id, branch_id=order.branch_id, channel=order.channel,
@@ -1305,8 +1309,20 @@ def append_order_item_batch(
     else:
         order.items.extend(new_items)
         recalculate_order(db, order)
-    db.flush()
+    return finalize_order_item_batch(db, user, order, new_items, previous_status, ticket_context=ticket_context)
 
+
+def finalize_order_item_batch(
+    db: Session,
+    user: AuthContext,
+    order: Order,
+    new_items: list[OrderItem],
+    previous_status: str,
+    *,
+    ticket_context: dict | None = None,
+) -> tuple[list[OrderItem], list[KitchenTicket]]:
+    """Finalize a priced batch shared by POS, cash additions and approved receipts."""
+    db.flush()
     tickets: list[KitchenTicket] = []
     if previous_status in {"confirmed", "sent_to_kitchen", "preparing", "ready"}:
         commit_order_items_stock(db, user, order, new_items)
@@ -1314,11 +1330,13 @@ def append_order_item_batch(
             select(func.count(KitchenTicket.id)).where(KitchenTicket.order_id == order.id)
         ) or 0
         if previous_status == "confirmed" and existing_ticket_count == 0:
-            tickets = create_kitchen_tickets(db, order, active_order_items(order), context={"created_by": user.user_id})
+            tickets = create_kitchen_tickets(db, order, active_order_items(order),
+                context={"created_by": user.user_id, **(ticket_context or {})})
             order.status = "sent_to_kitchen"
             order.sent_to_kitchen_at = order.sent_to_kitchen_at or utcnow()
         else:
-            tickets = create_kitchen_tickets(db, order, new_items, kind="addition", context={"created_by": user.user_id})
+            tickets = create_kitchen_tickets(db, order, new_items, kind="addition",
+                context={"created_by": user.user_id, **(ticket_context or {})})
             order.status = "sent_to_kitchen"
             order.sent_to_kitchen_at = order.sent_to_kitchen_at or utcnow()
 

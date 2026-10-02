@@ -25,7 +25,7 @@ from .product_access import POS_MODULES, POS_PLAN, full_pos_modules
 from .integration_package import integration_package
 from .agent_context import agent_context
 from .agent_checkout import (AGENT_SOURCES, ensure_dispatch, ensure_request_upload, payment_request, ready_event,
-    requests_for_order, review_request, serialize_request)
+    reject_agent_order_change, requests_for_order, review_request, serialize_request)
 from .credential_operations import issuance_fingerprint, issuance_record, operation_scope, validate_operation_key
 
 from .auth import (
@@ -1163,6 +1163,7 @@ def serialize_order_summary(
         "item_count": len(active_order_items(order)),
         "version": order.version,
         "recent_modification": getattr(order, "_recent_modification", None),
+        "recent_agent_addition": getattr(order, "_recent_agent_addition", None),
     }
 
 
@@ -6407,7 +6408,11 @@ async def review_payment_evidence(
             return previous
         event = review_request(db, user, order, evidence, payload)
         db.flush()
+        addition = getattr(order, "_agent_addition_result", {})
         result = {"order": serialize_order(order), "evidence": serialize_payment_evidence(evidence),
+                  "tickets": [serialize_ticket(ticket, order=order) for ticket in addition.get("tickets", [])],
+                  "appended_item_ids": [item.id for item in addition.get("items", [])],
+                  "command_committed": bool(addition.get("tickets")),
                   "notification": {"event_id": event.id if event else None, "queued": bool(event),
                                    "recipient_available": bool(order.whatsapp_chat_id or order.customer_phone)}}
         return await finish(db, order, scope, idempotency_key, digest, result)
@@ -7210,6 +7215,8 @@ async def integration_patch_order(
     order = load_order(db, order_id, for_update=True)
     ensure_integration_order_scope(integration, order)
     scope = f"integration-order-patch:{order_id}"
+    if order.status not in {"draft", "pending_confirmation"} or order.submitted_at:
+        reject_agent_order_change()
     existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
         return existing
@@ -7217,11 +7224,6 @@ async def integration_patch_order(
     assert_version(order.version, payload.expected_version)
     if "table_id" in payload.model_fields_set and order.status in {"cancelled", "closed", "delivered"}:
         raise CodedHTTPException(409, "The table assignment is locked", "ORDER_TABLE_ASSIGNMENT_LOCKED")
-    from .agent_order_changes import kitchen_was_completed
-    if order.source in AGENT_SOURCES and kitchen_was_completed(db, order):
-        raise CodedHTTPException(409, "The kitchen command was completed; only additions are allowed", "KITCHEN_ALREADY_COMPLETED")
-    if order.source in AGENT_SOURCES and order.status not in {"draft", "pending_confirmation"}:
-        raise CodedHTTPException(409, "Use the confirmed order change operation or add products", "AGENT_ORDER_CHANGE_REQUIRED")
     ensure_no_open_payment_evidence(db, order, "editing the order")
     if order.created_by == "integration" and order.source in {"pos", "manual"}:
         order.source = "integration"
@@ -7287,6 +7289,10 @@ async def integration_confirm_order(
     existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
         return existing
+    if order.status not in {"draft", "pending_confirmation"} or order.submitted_at:
+        reject_agent_order_change()
+    if order.payment_method == "yape":
+        raise CodedHTTPException(409, "Yape requires receipt review before preparation", "PAYMENT_APPROVAL_REQUIRED")
     confirm_order(db, user, order)
     tickets = send_order_to_kitchen(db, user, order)
     db.flush()
@@ -7312,6 +7318,8 @@ async def integration_cash_confirm_order(
     existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
         return existing
+    if order.status not in {"draft", "pending_confirmation"} or order.submitted_at:
+        reject_agent_order_change()
     user = AuthContext("integration", "owner", order.business_id, order.branch_id)
     order.payment_method = "cash"
     order.payment_status = "pending"
@@ -7348,6 +7356,9 @@ async def integration_request_human(
     order = load_order(db, order_id, for_update=True)
     ensure_integration_order_scope(integration, order)
     scope = f"integration-human-request:{order.id}"
+    from .agent_checkout import is_order_change_request
+    if is_order_change_request(reason):
+        reject_agent_order_change()
     existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
         return existing

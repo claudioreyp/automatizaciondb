@@ -204,6 +204,7 @@ def test_pending_delivery_can_prepare_but_cannot_dispatch(client, tenant, auth_h
 
 def test_addition_rejects_other_customer_and_key_reuse(client, tenant, auth_headers):
     headers, order = setup(client, tenant, auth_headers)
+    order = upload(client, headers, order)["order"]
     body = {"sender": "51888888888", "expected_version": order["version"], "expected_amount": 20,
             "items": [{"product_id": tenant["product_id"], "quantity": 1}]}
     path = f"/api/v1/integrations/orders/{order['id']}/item-batches"

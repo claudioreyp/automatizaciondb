@@ -100,8 +100,9 @@ def test_packages_are_scoped_match_real_routes_and_never_recover_secrets(client,
     assert "inventory:write" not in package["scopes"]
     assert {
         "menu_card_gallery_image", "customer_catalog", "preview_order", "customer_order_state",
-        "add_order_items", "revise_order_items", "change_order_fulfillment", "choose_delivery_payment",
+        "add_order_items", "choose_delivery_payment",
     } <= package["endpoints"].keys()
+    assert {"revise_order_items", "change_order_fulfillment"}.isdisjoint(package["endpoints"])
     assert item["token"] not in result.text and "token_hash" not in result.text
     assert result.headers["cache-control"] == "no-store"
     assert client.get(url, params={"credential_id": other["id"]}, headers=ADMIN).status_code == 404

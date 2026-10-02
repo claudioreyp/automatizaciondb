@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from copy import deepcopy
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from .models import AuditEvent, KitchenTicket, Order, utcnow
@@ -45,6 +45,9 @@ def record_agent_order_change(db: Session, user, order: Order, action: str, deta
     audit(db, user, action, "order", order.id, order.business_id,
           {"at": marker["at"], **(details or {})}, branch_id=order.branch_id)
     order._recent_modification = marker
+    if action == "agent.items_added":
+        item_ids = (details or {}).get("item_ids", [])
+        order._recent_agent_addition = {**marker, "item_count": len(set(item_ids))} if item_ids else None
     return marker
 
 
@@ -71,22 +74,24 @@ def update_active_ticket_fulfillment(db: Session, user, order: Order) -> list[Ki
 def attach_recent_agent_order_changes(db: Session, orders: list[Order]) -> None:
     for order in orders:
         order._recent_modification = None
-    open_orders = {order.id: order for order in orders if order.status not in FINAL_ORDER_STATUSES}
-    if not open_orders:
+        order._recent_agent_addition = None
+    scoped_orders = {order.id: order for order in orders}
+    open_ids = [order.id for order in orders if order.status not in FINAL_ORDER_STATUSES]
+    if not scoped_orders:
         return
     events = db.scalars(select(AuditEvent).where(
         AuditEvent.entity_type == "order",
-        AuditEvent.business_id.in_({order.business_id for order in open_orders.values()}),
-        AuditEvent.branch_id.in_({order.branch_id for order in open_orders.values()}),
-        AuditEvent.entity_id.in_([str(order_id) for order_id in open_orders]),
+        AuditEvent.business_id.in_({order.business_id for order in orders}),
+        AuditEvent.branch_id.in_({order.branch_id for order in orders}),
+        AuditEvent.entity_id.in_([str(order_id) for order_id in scoped_orders]),
         AuditEvent.action.in_(AGENT_CHANGE_SUMMARIES),
-        AuditEvent.created_at >= utcnow() - RECENT_CHANGE_WINDOW,
+        or_(AuditEvent.action == "agent.items_added", and_(
+            AuditEvent.entity_id.in_([str(order_id) for order_id in open_ids]),
+            AuditEvent.created_at >= utcnow() - RECENT_CHANGE_WINDOW)),
     ).order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc()))
     for event in events:
-        order = open_orders.get(int(event.entity_id))
+        order = scoped_orders.get(int(event.entity_id))
         if order is None or order.business_id != event.business_id or order.branch_id != event.branch_id:
-            continue
-        if getattr(order, "_recent_modification", None) is not None:
             continue
         at = (event.payload or {}).get("at")
         try:
@@ -95,8 +100,17 @@ def attach_recent_agent_order_changes(db: Session, orders: list[Order]) -> None:
             moment = event.created_at
         if moment.tzinfo is None:
             moment = moment.replace(tzinfo=timezone.utc)
-        if utcnow() - moment > RECENT_CHANGE_WINDOW:
-            continue
-        order._recent_modification = {
+        marker = {
             "at": moment.isoformat(), "source": "agent", "summary": AGENT_CHANGE_SUMMARIES[event.action],
         }
+        if (order.id in open_ids and utcnow() - moment <= RECENT_CHANGE_WINDOW
+                and getattr(order, "_recent_modification", None) is None):
+            order._recent_modification = marker
+        if event.action == "agent.items_added" and getattr(order, "_recent_agent_addition", None) is None:
+            item_ids = (event.payload or {}).get("item_ids", [])
+            actual_ids = {item.id for item in order.items}
+            if isinstance(item_ids, list):
+                recorded_ids = {item_id for item_id in item_ids
+                                if isinstance(item_id, int) and not isinstance(item_id, bool) and item_id in actual_ids}
+                if recorded_ids:
+                    order._recent_agent_addition = {**marker, "item_count": len(recorded_ids)}

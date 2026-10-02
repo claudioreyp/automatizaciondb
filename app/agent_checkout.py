@@ -1,6 +1,8 @@
 """Narrow agent checkout rules, independent of the POS's paid-order editor."""
 import hashlib
 import json
+import re
+import unicodedata
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -10,8 +12,8 @@ from .errors import CodedHTTPException
 from .models import (BranchSettings, IntegrationEvent, KitchenTicket, Order, OrderPaymentRequest,
                      Payment, PaymentEvidence, Product, ScheduleAssignment, ServiceSchedule, utcnow)
 from .schemas import OrderLineInput, PaymentCreate
-from .services import (active_order_items, add_payment, audit, build_order_item, commit_order_items_stock,
-                       create_integration_event, create_kitchen_tickets, money, prepare_pos_print_intent,
+from .services import (active_order_items, add_payment, audit, build_order_item,
+                       create_integration_event, finalize_order_item_batch, money,
                        product_capacity, recalculate_order, service_channel_for_order, sync_order_payment_status)
 from .settings_service import schedule_is_open
 
@@ -36,6 +38,22 @@ def assert_sender(order, sender):
 def assert_open(order):
     if order.status in TERMINAL or order.table_released_at:
         raise CodedHTTPException(409, "Order already dispatched or completed; start a new purchase", "ORDER_ITEMS_LOCKED")
+
+
+def assert_registered(order):
+    assert_open(order)
+    if order.status in {"draft", "pending_confirmation"}:
+        raise CodedHTTPException(409, "Register the original order before adding products", "INITIAL_ORDER_PENDING")
+
+
+def reject_agent_order_change():
+    raise CodedHTTPException(409, "Registered orders only allow additional products from the agent", "AGENT_ORDER_ADDITIONS_ONLY")
+
+
+def is_order_change_request(reason):
+    text = unicodedata.normalize("NFKD", str(reason or "")).encode("ascii", "ignore").decode().lower()
+    text = re.sub(r"[_-]", " ", text)
+    return bool(re.search(r"\b(?:cancel\w*|anul\w*|modific\w*|cambi\w*|edit\w*|replace\w*|remove\w*|change\w*|fulfillment)\b", text))
 
 
 def pending_delivery_allowed(order):
@@ -169,18 +187,18 @@ def review_request(db, user, order, evidence, payload):
                 draft.items.remove(item)
                 order.items.append(item)
             db.flush()
-            commit_order_items_stock(db, user, order, new_items)
             order.subtotal = money(order.subtotal + draft.subtotal)
             order.discount = money(order.discount + draft.discount)
             order.promotion_discount = money(order.promotion_discount + draft.promotion_discount)
             order.applied_promotions = [*(order.applied_promotions or []), *(draft.applied_promotions or [])]
             order.total = money(order.total + request.amount)
-            tickets = create_kitchen_tickets(db, order, new_items, kind="addition", context={"created_by": user.user_id})
-            order.status = "sent_to_kitchen"
-            for ticket in tickets:
-                prepare_pos_print_intent(db, order, ticket)
+            _, tickets = finalize_order_item_batch(db, user, order, new_items, order.status,
+                ticket_context={"agent_addition": True, "agent_payment_request_id": request.id})
             from .agent_order_changes import record_agent_order_change
-            record_agent_order_change(db, user, order, "agent.items_added")
+            record_agent_order_change(db, user, order, "agent.items_added",
+                {"item_ids": [item.id for item in new_items], "ticket_ids": [ticket.id for ticket in tickets],
+                 "payment_request_id": request.id})
+            order._agent_addition_result = {"items": new_items, "tickets": tickets}
         payment = add_payment(db, user, order, PaymentCreate(method="yape", amount=request.amount,
             register_id=payload.register_id, external_reference=evidence.operation_number,
             note=payload.note or f"Approved {request.purpose} receipt"))
@@ -189,7 +207,8 @@ def review_request(db, user, order, evidence, payload):
         evidence.status = "paid"
         event = create_integration_event(db, order, "payment.approved", {"evidence_id": evidence.id,
             "payment_id": payment.id, "payment_request_id": request.id, "purpose": request.purpose,
-            "sent_to_kitchen": True}) if tickets else None
+            "sent_to_kitchen": True, "appended_item_ids": [item.id for item in new_items],
+            "ticket_ids": [ticket.id for ticket in tickets], "addition_amount": float(request.amount)}) if tickets else None
     evidence.reviewed_by = user.user_id
     evidence.reviewed_at = utcnow()
     request.version += 1
