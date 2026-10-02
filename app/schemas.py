@@ -600,7 +600,7 @@ class PaymentCreate(ApiModel):
 
 
 class TableCheckoutPayment(ApiModel):
-    payments: list[PaymentCreate] = Field(min_length=1, max_length=20)
+    payments: list[PaymentCreate] = Field(min_length=0, max_length=20)
     expected_version: int | None = None
 
 
@@ -1100,6 +1100,24 @@ class QZSignRequest(ApiModel):
 
 class ArchiveRequest(ApiModel):
     expected_version: int = Field(ge=1)
+
+
+class AreaArchiveTable(ApiModel):
+    id: int = Field(ge=1)
+    expected_version: int = Field(ge=1)
+
+
+class AreaArchiveRequest(ArchiveRequest):
+    include_tables: bool = False
+    tables: list[AreaArchiveTable] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_table_confirmation(self):
+        if self.tables and not self.include_tables:
+            raise ValueError("include_tables is required when confirming tables")
+        if len({table.id for table in self.tables}) != len(self.tables):
+            raise ValueError("Each table must be confirmed only once")
+        return self
 
 
 class RegisterSettingsUpdate(ApiModel):

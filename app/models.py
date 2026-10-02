@@ -227,6 +227,7 @@ class RestaurantTable(Base, TimestampMixin):
     shape: Mapped[str] = mapped_column(String(20), default="round")
     status: Mapped[str] = mapped_column(String(30), default="available", index=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class Customer(Base, TimestampMixin):

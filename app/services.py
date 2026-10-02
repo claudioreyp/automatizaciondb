@@ -23,6 +23,7 @@ from .pos_printing import (
 )
 from .security_audit import item_audit_snapshot, order_identity_snapshot
 from .errors import CodedHTTPException
+from .table_lifecycle import active_table_clause, ensure_tables_active, lock_tables
 from .models import (
     AuditEvent,
     Branch,
@@ -685,14 +686,10 @@ def create_order(
 
     table = None
     if payload.table_id:
-        table = db.scalar(
-            select(RestaurantTable).where(
-                RestaurantTable.id == payload.table_id,
-                RestaurantTable.branch_id == payload.branch_id,
-            ).with_for_update()
-        )
+        table = next(iter(lock_tables(db, [payload.table_id], branch.business_id, branch.id)), None)
         if not table:
             raise HTTPException(status_code=422, detail="Table does not belong to branch")
+        ensure_tables_active(db, [table])
         active_order_id = db.scalar(
             select(Order.id).where(
                 Order.table_id == table.id,
@@ -1754,7 +1751,7 @@ def release_current_order_table(db: Session, order: Order, status: str) -> None:
             Order.branch_id == order.branch_id,
             Order.id != order.id,
             Order.table_released_at.is_(None),
-            Order.status.notin_(["cancelled", "closed"]),
+            Order.status.notin_(["cancelled", "closed", "delivered"]),
         ).limit(1)
     )
     if other_occupant is None:
@@ -2032,12 +2029,6 @@ def start_table_checkout(db: Session, user: AuthContext, order: Order) -> Order:
             "This table has no products",
             "TABLE_HAS_NO_PRODUCTS",
         )
-    if _confirmed_payment_total(db, order) > 0:
-        raise CodedHTTPException(
-            409,
-            "A table with payments cannot start checkout again",
-            "ORDER_HAS_PAYMENTS",
-        )
     ensure_no_open_payment_evidence(db, order, "starting table checkout")
     if order.checkout_started_at is None:
         order.checkout_started_at = utcnow()
@@ -2105,19 +2096,7 @@ def pay_table_checkout(
 
     now = utcnow()
     order.payment_status = "paid"
-    order.table_released_at = now
-    table = db.scalar(
-        select(RestaurantTable)
-        .where(
-            RestaurantTable.id == order.table_id,
-            RestaurantTable.business_id == order.business_id,
-            RestaurantTable.branch_id == order.branch_id,
-        )
-        .with_for_update()
-    )
-    if table:
-        table.status = "available"
-        table.version += 1
+    release_current_order_table(db, order, "available")
     active_ticket = db.scalar(
         select(KitchenTicket.id).where(
             KitchenTicket.order_id == order.id,
@@ -2165,16 +2144,10 @@ def create_reservation(db: Session, user: AuthContext, payload: ReservationCreat
     end_at = payload.start_at + timedelta(minutes=payload.duration_minutes)
 
     if payload.table_ids:
-        tables = list(
-            db.scalars(
-                select(RestaurantTable).where(
-                    RestaurantTable.id.in_(payload.table_ids),
-                    RestaurantTable.branch_id == branch.id,
-                )
-            )
-        )
+        tables = lock_tables(db, set(payload.table_ids), branch.business_id, branch.id)
         if len(tables) != len(set(payload.table_ids)):
             raise HTTPException(status_code=422, detail="One or more tables are invalid")
+        ensure_tables_active(db, tables)
         conflicts = db.scalar(
             select(func.count(ReservationTable.table_id))
             .join(Reservation, Reservation.id == ReservationTable.reservation_id)
@@ -2248,6 +2221,7 @@ def available_tables(
             select(RestaurantTable)
             .where(
                 RestaurantTable.branch_id == branch_id,
+                active_table_clause(),
                 RestaurantTable.capacity >= party_size,
                 RestaurantTable.id.not_in(busy_table_ids),
             )

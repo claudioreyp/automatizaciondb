@@ -1020,7 +1020,10 @@ def archive_branch(db: Session, branch: Branch) -> None:
 
 def archive_area(db: Session, area: DiningArea) -> None:
     table_count = db.scalar(
-        select(func.count(RestaurantTable.id)).where(RestaurantTable.area_id == area.id)
+        select(func.count(RestaurantTable.id)).where(
+            RestaurantTable.area_id == area.id,
+            RestaurantTable.archived_at.is_(None),
+        )
     ) or 0
     if table_count:
         raise HTTPException(status_code=409, detail="Move or archive every table before archiving this area")

@@ -21,6 +21,7 @@ from starlette.concurrency import run_in_threadpool
 from .order_editing import delivery_service, edit_order_details, order_edit_policy
 from .agent_order_changes import attach_recent_agent_order_changes
 from .order_folios import parse_order_folio
+from .table_lifecycle import active_table_clause, ensure_tables_active, ensure_tables_archivable, lock_rows, lock_tables
 from .product_access import POS_MODULES, POS_PLAN, full_pos_modules
 from .integration_package import integration_package
 from .agent_context import agent_context
@@ -105,6 +106,7 @@ from .realtime import hub
 from .schemas import (
     AddOrderItem,
     ArchiveRequest,
+    AreaArchiveRequest,
     AreaCreate,
     AreaUpdate,
     BranchCreate,
@@ -261,7 +263,7 @@ def scoped_area_for_user(
         if user.branch_id is not None:
             statement = statement.where(DiningArea.branch_id == user.branch_id)
     if for_update:
-        statement = statement.with_for_update()
+        return next(iter(lock_rows(db, statement, DiningArea)), None)
     return db.scalar(statement)
 
 
@@ -280,7 +282,7 @@ def scoped_table_for_user(
         if user.branch_id is not None:
             statement = statement.where(RestaurantTable.branch_id == user.branch_id)
     if for_update:
-        statement = statement.with_for_update()
+        return next(iter(lock_rows(db, statement, RestaurantTable)), None)
     return db.scalar(statement)
 
 
@@ -340,19 +342,7 @@ def apply_order_table_assignment(
         for table_id in (order.table_id, target_table_id)
         if table_id is not None
     }
-    tables = {
-        table.id: table
-        for table in db.scalars(
-            select(RestaurantTable)
-            .where(
-                RestaurantTable.id.in_(table_ids),
-                RestaurantTable.business_id == order.business_id,
-                RestaurantTable.branch_id == order.branch_id,
-            )
-            .order_by(RestaurantTable.id)
-            .with_for_update()
-        )
-    }
+    tables = {table.id: table for table in lock_tables(db, table_ids, order.business_id, order.branch_id)}
     if len(tables) != len(table_ids):
         raise CodedHTTPException(
             422,
@@ -362,6 +352,7 @@ def apply_order_table_assignment(
 
     target_table = tables.get(target_table_id) if target_table_id is not None else None
     if target_table is not None:
+        ensure_tables_active(db, [target_table])
         active_order_id = db.scalar(
             select(Order.id).where(
                 Order.id != order.id,
@@ -1048,6 +1039,10 @@ def serialize_table(table: RestaurantTable) -> dict:
         "status": table.status,
         "version": table.version,
     }
+
+
+def table_archive_snapshot(table: RestaurantTable) -> dict:
+    return {**serialize_table(table), "active": table.archived_at is None, "archived_at": table.archived_at}
 
 
 def serialize_reservation(db: Session, reservation: Reservation) -> dict:
@@ -3800,6 +3795,7 @@ async def create_area(
     duplicate = db.scalar(
         select(DiningArea).where(
             DiningArea.branch_id == branch.id,
+            DiningArea.archived_at.is_(None),
             func.lower(DiningArea.name) == name.lower(),
         )
     )
@@ -3831,7 +3827,7 @@ async def update_area(
     db: Session = Depends(get_db),
 ):
     area = scoped_area_for_user(db, user, area_id, for_update=True)
-    if not area:
+    if not area or area.archived_at is not None:
         raise HTTPException(status_code=404, detail="Area not found")
     assert_version(area.version, payload.expected_version)
     changes = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
@@ -3843,6 +3839,7 @@ async def update_area(
             select(DiningArea).where(
                 DiningArea.branch_id == area.branch_id,
                 DiningArea.id != area.id,
+                DiningArea.archived_at.is_(None),
                 func.lower(DiningArea.name) == name.lower(),
             )
         )
@@ -3857,7 +3854,7 @@ async def update_area(
     if next_columns != area.columns or next_rows != area.rows:
         tables = list(
             db.scalars(
-                select(RestaurantTable).where(RestaurantTable.area_id == area.id)
+                select(RestaurantTable).where(RestaurantTable.area_id == area.id, RestaurantTable.archived_at.is_(None))
             )
         )
         if any(
@@ -3880,10 +3877,38 @@ async def update_area(
     return result
 
 
+def archive_request_fingerprint(payload) -> str:
+    body = payload.model_dump(mode="json")
+    if "tables" in body:
+        body["tables"] = sorted(body["tables"], key=lambda table: table["id"])
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def replay_archive(db, scope, key, business_id, payload):
+    existing = get_idempotent_response(db, scope, key, business_id)
+    if existing is None:
+        return None
+    if "_archive_request" in existing:
+        if existing["_archive_request"] != archive_request_fingerprint(payload):
+            raise CodedHTTPException(409, "This operation key was used with a different request", "ARCHIVE_IDEMPOTENCY_CONFLICT")
+        return existing["_archive_response"]
+    # Compatibility with successful empty-zone archives made before fingerprints.
+    if isinstance(payload, AreaArchiveRequest) and not payload.include_tables and not payload.tables and payload.expected_version == existing.get("version", 0) - 1:
+        return {**existing, "archived_table_ids": []}
+    raise CodedHTTPException(409, "This operation key was used with a different request", "ARCHIVE_IDEMPOTENCY_CONFLICT")
+
+
+def remember_archive(db, scope, key, business_id, payload, result):
+    save_idempotent_response(db, scope, key, business_id, {
+        "_archive_request": archive_request_fingerprint(payload),
+        "_archive_response": result,
+    })
+
+
 @api.delete("/areas/{area_id}", tags=["tables"])
 async def delete_area(
     area_id: int,
-    payload: ArchiveRequest,
+    payload: AreaArchiveRequest,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
     db: Session = Depends(get_db),
@@ -3892,16 +3917,42 @@ async def delete_area(
     if not key:
         raise HTTPException(status_code=422, detail="Idempotency-Key header is required")
     area = scoped_area_for_user(db, user, area_id, for_update=True)
-    if not area or area.archived_at is not None:
+    if not area:
         raise HTTPException(status_code=404, detail="Area not found")
     scope = f"settings.area.{area.id}.archive"
-    if existing := get_idempotent_response(db, scope, key, area.business_id):
+    if (existing := replay_archive(db, scope, key, area.business_id, payload)) is not None:
         return existing
+    if area.archived_at is not None:
+        raise HTTPException(status_code=404, detail="Area not found")
     assert_version(area.version, payload.expected_version)
+    tables = lock_rows(db, select(RestaurantTable).where(
+        RestaurantTable.area_id == area.id,
+        RestaurantTable.business_id == area.business_id,
+        RestaurantTable.branch_id == area.branch_id,
+        RestaurantTable.archived_at.is_(None),
+    ).order_by(RestaurantTable.id), RestaurantTable)
+    confirmed = {table.id: table.expected_version for table in payload.tables}
+    if payload.include_tables:
+        if set(confirmed) != {table.id for table in tables}:
+            raise CodedHTTPException(409, "The tables in this area changed; review them again", "AREA_TABLES_CHANGED")
+        for table in tables:
+            assert_version(table.version, confirmed[table.id])
+        ensure_tables_archivable(db, tables)
+    elif tables:
+        raise CodedHTTPException(409, "Confirm the tables before archiving this area", "AREA_HAS_ACTIVE_TABLES")
+    for table in tables:
+        before = table_archive_snapshot(table)
+        table.archived_at = utcnow()
+        table.version += 1
+        audit(db, user, "table.archived", "table", table.id, table.business_id,
+              {"before": before, "after": table_archive_snapshot(table)}, branch_id=table.branch_id)
+    db.flush()
+    before = serialize_area(area)
     archive_area(db, area)
-    result = serialize_area(area)
-    audit(db, user, "area.archived", "dining_area", area.id, area.business_id)
-    save_idempotent_response(db, scope, key, area.business_id, result)
+    result = {**serialize_area(area), "archived_table_ids": [table.id for table in tables]}
+    audit(db, user, "area.archived", "dining_area", area.id, area.business_id,
+          {"before": before, "after": result}, branch_id=area.branch_id)
+    remember_archive(db, scope, key, area.business_id, payload, result)
     db.commit()
     await hub.broadcast(area.branch_id, "area.archived", result)
     return result
@@ -3914,7 +3965,7 @@ def list_tables(
     db: Session = Depends(get_db),
 ):
     branch_for_user(db, user, branch_id)
-    tables = list(db.scalars(select(RestaurantTable).where(RestaurantTable.branch_id == branch_id)))
+    tables = list(db.scalars(select(RestaurantTable).where(RestaurantTable.branch_id == branch_id, active_table_clause())))
     active_order_by_table: dict[int, int] = {}
     active_orders = db.execute(
         select(Order.table_id, Order.id)
@@ -3948,10 +3999,8 @@ def create_table(
 ):
     branch = branch_for_user(db, user, payload.branch_id)
     if payload.area_id is not None:
-        area = db.scalar(
-            select(DiningArea).where(DiningArea.id == payload.area_id).with_for_update()
-        )
-        if not area or area.branch_id != branch.id:
+        area = scoped_area_for_user(db, user, payload.area_id, for_update=True)
+        if not area or area.branch_id != branch.id or area.archived_at is not None:
             raise HTTPException(status_code=422, detail="Area does not belong to branch")
         if not table_fits_area(area, payload.position_x, payload.position_y):
             raise CodedHTTPException(
@@ -4000,7 +4049,7 @@ async def update_table(
     db: Session = Depends(get_db),
 ):
     preview = scoped_table_for_user(db, user, table_id)
-    if not preview:
+    if not preview or preview.archived_at is not None:
         raise HTTPException(status_code=404, detail="Table not found")
     values = payload.model_dump(exclude_unset=True, exclude={"expected_version"})
     configuration_fields = {
@@ -4026,17 +4075,17 @@ async def update_table(
         if area_ids:
             locked_areas = {
                 area.id: area
-                for area in db.scalars(
+                for area in lock_rows(db,
                     select(DiningArea)
-                    .where(DiningArea.id.in_(area_ids), DiningArea.branch_id == preview.branch_id)
-                    .order_by(DiningArea.id)
-                    .with_for_update()
+                    .where(DiningArea.id.in_(area_ids), DiningArea.branch_id == preview.branch_id, DiningArea.archived_at.is_(None))
+                    .order_by(DiningArea.id), DiningArea,
                 )
             }
 
     table = scoped_table_for_user(db, user, table_id, for_update=True)
-    if not table:
+    if not table or table.archived_at is not None:
         raise HTTPException(status_code=404, detail="Table not found")
+    ensure_tables_active(db, [table])
     assert_version(table.version, payload.expected_version)
     if "name" in values:
         name = (values["name"] or "").strip()
@@ -4061,6 +4110,7 @@ async def update_table(
             select(DiningArea.id).where(
                 DiningArea.id == values["area_id"],
                 DiningArea.branch_id == table.branch_id,
+                DiningArea.archived_at.is_(None),
             )
         ):
             raise HTTPException(status_code=422, detail="Area does not belong to branch")
@@ -4071,6 +4121,42 @@ async def update_table(
     db.commit()
     result = serialize_table(table)
     await hub.broadcast(table.branch_id, "table.updated", result)
+    return result
+
+
+@api.delete("/tables/{table_id}", tags=["tables"])
+async def delete_table(
+    table_id: int,
+    payload: ArchiveRequest,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager")),
+    db: Session = Depends(get_db),
+):
+    key = (idempotency_key or "").strip()
+    if not key:
+        raise HTTPException(status_code=422, detail="Idempotency-Key header is required")
+    preview = scoped_table_for_user(db, user, table_id)
+    if not preview:
+        raise HTTPException(status_code=404, detail="Table not found")
+    if preview.area_id is not None:
+        scoped_area_for_user(db, user, preview.area_id, for_update=True)
+    table = scoped_table_for_user(db, user, table_id, for_update=True)
+    scope = f"settings.table.{table.id}.archive"
+    if (existing := replay_archive(db, scope, key, table.business_id, payload)) is not None:
+        return existing
+    if table.archived_at is not None:
+        raise HTTPException(status_code=404, detail="Table not found")
+    assert_version(table.version, payload.expected_version)
+    ensure_tables_archivable(db, [table])
+    before = table_archive_snapshot(table)
+    table.archived_at = utcnow()
+    table.version += 1
+    result = table_archive_snapshot(table)
+    audit(db, user, "table.archived", "table", table.id, table.business_id,
+          {"before": before, "after": result}, branch_id=table.branch_id)
+    remember_archive(db, scope, key, table.business_id, payload, result)
+    db.commit()
+    await hub.broadcast(table.branch_id, "table.archived", result)
     return result
 
 
@@ -4781,7 +4867,8 @@ async def pay_table_checkout_endpoint(
     save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
     db.commit()
     result["order"] = serialize_order(scoped_order_for_user(db, user, order.id))
-    await hub.broadcast(order.branch_id, "payment.created", result)
+    if payments:
+        await hub.broadcast(order.branch_id, "payment.created", result)
     await hub.broadcast(order.branch_id, "order.updated", result["order"])
     if result["table"]:
         await hub.broadcast(order.branch_id, "table.updated", result["table"])
@@ -5883,17 +5970,37 @@ async def update_reservation_endpoint(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier", "waiter")),
     db: Session = Depends(get_db),
 ):
-    reservation = db.scalar(select(Reservation).where(Reservation.id == reservation_id).with_for_update())
-    if not reservation:
+    preview = db.get(Reservation, reservation_id)
+    if not preview:
         raise HTTPException(status_code=404, detail="Reservation not found")
-    branch_for_user(db, user, reservation.branch_id)
+    branch_for_user(db, user, preview.branch_id)
+    previous_ids = set(db.scalars(select(ReservationTable.table_id).where(
+        ReservationTable.reservation_id == reservation_id,
+    )))
+    requested_ids = set(payload.table_ids) if payload.table_ids is not None else previous_ids
+    # Lock tables before reservations, matching creation and archive operations.
+    locked = {table.id: table for table in lock_tables(
+        db, previous_ids | requested_ids, preview.business_id, preview.branch_id,
+    )}
+    if not requested_ids.issubset(locked):
+        raise HTTPException(status_code=422, detail="Invalid reservation table")
+    reservation = next(iter(lock_rows(db, select(Reservation).where(
+        Reservation.id == reservation_id,
+    ), Reservation)), None)
+    if set(db.scalars(select(ReservationTable.table_id).where(
+        ReservationTable.reservation_id == reservation_id,
+    ))) != previous_ids:
+        raise HTTPException(status_code=409, detail="Reservation tables changed; refresh before editing")
     assert_version(reservation.version, payload.expected_version)
     values = payload.model_dump(exclude_unset=True, exclude={"expected_version", "duration_minutes", "table_ids"})
     start_at = payload.start_at or reservation.start_at
     duration = payload.duration_minutes or int((reservation.end_at - reservation.start_at).total_seconds() / 60)
     end_at = start_at + timedelta(minutes=duration)
-    table_ids = payload.table_ids
-    if table_ids is not None:
+    table_ids = sorted(requested_ids)
+    next_status = payload.status or reservation.status
+    if payload.table_ids is not None or next_status in {"confirmed", "seated"}:
+        ensure_tables_active(db, [locked[table_id] for table_id in table_ids])
+    if next_status in {"confirmed", "seated"}:
         conflicts = db.scalar(
             select(func.count(ReservationTable.table_id))
             .join(Reservation, Reservation.id == ReservationTable.reservation_id)
@@ -5907,12 +6014,11 @@ async def update_reservation_endpoint(
         )
         if conflicts:
             raise HTTPException(status_code=409, detail="One or more tables are already reserved")
+    if payload.table_ids is not None:
         for link in db.scalars(select(ReservationTable).where(ReservationTable.reservation_id == reservation.id)):
             db.delete(link)
+        db.flush()
         for table_id in table_ids:
-            table = db.get(RestaurantTable, table_id)
-            if not table or table.branch_id != reservation.branch_id:
-                raise HTTPException(status_code=422, detail="Invalid reservation table")
             db.add(ReservationTable(reservation_id=reservation.id, table_id=table_id))
     for key, value in values.items():
         setattr(reservation, key, value)
@@ -5920,19 +6026,14 @@ async def update_reservation_endpoint(
     reservation.end_at = end_at
     reservation.version += 1
     if payload.status == "seated":
-        for table_id in db.scalars(
-            select(ReservationTable.table_id).where(ReservationTable.reservation_id == reservation.id)
-        ):
-            table = db.get(RestaurantTable, table_id)
-            if table:
-                table.status = "occupied"
-                table.version += 1
+        for table_id in table_ids:
+            table = locked[table_id]
+            table.status = "occupied"
+            table.version += 1
     if payload.status in {"completed", "cancelled", "no_show"}:
-        for table_id in db.scalars(
-            select(ReservationTable.table_id).where(ReservationTable.reservation_id == reservation.id)
-        ):
-            table = db.get(RestaurantTable, table_id)
-            if table and table.status == "reserved":
+        for table_id in table_ids:
+            table = locked.get(table_id)
+            if table and table.archived_at is None and table.status == "reserved":
                 table.status = "available"
                 table.version += 1
     audit(db, user, "reservation.updated", "reservation", reservation.id, reservation.business_id, values)
