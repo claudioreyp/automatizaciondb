@@ -85,7 +85,11 @@ def paid_order_amount(db, order):
 def replay(db, order, scope, key, payload):
     if not key or len(key) > 240:
         raise HTTPException(422, "Idempotency-Key is required (max 240 characters)")
-    digest = fingerprint(payload.model_dump(mode="json"))
+    content = payload.model_dump(mode="json")
+    # Older addition retries did not contain this optional field.
+    if isinstance(payload, Addition) and payload.payment_method is None:
+        content.pop("payment_method", None)
+    digest = fingerprint(content)
     existing = get_idempotent_response(db, scope, key, order.business_id)
     if existing:
         if existing.get("request_digest") != digest:

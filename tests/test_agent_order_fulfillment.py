@@ -311,6 +311,31 @@ def test_addition_attribution_survives_closed_history_and_recent_window(client, 
     assert workspace["items"][0]["recent_agent_addition"] == marker
 
 
+def test_old_addition_reply_replays_after_optional_method_is_added(client, tenant, auth_headers):
+    from app.agent_checkout import fingerprint
+    from app.agent_checkout_api import Addition
+    from app.models import IdempotencyRecord
+    headers, order = registered(client, tenant, auth_headers)
+    body = {"sender": PHONE, "expected_version": order["version"], "expected_amount": 20,
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}]}
+    path = f"/api/v1/integrations/orders/{order['id']}/item-batches"
+    request_headers = {**headers, "Idempotency-Key": "pre-deployment-addition"}
+    first = client.post(path, headers=request_headers, json=body)
+    assert first.status_code == 200, first.text
+    old_content = Addition.model_validate(body).model_dump(mode="json")
+    old_content.pop("payment_method")
+    legacy_result = {"order": first.json()["order"], "sent_to_kitchen": True}
+    with SessionLocal.begin() as db:
+        record = db.scalar(select(IdempotencyRecord).where(IdempotencyRecord.scope == f"agent-addition:{order['id']}"))
+        record.response_body = {"request_digest": fingerprint(old_content), "result": legacy_result}
+    replayed = client.post(path, headers=request_headers, json=body)
+    assert replayed.status_code == 200 and replayed.json() == legacy_result
+    with SessionLocal() as db:
+        assert len(db.get(Order, order["id"]).items) == 2
+        assert db.query(KitchenTicket).count() == 2
+        assert db.query(AuditEvent).filter_by(action="agent.items_added").count() == 1
+
+
 def test_manual_pos_can_still_edit_cancel_and_add(client, tenant, auth_headers):
     original = create_order(client, tenant, auth_headers, items=[
         {"product_id": tenant["product_id"], "quantity": 1}, {"product_id": tenant["product_id"], "quantity": 1}])
