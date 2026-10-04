@@ -649,9 +649,18 @@ class CashSession(Base, TimestampMixin):
 
 class CashMovement(Base):
     __tablename__ = "cash_movements"
+    __table_args__ = (
+        Index(
+            "uq_cash_movements_order_refund_method",
+            "order_id", "payment_method", unique=True,
+            sqlite_where=text("movement_type = 'refund' AND order_id IS NOT NULL"),
+            postgresql_where=text("movement_type = 'refund' AND order_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     cash_session_id: Mapped[int] = mapped_column(ForeignKey("cash_sessions.id", ondelete="CASCADE"), index=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="RESTRICT"), index=True)
     movement_type: Mapped[str] = mapped_column(String(30), index=True)
     payment_method: Mapped[str | None] = mapped_column(String(30))
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))

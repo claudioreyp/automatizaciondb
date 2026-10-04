@@ -599,6 +599,36 @@ class PaymentCreate(ApiModel):
     expected_version: int | None = None
 
 
+class OrderRefundInput(ApiModel):
+    method: Literal["cash", "card", "yape", "plin", "transfer", "online"]
+    amount: Decimal = Field(gt=0, decimal_places=2)
+
+
+class OrderCancel(ApiModel):
+    reason: str = Field(min_length=1, max_length=1000)
+    expected_version: int = Field(ge=1)
+    register_id: int | None = Field(default=None, ge=1)
+    expected_session_id: int | None = Field(default=None, ge=1)
+    expected_cash_version: int | None = Field(default=None, ge=0)
+    refunds: list[OrderRefundInput] = Field(default_factory=list, max_length=6)
+    refund_confirmed: bool = False
+
+    @field_validator("reason")
+    @classmethod
+    def nonblank_reason(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("A cancellation reason is required")
+        return value
+
+    @model_validator(mode="after")
+    def distinct_refund_methods(self):
+        methods = [refund.method for refund in self.refunds]
+        if len(set(methods)) != len(methods):
+            raise ValueError("Supply each refund method only once")
+        return self
+
+
 class TableCheckoutPayment(ApiModel):
     payments: list[PaymentCreate] = Field(min_length=0, max_length=20)
     expected_version: int | None = None
@@ -650,6 +680,7 @@ class CashCutCreate(ApiModel):
     ignore_pending_orders: bool = False
     note: str | None = Field(default=None, max_length=2000)
     expected_version: int = Field(ge=0)
+    expected_session_id: int | None = Field(default=None, ge=1)
 
     @field_validator("denominations", mode="before")
     @classmethod
@@ -666,9 +697,18 @@ class CashCutCreate(ApiModel):
 
 class CashRegisterMovementCreate(ApiModel):
     movement_type: Literal["income", "withdrawal"]
-    amount: Decimal = Field(gt=0)
+    amount: Decimal = Field(gt=0, decimal_places=2)
     note: str = Field(min_length=1, max_length=1000)
     expected_version: int = Field(ge=0)
+    expected_session_id: int | None = Field(default=None, ge=1)
+
+    @field_validator("note")
+    @classmethod
+    def nonblank_note(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("A movement reason is required")
+        return value
 
 
 class ReservationCreate(ApiModel):

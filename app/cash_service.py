@@ -5,13 +5,14 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from .auth import AuthContext
 from .errors import CodedHTTPException
 from .models import (
     Branch,
+    AuditEvent,
     CashMovement,
     CashRegister,
     CashSession,
@@ -44,6 +45,7 @@ DENOMINATION_LABELS = {
     for denomination in ALLOWED_DENOMINATIONS
 }
 MANUAL_MOVEMENT_TYPES = frozenset({"income", "withdrawal", "expense", "refund"})
+REFUND_METHODS = ("cash", "card", "yape", "plin", "transfer", "online")
 
 
 def cash_money(value: Decimal | int | float | str | None) -> Decimal:
@@ -142,7 +144,9 @@ def _lock_branch(db: Session, business_id: int, branch_id: int) -> Branch:
     branch = db.scalar(
         select(Branch)
         .where(Branch.id == branch_id, Branch.business_id == business_id)
-        .with_for_update()
+        # Serialize automatic selection without blocking the KEY SHARE lock
+        # needed by a cut inserting a period with a branch foreign key.
+        .with_for_update(key_share=True)
     )
     if not branch:
         raise HTTPException(status_code=404, detail="Branch not found")
@@ -166,6 +170,7 @@ def lock_cash_register(
                 CashRegister.active.is_(True),
             )
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if not register:
             raise CodedHTTPException(
@@ -246,7 +251,7 @@ def scoped_cash_register(
         if user.branch_id is not None:
             statement = statement.where(CashRegister.branch_id == user.branch_id)
     if for_update:
-        statement = statement.with_for_update()
+        statement = statement.with_for_update().execution_options(populate_existing=True)
     register = db.scalar(statement)
     if not register:
         raise CodedHTTPException(404, "Cash register not found", "CASH_REGISTER_NOT_FOUND")
@@ -278,6 +283,7 @@ def open_or_get_cash_session(
             CashSession.status == "open",
         )
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if session:
         return session, False
@@ -306,20 +312,20 @@ def resolve_payment_cash_session(
     register_id: int | None,
 ) -> CashSession:
     if cash_session_id is not None:
-        candidate = db.scalar(
-            select(CashSession).where(
+        candidate_register_id = db.scalar(
+            select(CashSession.register_id).where(
                 CashSession.id == cash_session_id,
                 CashSession.business_id == order.business_id,
                 CashSession.branch_id == order.branch_id,
             )
         )
-        if not candidate:
+        if candidate_register_id is None:
             raise CodedHTTPException(
                 422,
                 "Cash period is not available for this branch",
                 "CASH_SESSION_INVALID",
             )
-        if register_id is not None and candidate.register_id != register_id:
+        if register_id is not None and candidate_register_id != register_id:
             raise CodedHTTPException(
                 422,
                 "Cash period does not belong to the selected register",
@@ -329,7 +335,7 @@ def resolve_payment_cash_session(
             db,
             business_id=order.business_id,
             branch_id=order.branch_id,
-            register_id=candidate.register_id,
+            register_id=candidate_register_id,
         )
         session = db.scalar(
             select(CashSession)
@@ -339,6 +345,7 @@ def resolve_payment_cash_session(
                 CashSession.status == "open",
             )
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if not session:
             raise CodedHTTPException(
@@ -354,7 +361,7 @@ def resolve_payment_cash_session(
         _lock_branch(db, order.business_id, order.branch_id)
         open_sessions = list(
             db.scalars(
-                select(CashSession)
+                select(CashSession.register_id)
                 .join(CashRegister, CashRegister.id == CashSession.register_id)
                 .where(
                     CashSession.business_id == order.business_id,
@@ -363,7 +370,6 @@ def resolve_payment_cash_session(
                     CashRegister.active.is_(True),
                 )
                 .order_by(CashSession.id)
-                .with_for_update()
             )
         )
         if len(open_sessions) > 1:
@@ -373,7 +379,7 @@ def resolve_payment_cash_session(
                 "CASH_REGISTER_AMBIGUOUS",
             )
         if open_sessions:
-            register_id = open_sessions[0].register_id
+            register_id = open_sessions[0]
 
     register = lock_cash_register(
         db,
@@ -383,6 +389,29 @@ def resolve_payment_cash_session(
     )
     session, _ = open_or_get_cash_session(db, register, actor_id=user.user_id)
     return session
+
+
+def assert_cash_period(session: CashSession | None, expected_session_id: int | None, *, provided: bool) -> None:
+    """An ID and a version protect different races, including a new period at v1."""
+    if provided and (session.id if session else None) != expected_session_id:
+        raise CodedHTTPException(409, "Cash period changed on another terminal", "CASH_CUT_STALE")
+
+
+def movement_method(movement: CashMovement) -> str:
+    # All legacy manual operations affect physical cash. Only a linked refund
+    # has an explicitly validated method; do not reinterpret historical entries.
+    if movement.movement_type == "refund" and movement.order_id is not None:
+        return movement.payment_method or "cash"
+    return "cash"
+
+
+def movement_signed_amount(movement: CashMovement) -> Decimal:
+    amount = cash_money(movement.amount)
+    return amount if movement.movement_type == "income" else -amount
+
+
+def method_group(method: str) -> str:
+    return "cash" if method == "cash" else "card" if method == "card" else "transfer"
 
 
 def cash_reconciliation(db: Session, session: CashSession) -> dict:
@@ -410,11 +439,6 @@ def cash_reconciliation(db: Session, session: CashSession) -> dict:
         "cash",
         Decimal("0"),
     )
-    for movement in movements:
-        if movement.movement_type == "income":
-            cash_expected += cash_money(movement.amount)
-        else:
-            cash_expected -= cash_money(movement.amount)
     card_expected = payment_totals.get("card", Decimal("0"))
     transfer_expected = cash_money(
         sum(
@@ -422,6 +446,19 @@ def cash_reconciliation(db: Session, session: CashSession) -> dict:
             Decimal("0"),
         )
     )
+    cash_activity = cash_money(session.opening_amount) > 0 or "cash" in payment_totals
+    card_activity = "card" in payment_totals
+    for movement in movements:
+        group = method_group(movement_method(movement))
+        signed = movement_signed_amount(movement)
+        if group == "cash":
+            cash_expected += signed
+            cash_activity = True
+        elif group == "card":
+            card_expected += signed
+            card_activity = True
+        else:
+            transfer_expected += signed
     return {
         "cash_expected": cash_money(cash_expected),
         "card_expected": cash_money(card_expected),
@@ -429,7 +466,8 @@ def cash_reconciliation(db: Session, session: CashSession) -> dict:
         "payment_count": sum(1 for amount in payment_totals.values() if amount != 0),
         "movement_count": len(movements),
         "has_activity": bool(payment_totals or movements),
-        "has_card_activity": card_expected > 0,
+        "has_cash_activity": cash_activity,
+        "has_card_activity": card_activity,
     }
 
 
@@ -477,6 +515,7 @@ def pending_orders_snapshot(
             {
                 "id": order.id,
                 "number": order.number,
+                "folio": order.folio,
                 "status": order.status,
                 "payment_status": order.payment_status,
                 "total": float(total),
@@ -542,7 +581,9 @@ def close_cash_cut(
             CashSession.status == "open",
         )
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
+    assert_cash_period(session, payload.expected_session_id, provided="expected_session_id" in payload.model_fields_set)
     if session is None:
         if payload.expected_version != 0:
             raise CodedHTTPException(
@@ -587,6 +628,8 @@ def close_cash_cut(
         )
 
     cash_counted = cash_money(payload.cash_counted)
+    if not reconciliation["has_cash_activity"] and cash_counted != 0:
+        raise CodedHTTPException(422, "Cash count is not applicable for this period", "CASH_CUT_CASH_NOT_APPLICABLE")
     retained_fund = cash_money(payload.retained_fund)
     if retained_fund > cash_counted:
         raise CodedHTTPException(
@@ -597,14 +640,14 @@ def close_cash_cut(
     denominations = normalize_denominations(payload.denominations, cash_counted)
 
     card_expected = reconciliation["card_expected"]
-    if card_expected > 0 and payload.card_counted is None:
+    if reconciliation["has_card_activity"] and payload.card_counted is None:
         raise CodedHTTPException(
             422,
             "Counted card payments are required for this period",
             "CASH_CUT_CARD_COUNT_REQUIRED",
         )
     card_counted = cash_money(payload.card_counted)
-    if card_expected == 0 and card_counted != 0:
+    if not reconciliation["has_card_activity"] and card_counted != 0:
         raise CodedHTTPException(
             422,
             "Card count is not applicable because this period has no card payments",
@@ -688,6 +731,7 @@ def cut_preview(db: Session, register: CashRegister) -> dict:
         reconciliation = {
             "transfer_expected": Decimal("0"),
             "has_card_activity": False,
+            "has_cash_activity": cash_money(previous.retained_fund_amount if previous else 0) > 0,
         }
         opening_amount = cash_money(previous.retained_fund_amount if previous else 0)
         started_at = previous.closed_at if previous else None
@@ -710,6 +754,7 @@ def cut_preview(db: Session, register: CashRegister) -> dict:
         "version": version,
         "period_started_at": started_at,
         "opening_fund": float(opening_amount),
+        "has_cash_activity": reconciliation["has_cash_activity"],
         "has_card_activity": reconciliation["has_card_activity"],
         "transfer_expected_amount": float(reconciliation["transfer_expected"]),
         "pending_orders": pending_orders,
@@ -724,6 +769,58 @@ def _session_result(session: CashSession) -> str:
     if difference == 0:
         return "balanced"
     return "surplus" if difference > 0 else "shortage"
+
+
+def reconciliation_state(session: CashSession) -> dict:
+    # Unknown historical counts stay unknown; never infer a card count of zero.
+    differences = [cash_money(difference) for counted, difference in (
+        (session.declared_amount, session.difference),
+        (session.card_declared_amount, session.card_difference),
+    ) if counted is not None and difference is not None]
+    positive, negative = any(value > 0 for value in differences), any(value < 0 for value in differences)
+    status = "mixed" if positive and negative else "surplus" if positive else "shortage" if negative else "balanced"
+    return {"reconciliation_status": status, "has_discrepancy": positive or negative}
+
+
+def reconciliation_expressions():
+    cash_diff = case((and_(CashSession.declared_amount.is_not(None), CashSession.difference.is_not(None)), CashSession.difference), else_=0)
+    card_diff = case((and_(CashSession.card_declared_amount.is_not(None), CashSession.card_difference.is_not(None)), CashSession.card_difference), else_=0)
+    positive, negative = or_(cash_diff > 0, card_diff > 0), or_(cash_diff < 0, card_diff < 0)
+    return case((and_(positive, negative), "mixed"), (positive, "surplus"), (negative, "shortage"), else_="balanced"), or_(positive, negative)
+
+
+def financial_summary(order: Order, collected: Decimal, refunded: Decimal) -> dict:
+    collected, refunded = cash_money(collected), cash_money(refunded)
+    net = cash_money(collected - refunded)
+    if order.status == "cancelled":
+        status = "refunded" if collected > 0 and net == 0 else "refund_not_recorded" if net > 0 else "voided"
+    else:
+        status = "paid" if collected >= cash_money(order.total) else "partial" if collected > 0 else "pending"
+    return {"collected": float(collected), "refunded": float(refunded), "net_collected": float(net), "refundable": float(max(net, Decimal("0"))), "status": status}
+
+
+def order_refunds(db: Session, order: Order) -> list[dict]:
+    rows = db.execute(select(CashMovement, CashSession, CashRegister).join(
+        CashSession, CashSession.id == CashMovement.cash_session_id,
+    ).join(CashRegister, CashRegister.id == CashSession.register_id).where(
+        CashMovement.order_id == order.id, CashMovement.movement_type == "refund",
+        CashSession.business_id == order.business_id, CashSession.branch_id == order.branch_id,
+    ).order_by(CashMovement.created_at, CashMovement.id)).all()
+    # Store register identity in the refund audit; current names are only a
+    # fallback for rows without that snapshot, as for original payments.
+    names = {}
+    if rows:
+        for event in db.scalars(select(AuditEvent).where(
+            AuditEvent.business_id == order.business_id, AuditEvent.branch_id == order.branch_id,
+            AuditEvent.entity_type == "cash_movement", AuditEvent.action == "cash.refund_created",
+            AuditEvent.entity_id.in_([str(row[0].id) for row in rows]),
+        ).order_by(AuditEvent.id)):
+            names.setdefault(event.entity_id, (event.payload or {}).get("register_name"))
+    return [{"id": movement.id, "method": movement_method(movement), "amount": float(cash_money(movement.amount)),
+        "signed_amount": float(movement_signed_amount(movement)), "order_id": order.id, "register_id": register.id,
+        "register_name": names.get(str(movement.id)) or register.name, "session_id": session.id, "note": movement.note,
+        "created_by": actor_name_by_id(db, movement.created_by, business_id=order.business_id, branch_id=order.branch_id),
+        "created_at": movement.created_at} for movement, session, register in rows]
 
 
 def cut_history_item(
@@ -751,6 +848,7 @@ def cut_history_item(
         "register": {"id": register.id, "name": register.name},
         "created_by": display_name,
         "result": _session_result(session),
+        **reconciliation_state(session),
         "total_expected_amount": float(total_expected),
         "retained_fund_amount": float(cash_money(session.retained_fund_amount)),
         "closed_at": session.closed_at,
@@ -763,7 +861,7 @@ def cash_cut_detail(
     register: CashRegister,
 ) -> dict:
     payments = db.execute(
-        select(Payment, Order.number)
+        select(Payment, Order.number, Order.folio)
         .join(Order, Order.id == Payment.order_id)
         .where(
             Payment.cash_session_id == session.id,
@@ -784,7 +882,7 @@ def cash_cut_detail(
         )
     )
     transactions = {"cash": [], "card": [], "transfer": []}
-    for payment, order_number in payments:
+    for payment, order_number, order_folio in payments:
         group = (
             "cash"
             if payment.method == "cash"
@@ -798,8 +896,10 @@ def cash_cut_detail(
                 "kind": "payment",
                 "method": payment.method,
                 "amount": float(cash_money(payment.amount)),
+                "signed_amount": float(cash_money(payment.amount)),
                 "order_id": payment.order_id,
                 "order_number": order_number,
+                "order_folio": order_folio,
                 "reference": payment.external_reference,
                 "note": payment.note,
                 "created_by": actor_name_by_id(
@@ -811,13 +911,23 @@ def cash_cut_detail(
                 "created_at": payment.received_at,
             }
         )
+    order_identities = {row.id: row for row in db.scalars(select(Order).where(
+        Order.id.in_([movement.order_id for movement in movements if movement.order_id is not None]),
+        Order.business_id == session.business_id, Order.branch_id == session.branch_id,
+    ))} if any(movement.order_id is not None for movement in movements) else {}
     for movement in movements:
-        transactions["cash"].append(
+        identity = order_identities.get(movement.order_id)
+        transactions[method_group(movement_method(movement))].append(
             {
                 "id": movement.id,
-                "kind": "movement",
+                "kind": "refund" if movement.movement_type == "refund" else "movement",
+                "method": movement_method(movement),
                 "movement_type": movement.movement_type,
                 "amount": float(cash_money(movement.amount)),
+                "signed_amount": float(movement_signed_amount(movement)),
+                "order_id": identity.id if identity else None,
+                "order_number": identity.number if identity else None,
+                "order_folio": identity.folio if identity else None,
                 "note": movement.note,
                 "created_by": actor_name_by_id(
                     db,
@@ -852,17 +962,17 @@ def cash_cut_detail(
             {
                 "key": "cash",
                 "label": "Efectivo",
-                "counted": float(cash_money(session.declared_amount)),
+                "counted": float(cash_money(session.declared_amount)) if session.declared_amount is not None else None,
                 "expected": float(cash_money(session.expected_amount)),
-                "difference": float(cash_money(session.difference)),
+                "difference": float(cash_money(session.difference)) if session.difference is not None else None,
                 "transactions": transactions["cash"],
             },
             {
                 "key": "card",
                 "label": "Tarjeta",
-                "counted": float(cash_money(session.card_declared_amount)),
+                "counted": float(cash_money(session.card_declared_amount)) if session.card_declared_amount is not None else None,
                 "expected": float(cash_money(session.card_expected_amount)),
-                "difference": float(cash_money(session.card_difference)),
+                "difference": float(cash_money(session.card_difference)) if session.card_difference is not None else None,
                 "transactions": transactions["card"],
             },
             {

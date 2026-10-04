@@ -43,6 +43,7 @@ ACTION_SUMMARIES = {
     "cash.opened": "abri\u00f3 una caja",
     "cash.closed": "cerr\u00f3 una caja",
     "cash.cut_created": "realiz\u00f3 un corte de caja",
+    "cash.refund_created": "registr\u00f3 un reembolso",
     "kitchen.ready": "complet\u00f3 una comanda",
     "kitchen.reopened": "reabri\u00f3 una comanda",
     "kitchen.cancelled": "retir\u00f3 una comanda cancelada",
@@ -103,6 +104,9 @@ def cash_audit_snapshot(movement: CashMovement, session: CashSession, register: 
         "session_id": session.id,
         "movement_type": movement.movement_type,
         "amount": float(movement.amount),
+        "signed_amount": float(movement.amount if movement.movement_type == "income" else -movement.amount),
+        "payment_method": movement.payment_method,
+        "order_id": movement.order_id,
         "note": movement.note,
     }
 
@@ -342,13 +346,15 @@ def project_audit(db: Session, event: AuditEvent) -> dict:
             else:
                 rows += [_field("Producto posterior", _text(after.get("product_name"))), _field("Tama\u00f1o posterior", _text(after.get("variant_name"))), _field("Cantidad anterior", _numeric(before.get("quantity"))), _field("Cantidad posterior", _numeric(after.get("quantity"))), _field("Precio anterior", _amount(before.get("unit_price"))), _field("Precio posterior", _amount(after.get("unit_price"))), _field("Importe anterior", _amount(before.get("net_total"))), _field("Importe posterior", _amount(after.get("net_total")))]
             sections.append({"title": "Producto cancelado" if op["type"] == "cancel" else "Producto modificado", "fields": rows})
-    elif event.action == "cash.movement_created":
+    elif event.action in {"cash.movement_created", "cash.refund_created"}:
         cash = payload
         if not payload.get("snapshot_version") and movement is not None:
             cash = {"movement_type": movement.movement_type, "amount": str(movement.amount), "note": movement.note, **payload}
         if cash.get("movement_type") == "withdrawal":
             categories.append("cash_withdrawal")
             summary = "realiz\u00f3 un retiro de efectivo"
+        elif cash.get("movement_type") == "refund":
+            summary = "registr\u00f3 un reembolso"
         else:
             summary = "registr\u00f3 un movimiento de caja"
         fields = [
@@ -356,6 +362,7 @@ def project_audit(db: Session, event: AuditEvent) -> dict:
             _field("ID de la caja", f"#{session.register_id}" if session else (f"#{_id(cash['register_id'])}" if _id(cash.get("register_id")) else None)),
             _field("Caja", _text(cash.get("register_name"))),
             _field("Monto", _amount(cash.get("amount"))),
+            _field("M\u00e9todo", _text(cash.get("payment_method"))),
             _field("Nota", _text(cash.get("note"))),
         ]
         if movement is not None and session is not None:

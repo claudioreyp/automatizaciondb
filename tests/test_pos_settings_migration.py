@@ -70,7 +70,7 @@ def test_upgrade_from_0017_backfills_existing_tenant(tmp_path, monkeypatch):
 
     engine = sa.create_engine(database_url)
     with engine.connect() as connection:
-        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version")) == "20261002_0025"
+        assert connection.scalar(sa.text("SELECT version_num FROM alembic_version")) == "20261004_0026"
         settings = connection.execute(
             sa.text(
                 "SELECT fixed_delivery_fee, payment_methods, created_at, updated_at "

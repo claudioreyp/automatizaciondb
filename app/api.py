@@ -43,11 +43,18 @@ from .auth import (
     require_active_scope,
 )
 from .cash_service import (
+    REFUND_METHODS,
+    assert_cash_period,
     actor_display_name,
     actor_name_by_id,
     cash_cut_detail,
     cash_reconciliation,
     cash_money,
+    financial_summary,
+    movement_method,
+    movement_signed_amount,
+    order_refunds,
+    reconciliation_expressions,
     close_cash_cut,
     cut_history_item,
     cut_preview,
@@ -141,6 +148,7 @@ from .schemas import (
     ModifierGroupUpdate,
     ModifierUpdate,
     OrderCommand,
+    OrderCancel,
     OrderCreate,
     OrderItemBatch,
     OrderItemRevision,
@@ -174,6 +182,7 @@ from .schemas import (
 )
 from .security_audit import cash_audit_snapshot
 from .services import (
+    ORDER_TRANSITIONS,
     active_order_items,
     add_order_item,
     add_payment,
@@ -233,6 +242,31 @@ api.include_router(device_router)
 api.include_router(pos_printing_router)
 from .password_resets import router as password_reset_router, reset_capabilities
 api.include_router(password_reset_router)
+
+
+def cash_request_digest(payload) -> str:
+    values = payload.model_dump()
+    # Omitted is legacy compatibility; explicit null means no period existed.
+    values["_period_guard_provided"] = "expected_session_id" in payload.model_fields_set
+    return hashlib.sha256(json.dumps(values, sort_keys=True, separators=(",", ":"),
+        default=lambda value: format(cash_money(value), ".2f")).encode()).hexdigest()
+
+
+def replay_cash_request(db: Session, scope: str, key: str, business_id: int, digest: str) -> dict | None:
+    response = get_idempotent_response(db, scope, key, business_id)
+    if response is None:
+        return None
+    if "request_digest" not in response:
+        # Prior cash operations stored only their response. They remain replayable
+        # without executing a second write; no hash can be invented for them.
+        return response
+    if response["request_digest"] != digest:
+        raise CodedHTTPException(409, "Idempotency-Key was already used with a different request", "CASH_IDEMPOTENCY_CONFLICT")
+    return response["result"]
+
+
+def save_cash_request(db: Session, scope: str, key: str, business_id: int, digest: str, result: dict) -> None:
+    save_idempotent_response(db, scope, key, business_id, {"request_digest": digest, "result": result})
 
 
 def catalog_error(status_code: int, detail: str, code: str) -> CodedHTTPException:
@@ -1136,7 +1170,7 @@ ORDER_REVIEW_EVIDENCE_STATUSES = {"evidence_received", "under_review"}
 
 
 def serialize_order_summary(
-    order: Order, *, requires_review: bool, paid_amount: Decimal = Decimal("0")
+    order: Order, *, requires_review: bool, paid_amount: Decimal = Decimal("0"), refunded_amount: Decimal = Decimal("0")
 ) -> dict:
     return {
         "id": order.id,
@@ -1155,6 +1189,7 @@ def serialize_order_summary(
         "delivery_fee_status": order.delivery_fee_status,
         "final_total": None if order.delivery_fee_status == "pending_quote" else float(order.total or 0),
         "paid_amount": float(money(paid_amount)),
+        "financial_summary": financial_summary(order, paid_amount, refunded_amount),
         "item_count": len(active_order_items(order)),
         "version": order.version,
         "recent_modification": getattr(order, "_recent_modification", None),
@@ -4292,6 +4327,12 @@ def orders_workspace(
         )
         .group_by(Payment.order_id)
     ).all()) if order_ids else {}
+    refunded_amounts = dict(db.execute(select(CashMovement.order_id, func.sum(CashMovement.amount)).join(
+        CashSession, CashSession.id == CashMovement.cash_session_id,
+    ).where(
+        CashMovement.order_id.in_(order_ids), CashMovement.movement_type == "refund",
+        CashSession.business_id == branch.business_id, CashSession.branch_id == branch.id,
+    ).group_by(CashMovement.order_id)).all()) if order_ids else {}
     attach_recent_agent_order_changes(db, orders)
     return {
         "day": local_day.isoformat(),
@@ -4304,6 +4345,7 @@ def orders_workspace(
                     order.status == "pending_confirmation" or order.id in evidence_order_ids
                 ),
                 paid_amount=paid_amounts.get(order.id, Decimal("0")),
+                refunded_amount=refunded_amounts.get(order.id, Decimal("0")),
             )
             for order in orders
         ],
@@ -4431,6 +4473,7 @@ def get_order_detail(
     ) if order.status == "cancelled" else None
     cancellation_reason = (cancellation.payload or {}).get("reason") if cancellation else None
     cancellation_reason = (cancellation_reason.strip() or None) if isinstance(cancellation_reason, str) else None
+    refunds = order_refunds(db, order)
     return {
         "order": serialize_order(order),
         "table_context": table_context,
@@ -4443,6 +4486,8 @@ def get_order_detail(
             "paid": float(paid_total),
             "remaining": float(max(money(order.total) - paid_total, Decimal("0"))),
         },
+        "refunds": refunds,
+        "financial_summary": financial_summary(order, paid_total, sum((cash_money(refund["amount"]) for refund in refunds), Decimal("0"))),
         "payment_evidence": [serialize_payment_evidence(item) for item in evidence],
         "payment_requests": [serialize_request(item) for item in requests_for_order(db, order)],
         "tickets": [serialize_ticket(ticket, order=order) for ticket in tickets],
@@ -4745,6 +4790,115 @@ async def transition_order_endpoint(
     db.commit()
     result = serialize_order(load_order(db, order.id))
     await hub.broadcast(order.branch_id, "order.updated", result)
+    return result
+
+
+@api.get("/orders/{order_id}/cancellation-preview", tags=["orders"])
+def preview_order_cancellation(
+    order_id: int,
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier", "waiter", "dispatcher")),
+    db: Session = Depends(get_db),
+):
+    order = scoped_order_for_user(db, user, order_id)
+    collected = db.scalar(select(func.coalesce(func.sum(Payment.amount), 0)).where(
+        Payment.order_id == order.id, Payment.business_id == order.business_id, Payment.status == "confirmed",
+    ))
+    refunds = order_refunds(db, order)
+    summary = financial_summary(order, collected, sum((cash_money(item["amount"]) for item in refunds), Decimal("0")))
+    can_refund = user.role in {"superadmin", "owner", "manager", "cashier"}
+    allowed = "cancelled" in ORDER_TRANSITIONS.get(order.status, set())
+    reason = None if allowed else "Este pedido ya no admite cancelación."
+    evidence = db.scalar(select(PaymentEvidence.id).where(
+        PaymentEvidence.order_id == order.id, PaymentEvidence.business_id == order.business_id,
+        PaymentEvidence.status.in_(ORDER_REVIEW_EVIDENCE_STATUSES),
+    ).limit(1))
+    if evidence is not None:
+        allowed, reason = False, "Resuelve la revisión del comprobante antes de cancelar el pedido."
+    if summary["refundable"] > 0 and not can_refund:
+        allowed, reason = False, "Un cajero o encargado debe registrar la cancelación y el reembolso."
+    rows = db.execute(select(CashRegister, CashSession).outerjoin(CashSession, and_(
+        CashSession.register_id == CashRegister.id, CashSession.status == "open",
+    )).where(
+        CashRegister.business_id == order.business_id, CashRegister.branch_id == order.branch_id,
+        CashRegister.active.is_(True), CashRegister.archived_at.is_(None),
+    ).order_by(CashRegister.id)).all() if can_refund else []
+    return {"order_id": order.id, "branch_id": order.branch_id, "order_version": order.version,
+        "can_cancel": allowed, "reason": reason, "can_refund": can_refund,
+        "refundable_amount": summary["refundable"], "financial_summary": summary,
+        "refund_methods": list(REFUND_METHODS), "registers": [{"id": register.id, "name": register.name,
+            "version": register.version, "session_id": session.id if session else None,
+            "session_version": session.version if session else 0} for register, session in rows]}
+
+
+@api.post("/orders/{order_id}/cancel", tags=["orders"])
+async def cancel_order_and_refund(
+    order_id: int,
+    payload: OrderCancel,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier", "waiter", "dispatcher")),
+    db: Session = Depends(get_db),
+):
+    if not idempotency_key or not idempotency_key.strip():
+        raise HTTPException(status_code=422, detail="Idempotency-Key is required")
+    order = scoped_order_for_user(db, user, order_id, for_update=True)
+    scope, digest = f"order-cancel-refund:{order.id}", cash_request_digest(payload)
+    if (existing := replay_cash_request(db, scope, idempotency_key, order.business_id, digest)) is not None:
+        return existing
+    assert_version(order.version, payload.expected_version)
+    if "cancelled" not in ORDER_TRANSITIONS.get(order.status, set()):
+        raise CodedHTTPException(409, "Order can no longer be cancelled", "ORDER_CANCELLATION_UNAVAILABLE")
+    ensure_no_open_payment_evidence(db, order, "cancelling the order")
+    collected = cash_money(db.scalar(select(func.coalesce(func.sum(Payment.amount), 0)).where(
+        Payment.order_id == order.id, Payment.business_id == order.business_id, Payment.status == "confirmed",
+    )))
+    prior_refunded = cash_money(sum((cash_money(row["amount"]) for row in order_refunds(db, order)), Decimal("0")))
+    refundable = max(collected - prior_refunded, Decimal("0"))
+    refund_total = sum((cash_money(row.amount) for row in payload.refunds), Decimal("0"))
+    if refund_total != refundable:
+        raise CodedHTTPException(422, "Refunds must equal the net amount actually collected", "ORDER_REFUND_AMOUNT_MISMATCH")
+    session, register = None, None
+    if refundable > 0:
+        if user.role not in {"superadmin", "owner", "manager", "cashier"}:
+            raise CodedHTTPException(403, "This role cannot record refunds", "ORDER_REFUND_FORBIDDEN")
+        if not payload.refund_confirmed:
+            raise CodedHTTPException(422, "Confirm that the refund was actually made", "ORDER_REFUND_CONFIRMATION_REQUIRED")
+        if payload.register_id is None or payload.expected_cash_version is None or "expected_session_id" not in payload.model_fields_set:
+            raise CodedHTTPException(422, "Select an active register and its confirmed cash period", "ORDER_REFUND_CASH_PERIOD_REQUIRED")
+        register = lock_cash_register(db, business_id=order.business_id, branch_id=order.branch_id, register_id=payload.register_id)
+        session = db.scalar(select(CashSession).where(
+            CashSession.register_id == register.id, CashSession.status == "open",
+        ).with_for_update().execution_options(populate_existing=True))
+        assert_cash_period(session, payload.expected_session_id, provided=True)
+        if payload.expected_cash_version != (session.version if session else 0):
+            raise CodedHTTPException(409, "Cash period changed on another terminal", "CASH_CUT_STALE")
+        if session is None:
+            session, _ = open_or_get_cash_session(db, register, actor_id=user.user_id)
+    elif payload.refunds or payload.refund_confirmed:
+        raise CodedHTTPException(422, "This order has no collected amount to refund", "ORDER_REFUND_NOT_APPLICABLE")
+
+    # Keep the established kitchen, inventory, occupied-table and print cleanup.
+    # This endpoint adds only an atomic ledger entry, never changes old payments.
+    transition_order(db, user, order, "cancelled", reason=payload.reason)
+    display_name = actor_display_name(db, user, business_id=order.business_id, branch_id=order.branch_id)
+    if session is not None:
+        for item in sorted(payload.refunds, key=lambda row: row.method):
+            movement = CashMovement(cash_session_id=session.id, order_id=order.id,
+                movement_type="refund", payment_method=item.method, amount=cash_money(item.amount),
+                reference_type="order", reference_id=str(order.id), note=payload.reason, created_by=user.user_id)
+            db.add(movement)
+            db.flush()
+            audit(db, user, "cash.refund_created", "cash_movement", movement.id, order.business_id,
+                cash_audit_snapshot(movement, session, register), branch_id=order.branch_id, actor_display_name=display_name)
+        session.version += 1
+    create_integration_event(db, order, "order.cancelled", {"status": order.status})
+    db.flush()
+    refunds = order_refunds(db, order)
+    result = {"order": serialize_order(order), "refunds": refunds,
+        "financial_summary": financial_summary(order, collected, prior_refunded + refund_total),
+        "cash_period": {"register_id": register.id, "session_id": session.id, "version": session.version} if session else None}
+    save_cash_request(db, scope, idempotency_key, order.business_id, digest, result)
+    db.commit()
+    await hub.broadcast(order.branch_id, "order.updated", result["order"])
     return result
 
 
@@ -5549,11 +5703,13 @@ def create_cash_cut(
     candidate = scoped_cash_register(db, user, register_id)
     branch_for_user(db, user, candidate.branch_id)
     scope = f"cash-cut:{candidate.id}"
-    existing = get_idempotent_response(
+    digest = cash_request_digest(payload)
+    existing = replay_cash_request(
         db,
         scope,
         idempotency_key,
         candidate.business_id,
+        digest,
     )
     if existing:
         return existing
@@ -5564,11 +5720,12 @@ def create_cash_cut(
         branch_id=candidate.branch_id,
         register_id=candidate.id,
     )
-    existing = get_idempotent_response(
+    existing = replay_cash_request(
         db,
         scope,
         idempotency_key,
         register.business_id,
+        digest,
     )
     if existing:
         return existing
@@ -5593,17 +5750,20 @@ def create_cash_cut(
         {
             "register_id": register.id,
             "result": session.result,
+            "reconciliation_status": result["reconciliation_status"],
+            "has_discrepancy": result["has_discrepancy"],
             "total_difference": float(session.total_difference or 0),
             "pending_order_count": len(session.pending_orders_snapshot or []),
             "pending_orders_ignored": session.pending_orders_ignored,
             "next_session_id": next_session.id,
         },
     )
-    save_idempotent_response(
+    save_cash_request(
         db,
         scope,
         idempotency_key,
         session.business_id,
+        digest,
         result,
     )
     db.commit()
@@ -5617,6 +5777,8 @@ def list_cash_cuts(
     date_to: date | None = None,
     register_id: int | None = None,
     result: str | None = None,
+    reconciliation_status: str | None = None,
+    has_discrepancy: bool | None = None,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=10, ge=1, le=100),
     user: AuthContext = Depends(get_current_user),
@@ -5625,6 +5787,8 @@ def list_cash_cuts(
     branch = branch_for_user(db, user, branch_id)
     if result is not None and result not in {"balanced", "surplus", "shortage"}:
         raise HTTPException(status_code=422, detail="Invalid cash cut result filter")
+    if reconciliation_status is not None and reconciliation_status not in {"balanced", "surplus", "shortage", "mixed"}:
+        raise HTTPException(status_code=422, detail="Invalid cash reconciliation status filter")
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=422, detail="date_from must not be after date_to")
     if register_id is not None:
@@ -5660,6 +5824,11 @@ def list_cash_cuts(
         statement = statement.where(CashSession.register_id == register_id)
     if result is not None:
         statement = statement.where(CashSession.result == result)
+    state_expression, discrepancy_expression = reconciliation_expressions()
+    if reconciliation_status is not None:
+        statement = statement.where(state_expression == reconciliation_status)
+    if has_discrepancy is not None:
+        statement = statement.where(discrepancy_expression if has_discrepancy else ~discrepancy_expression)
 
     total = int(
         db.scalar(
@@ -5717,6 +5886,8 @@ def list_register_movements(
     register_id: int,
     movement_id: int | None = Query(default=None, ge=1),
     branch_id: int | None = Query(default=None, ge=1),
+    session_id: int | None = Query(default=None, ge=1),
+    current_period: bool = False,
     movement_type: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
@@ -5729,6 +5900,18 @@ def list_register_movements(
     branch_for_user(db, user, register.branch_id)
     if branch_id is not None and register.branch_id != branch_id:
         raise CodedHTTPException(404, "Cash register not found for this branch", "CASH_REGISTER_NOT_FOUND")
+    if session_id is not None and current_period:
+        raise HTTPException(status_code=422, detail="Select a session or the current period, not both")
+    if current_period:
+        session_id = db.scalar(select(CashSession.id).where(
+            CashSession.register_id == register.id, CashSession.business_id == register.business_id,
+            CashSession.branch_id == register.branch_id, CashSession.status == "open",
+        ))
+    elif session_id is not None and not db.scalar(select(CashSession.id).where(
+        CashSession.id == session_id, CashSession.register_id == register.id,
+        CashSession.business_id == register.business_id, CashSession.branch_id == register.branch_id,
+    )):
+        raise CodedHTTPException(404, "Cash period not found", "CASH_SESSION_INVALID")
     allowed_types = {"income", "withdrawal", "expense", "refund"}
     if movement_type is not None and movement_type not in allowed_types:
         raise HTTPException(status_code=422, detail="Invalid cash movement type")
@@ -5746,6 +5929,10 @@ def list_register_movements(
         )
     )
     lima = ZoneInfo("America/Lima")
+    if session_id is not None:
+        statement = statement.where(CashSession.id == session_id)
+    elif current_period:
+        statement = statement.where(False)
     if movement_id is not None:
         statement = statement.where(CashMovement.id == movement_id)
     if movement_type:
@@ -5767,6 +5954,12 @@ def list_register_movements(
         )
         or 0
     )
+    filtered = statement.order_by(None).subquery()
+    aggregates = dict(db.execute(select(filtered.c.movement_type, func.coalesce(func.sum(filtered.c.amount), 0))
+        .group_by(filtered.c.movement_type)).all())
+    summary = {f"{kind}_amount": float(cash_money(aggregates.get(kind))) for kind in ("income", "withdrawal", "expense", "refund")}
+    summary["signed_amount"] = float(cash_money(cash_money(aggregates.get("income")) - sum(
+        (cash_money(aggregates.get(kind)) for kind in ("withdrawal", "expense", "refund")), Decimal("0"))))
     rows = db.execute(
         statement
         .order_by(CashMovement.created_at.desc(), CashMovement.id.desc())
@@ -5775,6 +5968,8 @@ def list_register_movements(
     ).all()
     return {
         "branch_id": register.branch_id,
+        "session_id": session_id,
+        "summary": summary,
         "register": {
             "id": register.id,
             "name": register.name,
@@ -5787,6 +5982,10 @@ def list_register_movements(
                 "register_id": register.id,
                 "movement_type": movement.movement_type,
                 "amount": float(movement.amount),
+                "signed_amount": float(movement_signed_amount(movement)),
+                "method": movement_method(movement),
+                "payment_method": movement_method(movement),
+                "order_id": movement.order_id,
                 "note": movement.note,
                 "created_by": actor_name_by_id(
                     db,
@@ -5824,11 +6023,13 @@ def create_register_movement(
     candidate = scoped_cash_register(db, user, register_id)
     branch_for_user(db, user, candidate.branch_id)
     scope = f"cash-register-movement:{candidate.id}"
-    existing = get_idempotent_response(
+    digest = cash_request_digest(payload)
+    existing = replay_cash_request(
         db,
         scope,
         idempotency_key,
         candidate.business_id,
+        digest,
     )
     if existing:
         return existing
@@ -5839,14 +6040,19 @@ def create_register_movement(
         branch_id=candidate.branch_id,
         register_id=candidate.id,
     )
-    existing = get_idempotent_response(
+    existing = replay_cash_request(
         db,
         scope,
         idempotency_key,
         register.business_id,
+        digest,
     )
     if existing:
         return existing
+    current_session = db.scalar(select(CashSession).where(
+        CashSession.register_id == register.id, CashSession.status == "open",
+    ).with_for_update().execution_options(populate_existing=True))
+    assert_cash_period(current_session, payload.expected_session_id, provided="expected_session_id" in payload.model_fields_set)
     session, created = open_or_get_cash_session(
         db,
         register,
@@ -5876,6 +6082,10 @@ def create_register_movement(
         "register_id": register.id,
         "movement_type": movement.movement_type,
         "amount": float(movement.amount),
+        "signed_amount": float(movement_signed_amount(movement)),
+        "method": "cash",
+        "payment_method": "cash",
+        "order_id": None,
         "note": movement.note,
         "created_by": actor_display_name(
             db,
@@ -5897,11 +6107,12 @@ def create_register_movement(
         branch_id=session.branch_id,
         actor_display_name=result["created_by"],
     )
-    save_idempotent_response(
+    save_cash_request(
         db,
         scope,
         idempotency_key,
         session.business_id,
+        digest,
         result,
     )
     db.commit()
