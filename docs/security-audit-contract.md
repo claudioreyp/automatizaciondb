@@ -10,9 +10,16 @@ rewrite existing audit records.
   `branch_id` is the proven branch, including recovered legacy records; the
   stored legacy event remains unchanged.
 - Optional `category` accepts `order_cancellation`, `item_cancellation`,
-  `amount_reduction`, or `cash_withdrawal`. A mixed revision may belong to both
+  `amount_reduction`, `cash_withdrawal`, `cash_discrepancy`, or
+  `refund_method_change`. A mixed revision may belong to both
   product categories but remains one event. Existing `action` filtering remains
   compatible and intersects the category filter.
+- Optional `critical_only=true` selects only proven critical categories before
+  counting or pagination. The default remains the complete audit contract.
+  Ordinary creation, kitchen progress, printing, income, balanced cuts and
+  same-method refunds are excluded from this projection, while all audit rows
+  remain stored. An expense is an outflow in the withdrawal category. Opposite
+  cash/card differences remain a critical cut even when their net is zero.
 - `from` and `to` are inclusive calendar dates in America/Lima. Ordering is
   `created_at DESC, id DESC`. Semantic filtering and complete counting occur on
   the server by streaming scoped candidate actions before selecting the page;
@@ -22,7 +29,8 @@ rewrite existing audit records.
   `target`. Fields contain only `{label, value}`; missing values are null. The
   timestamp includes Lima's UTC offset. No raw payload is included in detail.
 - Targets are null or `{kind: "order", branch_id, label, order_id}` /
-  `{kind: "cash_movement", branch_id, label, register_id, movement_id}`. Order
+  `{kind: "cash_movement", branch_id, label, register_id, movement_id}` /
+  `{kind: "cash_cut", branch_id, label, register_id, cut_id}`. Order
   labels use the complete code and folio. IDs in the target are internal route
   identifiers, not replacements for the human-readable code.
 - List and detail enforce the existing audit permissions and tenant scope.
@@ -53,6 +61,18 @@ the security event's historical register name is a separate stored snapshot.
   actor, register name and note. The modern route keeps required idempotency;
   the legacy session route accepts an optional `Idempotency-Key`, preserving
   compatibility for callers without one.
+- New cut audits freeze the register name, closing amounts and differences by
+  method, with branch and actor. Legacy cuts use only their stored closed-period
+  columns; they are never recalculated from present payments. A missing event
+  actor can use the actor saved at the close. Missing historical names stay null.
+- New refund audits freeze the confirmed original payment methods and order
+  identity. A refund is separately critical only when its exact method was not
+  among those used to collect the order. Old refunds can use retained confirmed
+  payments received before the refund, joined to the same business and branch;
+  payload claims cannot establish that relationship.
+- Cut and manual movement endpoints emit their corresponding existing action
+  event after commit, with scoped IDs only. Replays do not emit again; no printing
+  or operational writes originate from a security history read.
 - Snapshots, operational writes and idempotency responses use the same existing
   transaction. No audit is committed for a failed operation.
 - Legacy null-branch records are recovered only via their canonical entity ID
@@ -75,3 +95,6 @@ snapshots, simultaneous cancellations/reductions, repeated writes, rollback,
 archived register reads and strict branch/movement deep-link filters.
 `tests/test_table_history.py` retains cancellation/payment invariants while
 allowing the newly expanded audit snapshot.
+`tests/test_security_critical_audit.py` covers filtering before pagination above
+200 critical records, zero-net opposing differences, immutable cut/refund
+snapshots, legacy closing evidence, actor/target scope and postcommit notifications.

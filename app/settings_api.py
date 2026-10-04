@@ -74,7 +74,7 @@ from .services import (
     save_idempotent_response,
 )
 from .security_audit import (
-    AuditCategory, CATEGORY_ACTIONS, LIMA, audit_branch_filter, audit_list_entry, project_audit,
+    AuditCategory, CATEGORY_ACTIONS, CRITICAL_ACTIONS, LIMA, audit_branch_filter, audit_list_entry, project_audit,
 )
 from .settings_service import (
     active_owner_count,
@@ -2128,6 +2128,7 @@ def get_settings_audit(
     branch_id: int | None = None,
     action: str | None = None,
     category: AuditCategory | None = None,
+    critical_only: bool = False,
     from_date: date | None = Query(default=None, alias="from"),
     to_date: date | None = Query(default=None, alias="to"),
     page: int = Query(default=1, ge=1),
@@ -2148,8 +2149,8 @@ def get_settings_audit(
         filters.append(
             AuditEvent.created_at < datetime.combine(to_date + timedelta(days=1), time.min, tzinfo=LIMA).astimezone(timezone.utc)
         )
-    if category:
-        filters.append(AuditEvent.action == CATEGORY_ACTIONS[category])
+    if category or critical_only:
+        filters.append(AuditEvent.action == CATEGORY_ACTIONS[category] if category else AuditEvent.action.in_(CRITICAL_ACTIONS))
         # Legacy JSON has no category flags. Stream the scoped candidates so
         # semantic counts are complete without loading an unbounded result list.
         candidates = db.scalars(select(AuditEvent).where(*filters).order_by(
@@ -2159,7 +2160,9 @@ def get_settings_audit(
         offset = (page - 1) * page_size
         for item in candidates:
             projection = project_audit(db, item)
-            if category not in projection["categories"]:
+            if category and category not in projection["categories"]:
+                continue
+            if critical_only and not projection["categories"]:
                 continue
             if offset <= total < offset + page_size:
                 items.append(audit_list_entry(item, projection))

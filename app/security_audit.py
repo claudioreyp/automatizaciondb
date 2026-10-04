@@ -10,18 +10,22 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.orm import Session
 
-from .models import AuditEvent, CashMovement, CashRegister, CashSession, KitchenTicket, Order, OrderItem
+from .models import AuditEvent, CashMovement, CashRegister, CashSession, KitchenTicket, Order, OrderItem, Payment
 
 
 AuditCategory = Literal[
-    "order_cancellation", "item_cancellation", "amount_reduction", "cash_withdrawal"
+    "order_cancellation", "item_cancellation", "amount_reduction", "cash_withdrawal",
+    "cash_discrepancy", "refund_method_change",
 ]
 CATEGORY_ACTIONS = {
     "order_cancellation": "order.cancelled",
     "item_cancellation": "order.items_revised",
     "amount_reduction": "order.items_revised",
     "cash_withdrawal": "cash.movement_created",
+    "cash_discrepancy": "cash.cut_created",
+    "refund_method_change": "cash.refund_created",
 }
+CRITICAL_ACTIONS = frozenset(CATEGORY_ACTIONS.values())
 LIMA = ZoneInfo("America/Lima")
 ACTION_SUMMARIES = {
     "order.created": "cre\u00f3 un pedido",
@@ -66,6 +70,10 @@ RESOURCE_LABELS = {
     "settings.services": "las opciones de servicio", "settings.times": "los tiempos de servicio",
     "settings.delivery": "los costos de env\u00edo", "settings.payment_methods": "los m\u00e9todos de pago",
 }
+PAYMENT_METHOD_LABELS = {
+    "cash": "Efectivo", "card": "Tarjeta", "yape": "Yape", "plin": "Plin",
+    "transfer": "Transferencia bancaria", "online": "Pago en l\u00ednea",
+}
 
 
 def _known_summary(action: str) -> str:
@@ -108,6 +116,25 @@ def cash_audit_snapshot(movement: CashMovement, session: CashSession, register: 
         "payment_method": movement.payment_method,
         "order_id": movement.order_id,
         "note": movement.note,
+    }
+
+
+def cash_cut_audit_snapshot(session: CashSession, register: CashRegister) -> dict:
+    """Freeze closed amounts; later security reads never recalculate a cut."""
+    return {
+        "snapshot_version": 1, "cut_id": session.id, "register_id": register.id,
+        "register_name": register.name, "opening_amount": str(session.opening_amount),
+        "retained_fund_amount": str(session.retained_fund_amount),
+        "cash_withdrawn_amount": str(session.cash_withdrawn_amount),
+        "methods": [
+            {"key": key, "counted": str(counted) if counted is not None else None,
+             "expected": str(expected), "difference": str(difference) if difference is not None else None}
+            for key, counted, expected, difference in (
+                ("cash", session.declared_amount, session.expected_amount, session.difference),
+                ("card", session.card_declared_amount, session.card_expected_amount, session.card_difference),
+                ("transfer", None, session.transfer_expected_amount, None),
+            )
+        ],
     }
 
 
@@ -241,6 +268,53 @@ def _cash(db: Session, event: AuditEvent) -> tuple[CashSession | None, CashMovem
     return (row[0], row[1]) if row else (None, None)
 
 
+def _closed_cut(payload: dict, session: CashSession | None) -> dict:
+    if payload.get("snapshot_version"):
+        return payload
+    if session is None or session.status != "closed":
+        return {}
+    # Only persisted closing columns prove past amounts. Do not sum current
+    # payments or use total_difference, which may hide opposite differences.
+    return {**payload, "cut_id": session.id, "opening_amount": str(session.opening_amount),
+        "retained_fund_amount": str(session.retained_fund_amount),
+        "cash_withdrawn_amount": str(session.cash_withdrawn_amount),
+        "methods": [
+            {"key": key, "counted": str(counted) if counted is not None else None,
+             "expected": str(expected), "difference": str(difference) if difference is not None else None}
+            for key, counted, expected, difference in (
+                ("cash", session.declared_amount, session.expected_amount, session.difference),
+                ("card", session.card_declared_amount, session.card_expected_amount, session.card_difference),
+                ("transfer", None, session.transfer_expected_amount, None),
+            )
+        ],
+    }
+
+
+def _refund_original_methods(db: Session, payload: dict, movement: CashMovement | None,
+                             session: CashSession | None) -> list[str]:
+    saved = payload.get("original_payment_methods")
+    if isinstance(saved, list):
+        return sorted({method for method in saved if isinstance(method, str) and method in PAYMENT_METHOD_LABELS})
+    if movement is None or session is None or movement.order_id is None:
+        return []
+    # Old refunds retained their payment rows. Their order relationship, not
+    # arbitrary payload IDs, establishes scope and the historical payment set.
+    return sorted(set(db.scalars(select(Payment.method).join(Order, Order.id == Payment.order_id).where(
+        Payment.order_id == movement.order_id, Payment.status == "confirmed",
+        Payment.business_id == session.business_id, Order.business_id == session.business_id,
+        Order.branch_id == session.branch_id, Payment.received_at <= movement.created_at,
+    ))))
+
+
+def _cash_register(db: Session, event: AuditEvent, session: CashSession | None) -> CashRegister | None:
+    if session is None:
+        return None
+    return db.scalar(select(CashRegister).where(
+        CashRegister.id == session.register_id, CashRegister.business_id == event.business_id,
+        CashRegister.branch_id == session.branch_id,
+    ))
+
+
 def _operations(db: Session, payload: dict, order: Order | None) -> list[dict]:
     operations = payload.get("operations")
     if not isinstance(operations, list):
@@ -299,7 +373,9 @@ def project_audit(db: Session, event: AuditEvent) -> dict:
         branch_id = order.branch_id if order is not None else (session.branch_id if session else None)
     categories, sections, fields = [], [], []
     target = None
-    actor = _text(event.actor_display_name) or "Usuario no registrado"
+    actor = _text(event.actor_display_name) or (
+        _text(session.actor_display_name) if event.action == "cash.cut_created" and session and session.status == "closed" else None
+    ) or "Usuario no registrado"
     summary = _known_summary(event.action)
     identity = _dict(payload.get("order"))
     if not payload.get("snapshot_version") and order is not None:
@@ -346,13 +422,40 @@ def project_audit(db: Session, event: AuditEvent) -> dict:
             else:
                 rows += [_field("Producto posterior", _text(after.get("product_name"))), _field("Tama\u00f1o posterior", _text(after.get("variant_name"))), _field("Cantidad anterior", _numeric(before.get("quantity"))), _field("Cantidad posterior", _numeric(after.get("quantity"))), _field("Precio anterior", _amount(before.get("unit_price"))), _field("Precio posterior", _amount(after.get("unit_price"))), _field("Importe anterior", _amount(before.get("net_total"))), _field("Importe posterior", _amount(after.get("net_total")))]
             sections.append({"title": "Producto cancelado" if op["type"] == "cancel" else "Producto modificado", "fields": rows})
+    elif event.action == "cash.cut_created":
+        cut = _closed_cut(payload, session)
+        methods = [_dict(method) for method in cut.get("methods", [])] if isinstance(cut.get("methods"), list) else []
+        if any(_text(method.get("key")) in {"cash", "card"} and _number(method.get("counted")) is not None
+               and _number(method.get("difference")) not in {None, Decimal(0)} for method in methods):
+            categories.append("cash_discrepancy")
+            summary = "realiz\u00f3 un corte de caja con diferencias"
+        cut_id = session.id if session and session.status == "closed" else _id(cut.get("cut_id"))
+        fields = [
+            _field("ID del corte", f"#{cut_id}" if cut_id else None),
+            _field("Caja", _text(cut.get("register_name"))),
+            _field("Fondo anterior", _amount(cut.get("opening_amount"))),
+            _field("Fondo conservado", _amount(cut.get("retained_fund_amount"))),
+            _field("Efectivo retirado al cierre", _amount(cut.get("cash_withdrawn_amount"))),
+        ]
+        for method in methods:
+            label = {"cash": "Efectivo", "card": "Tarjeta", "transfer": "Transferencias"}.get(_text(method.get("key")))
+            if label:
+                sections.append({"title": label, "fields": [
+                    _field("Contado", _amount(method.get("counted"))),
+                    _field("Monto esperado", _amount(method.get("expected"))),
+                    _field("Diferencia", _amount(method.get("difference"))),
+                ]})
+        if session and session.status == "closed" and _cash_register(db, event, session):
+            target = {"kind": "cash_cut", "branch_id": session.branch_id, "register_id": session.register_id,
+                      "cut_id": session.id, "label": f"Corte #{session.id}"}
     elif event.action in {"cash.movement_created", "cash.refund_created"}:
         cash = payload
         if not payload.get("snapshot_version") and movement is not None:
-            cash = {"movement_type": movement.movement_type, "amount": str(movement.amount), "note": movement.note, **payload}
-        if cash.get("movement_type") == "withdrawal":
+            cash = {"movement_type": movement.movement_type, "amount": str(movement.amount),
+                    "payment_method": movement.payment_method, "note": movement.note, **payload}
+        if cash.get("movement_type") in {"withdrawal", "expense"}:
             categories.append("cash_withdrawal")
-            summary = "realiz\u00f3 un retiro de efectivo"
+            summary = "registr\u00f3 un gasto de caja" if cash.get("movement_type") == "expense" else "realiz\u00f3 un retiro de efectivo"
         elif cash.get("movement_type") == "refund":
             summary = "registr\u00f3 un reembolso"
         else:
@@ -365,11 +468,15 @@ def project_audit(db: Session, event: AuditEvent) -> dict:
             _field("M\u00e9todo", _text(cash.get("payment_method"))),
             _field("Nota", _text(cash.get("note"))),
         ]
+        if cash.get("movement_type") == "refund":
+            original_methods = _refund_original_methods(db, payload, movement, session)
+            refund_method = _text(cash.get("payment_method"))
+            if original_methods and refund_method in PAYMENT_METHOD_LABELS and refund_method not in original_methods:
+                categories.append("refund_method_change")
+                summary = "registr\u00f3 un reembolso con un m\u00e9todo distinto del cobro"
+                fields.append(_field("M\u00e9todos del cobro original", ", ".join(PAYMENT_METHOD_LABELS.get(method, method) for method in original_methods)))
         if movement is not None and session is not None:
-            register = db.scalar(select(CashRegister).where(
-                CashRegister.id == session.register_id, CashRegister.business_id == event.business_id,
-                CashRegister.branch_id == session.branch_id,
-            ))
+            register = _cash_register(db, event, session)
             if register:
                 target = {"kind": "cash_movement", "branch_id": session.branch_id, "label": f"Movimiento #{movement.id}", "register_id": register.id, "movement_id": movement.id}
     else:
@@ -388,7 +495,7 @@ def project_audit(db: Session, event: AuditEvent) -> dict:
 def audit_list_entry(event: AuditEvent, projection: dict) -> dict:
     return {
         "id": event.id, "business_id": event.business_id, "branch_id": projection["branch_id"],
-        "actor_id": event.actor_id, "actor_display_name": event.actor_display_name,
+        "actor_id": event.actor_id, "actor_display_name": projection["actor_name"] if event.action == "cash.cut_created" else event.actor_display_name,
         "action": event.action, "entity_type": event.entity_type, "entity_id": event.entity_id,
         "payload": event.payload, "created_at": event.created_at,
         "summary": projection["summary"], "categories": projection["categories"],

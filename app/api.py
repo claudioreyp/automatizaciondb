@@ -12,7 +12,7 @@ from typing import Annotated, Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -180,7 +180,7 @@ from .schemas import (
     KitchenCommandAction,
     TicketTransition,
 )
-from .security_audit import cash_audit_snapshot
+from .security_audit import cash_audit_snapshot, cash_cut_audit_snapshot, order_identity_snapshot
 from .services import (
     ORDER_TRANSITIONS,
     active_order_items,
@@ -4881,6 +4881,10 @@ async def cancel_order_and_refund(
     transition_order(db, user, order, "cancelled", reason=payload.reason)
     display_name = actor_display_name(db, user, business_id=order.business_id, branch_id=order.branch_id)
     if session is not None:
+        original_methods = sorted(set(db.scalars(select(Payment.method).join(Order, Order.id == Payment.order_id).where(
+            Payment.order_id == order.id, Payment.business_id == order.business_id,
+            Payment.status == "confirmed", Order.business_id == order.business_id, Order.branch_id == order.branch_id,
+        ))))
         for item in sorted(payload.refunds, key=lambda row: row.method):
             movement = CashMovement(cash_session_id=session.id, order_id=order.id,
                 movement_type="refund", payment_method=item.method, amount=cash_money(item.amount),
@@ -4888,7 +4892,8 @@ async def cancel_order_and_refund(
             db.add(movement)
             db.flush()
             audit(db, user, "cash.refund_created", "cash_movement", movement.id, order.business_id,
-                cash_audit_snapshot(movement, session, register), branch_id=order.branch_id, actor_display_name=display_name)
+                {**cash_audit_snapshot(movement, session, register), "order": order_identity_snapshot(order),
+                 "original_payment_methods": original_methods}, branch_id=order.branch_id, actor_display_name=display_name)
         session.version += 1
     create_integration_event(db, order, "order.cancelled", {"status": order.status})
     db.flush()
@@ -5554,6 +5559,7 @@ def create_cash_movement(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "cashier")),
     db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
 ):
     candidate = db.get(CashSession, session_id)
     if not candidate:
@@ -5602,6 +5608,9 @@ def create_cash_movement(
     result = {"id": movement.id, "expected_amount": float(cash_session_expected(db, session))}
     save_idempotent_response(db, scope, idempotency_key, session.business_id, result)
     db.commit()
+    if background_tasks is not None:
+        background_tasks.add_task(hub.broadcast, session.branch_id, "cash.movement_created",
+                                  {"register_id": register.id, "movement_id": movement.id})
     return result
 
 
@@ -5697,6 +5706,7 @@ def create_cash_cut(
         require_roles("superadmin", "owner", "manager", "cashier")
     ),
     db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
 ):
     if not idempotency_key:
         raise HTTPException(status_code=422, detail="Idempotency-Key is required")
@@ -5748,6 +5758,7 @@ def create_cash_cut(
         session.id,
         session.business_id,
         {
+            **cash_cut_audit_snapshot(session, register),
             "register_id": register.id,
             "result": session.result,
             "reconciliation_status": result["reconciliation_status"],
@@ -5757,6 +5768,8 @@ def create_cash_cut(
             "pending_orders_ignored": session.pending_orders_ignored,
             "next_session_id": next_session.id,
         },
+        branch_id=session.branch_id,
+        actor_display_name=session.actor_display_name,
     )
     save_cash_request(
         db,
@@ -5767,6 +5780,9 @@ def create_cash_cut(
         result,
     )
     db.commit()
+    if background_tasks is not None:
+        background_tasks.add_task(hub.broadcast, session.branch_id, "cash.cut_created",
+                                  {"register_id": register.id, "cut_id": session.id})
     return result
 
 
@@ -6017,6 +6033,7 @@ def create_register_movement(
         require_roles("superadmin", "owner", "manager", "cashier")
     ),
     db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = None,
 ):
     if not idempotency_key:
         raise HTTPException(status_code=422, detail="Idempotency-Key is required")
@@ -6116,6 +6133,9 @@ def create_register_movement(
         result,
     )
     db.commit()
+    if background_tasks is not None:
+        background_tasks.add_task(hub.broadcast, session.branch_id, "cash.movement_created",
+                                  {"register_id": register.id, "movement_id": movement.id})
     return result
 
 
