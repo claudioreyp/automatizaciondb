@@ -1,4 +1,4 @@
-# Caja: verificación y activación preparada
+# Caja: verificación y activación completada
 
 Fecha: 2026-10-04. Alcance: CLIENTES y Caja/cancelación en Apis.
 
@@ -120,16 +120,56 @@ existentes. El downgrade conserva el libro de devoluciones deliberadamente.
 ## Activación autorizada
 
 El usuario autorizó específicamente la migración 0026 y la publicación de
-API/CLIENTES el 2026-10-04, después de la verificación. La activación está en curso.
+API/CLIENTES el 2026-10-04, después de la verificación. La activación se completó.
 No se modificaron Admins, n8n, gateway, credenciales ni registros operativos.
 
-Con autorización:
+### Resultado operativo
+
+- Respaldo integral fresco: `Apis/backups/cash-release-20261004T222258122514Z/`,
+  con configuración y medios privados. Snapshot inmediatamente previo y evidencia
+  de activación: `Apis/backups/cash-activation-20261004T222720443204Z/`.
+  Ambos permanecen excluidos de Git.
+- Se ensayó la transacción exacta en tres bases PostgreSQL descartables: versión
+  incorrecta rechazada antes de DDL; huella obsoleta rechazada y rollback completo;
+  transacción válida con conservación de todas las filas y valores.
+- La conexión administrativa de migración previamente configurada estaba caducada.
+  Se aplicó el SQL de la migración Alembic ensayada desde SQL Editor de Supabase,
+  usando la sesión administrativa existente, sin emitir ni cambiar credenciales.
+  La transacción bloqueó escrituras durante la comprobación y DDL, con límites
+  de 10 segundos de bloqueo y 30 segundos por sentencia. Huellas y conteos de las
+  52 tablas de negocio coincidieron antes y después; ninguna quedó modificada.
+- Revisión única **20261004_0026** comprobada por el runtime limitado.
+  Verificación posterior independiente: **52 tablas coincidentes**, **3840 filas**
+  originales, columna nullable sin default, FK RESTRICT validada y los dos índices.
+  RLS sigue activa; `anon/authenticated` no tienen privilegios sobre la tabla.
+  El rol limitado conserva DML, sin superusuario, DDL administrativo o BYPASSRLS.
+- API **c24f77366131a7e2985abf19f2cbe3974e5342c9**, Render
+  `dep-db1daqlg1s2s739lbb10`: **Live**, salud HTTP 200, rutas nuevas presentes.
+  Auto-deploy permanece desactivado y las variables existentes se conservaron.
+- CLIENTES **bc389b07bfd0ee009e98ce8c973103c0f85921e2**, Vercel
+  `2DuavsFNfwLLAZ3c9RkZFJTFdST5`: **Ready / Production / Current**,
+  publicado después de la API en `https://pos.escalarai.tech`.
+- Lecturas sin sesión de cut-preview y cancellation-preview devuelven **401**;
+  CORS conserva el origen exacto del POS. En la sesión existente de Pizza House,
+  Caja y su preview cargan: efectivo vacío requerido, tarjeta sin actividad en
+  cero deshabilitada, resumen Pendiente. Se cerró el formulario sin guardar.
+- El corte histórico #7 carga cobros en efectivo 192.50, fondo anterior 100,
+  retiro **−3**, esperado **289.50** y conteo conservado 222.50. La diferencia
+  **−67** y el retiro al cierre 122.50 coinciden con el histórico. Evidencia visual
+  privada en el directorio de activación; no se imprimió ni escribió otro corte.
+- El pedido pagado #111 conserva cobro Yape 30 y saldo cero. Su preview de
+  cancelación muestra devolución pendiente de **30**, caja activa, métodos
+  individuales y múltiples, motivo y confirmación humana requerida. Confirmar
+  permanece deshabilitado con datos pendientes. Se volvió al pedido sin cancelar;
+  no se registró ninguna devolución ni se cambió el pago o la cocina.
+
+Procedimiento de activación y recuperación:
 
 1. Coordinar una ventana sin cobros, cortes, cancelaciones ni movimientos en curso.
 2. Repetir `python -m scripts.prepare_cash_release` para obtener un respaldo fresco
    y comprobar la versión operativa 0025; no reutilizar a ciegas un respaldo viejo.
-3. Aplicar 0026 en una transacción autorizada, con timeout de bloqueo, usando la
-   credencial administrativa temporal. El runtime limitado conserva sus permisos,
+3. Aplicar el SQL de Alembic 0026 en una transacción autorizada, con timeout de
+   bloqueo, usando el acceso administrativo autorizado. El runtime limitado conserva sus permisos,
    RLS y credenciales; no requiere acceso directo del navegador a tablas.
 4. Comprobar todas las columnas/filas originales contra ese respaldo, los índices,
    FK, versión y referencias nuevas NULL. Si falla antes del commit, hacer rollback.
