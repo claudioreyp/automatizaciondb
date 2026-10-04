@@ -1,7 +1,9 @@
 # Historial de seguridad: correccion de acciones criticas
 
 Fecha: 2026-10-04. Alcance: API y CLIENTES. Estado: implementado y verificado;
-publicacion pendiente de autorizacion expresa. No requiere migracion.
+publicacion expresamente autorizada por el usuario el 2026-10-04. API y CLIENTES
+publicados y verificados mediante lecturas publicas y autenticadas de Pizza House.
+No requiere migracion.
 
 ## Diagnostico y evidencia de solo lectura
 
@@ -81,8 +83,56 @@ despues CLIENTES. Mantener auto-deploy de Render desactivado y las configuracion
 operativas existentes. Verificacion publicada de solo lectura; no crear cortes,
 retiros, pedidos o impresiones reales para probar Seguridad.
 
+Commits publicados en sus ramas remotas: API
+`0d07e8b696e3f557c09c1aec3cddf24dca6a373c` y CLIENTES
+`06b2b8052083f2b2c95e4775bffdd400d1f30e2d`. Render confirma Live en
+`dep-db1e60c9v7es73f58v7g`, iniciado a las 18:36:34 America/Lima y listo a las
+18:37:39. Auto-deploy sigue apagado; no se cambiaron comandos, variables,
+instancias, credenciales ni la revision Alembic 0026.
+
+Lecturas publicas despues del despliegue: salud HTTP 200, auditoria/listado,
+detalle 1558 y corte 7 sin sesion HTTP 401. OpenAPI ya expone `critical_only`
+booleano con valor predeterminado false y las seis categorias criticas.
+
+GitHub y Vercel confirman la construccion CLIENTES completada para el SHA exacto,
+despliegue `Cfc4pkebdrjPHeG8f6N4vAYNPjzr`, Ready, entorno Production y dominio
+actual `pos.escalarai.tech`, iniciado a las 18:42:09 America/Lima (22 segundos).
+No hizo falta otra promocion ni modificar proyecto, dominio o configuracion.
+
+El archivo principal `index-CStR-LtM.js` conserva su hash; esta correccion vive
+en los chunks de carga diferida. La comprobacion inicial solo del principal no
+era suficiente para identificar la version. El GET del dominio de
+`SettingsWorkspace-DZ3EeyMw.js` confirma HTTP 200 y contiene `critical_only`,
+las categorias nuevas, el enlace `cash_cut` y Actualizar historial. Vercel
+identifica tambien `Operations-BS-XXwjA.js` y `settings-Bc-5ZTB8.js` en su build.
+Una revision publica independiente confirma que el archivo principal referencia
+los tres chunks del build; no son archivos nuevos sin uso por la aplicacion.
+
+Lectura autenticada completada con la cuenta del propietario de Pizza House:
+
+- Seguridad muestra 30 acciones criticas, 10 por pagina, y los seis filtros.
+  La primera es el corte con diferencias del 4 de octubre a las 00:19 Lima;
+  se observan tambien cancelaciones/reducciones y el retiro del 3 de octubre
+  a las 19:17. Las operaciones ordinarias no compiten en esta primera pagina.
+- Actualizar historial completa sin error y conserva el listado confirmado.
+- El evento 1558 abre `/caja?register_id=2&cut_id=7`: corte #7 en Caja principal,
+  efectivo contado 222.50, esperado 289.50 y diferencia -67.00; tarjeta 0/0,
+  transferencias esperadas 543.00. No se cambia ningun valor guardado.
+- Cerrar el detalle y Regresar al historial recupera pagina 1 y el foco del
+  evento 1558. No se pulsaron impresion ni controles de escritura.
+- Evidencia privada de la publicacion y de la lectura real en
+  `Apis/backups/security-release-proof-20261004/`.
+
+La primera sesion abierta era de superadministrador sin negocio elegido y la
+API rechazo ese contexto, una guardia anterior a Seguridad. Se cerro solo esa
+sesion del navegador integrado y el usuario inicio alli la cuenta del propietario.
+El acceso correcto confirma Pizza House; no se eligio un negocio supuesto,
+no se ampliaron permisos ni se modifico Auth. La sesion independiente de Edge
+no se altero; su conexion de control agotaba el tiempo de espera.
+
 Recuperacion compatible: volver a los commits previos de API/CLIENTES si falla
 la activacion. Las instantaneas aditivas de auditoria son compatibles con el codigo
-anterior y no requieren revertir filas o migraciones. La lectura en navegador
-publicado queda pendiente; la conexion de control del navegador no respondio
-durante esta verificacion local.
+anterior y no requieren revertir filas o migraciones. El usuario inicio sesion
+en Render/Vercel y el navegador integrado permitio verificar la publicacion;
+no se extrajeron credenciales del navegador. No se ejecutaron migraciones,
+operaciones financieras, pedidos ni impresiones reales durante esta activacion.
