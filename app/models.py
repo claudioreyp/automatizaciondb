@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -857,11 +858,113 @@ class IntegrationCredential(Base, TimestampMixin):
     token_prefix: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     scopes: Mapped[list] = mapped_column(JSON, default=list)
+    profile: Mapped[str] = mapped_column(String(30), default="generic", server_default="generic", nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[str | None] = mapped_column(String(120))
+
+
+class AgentConversation(Base, TimestampMixin):
+    __tablename__ = "agent_conversations"
+    __table_args__ = (UniqueConstraint("business_id", "branch_id", "channel", "sender", name="uq_agent_conversation_scope"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"), index=True)
+    channel: Mapped[str] = mapped_column(String(30), default="whatsapp")
+    sender: Mapped[str] = mapped_column(String(120))
+    state: Mapped[dict] = mapped_column(JSON, default=dict)
+    pending: Mapped[list] = mapped_column(JSON, default=list)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    lease_hash: Mapped[str | None] = mapped_column(String(64))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    current_message_id: Mapped[str | None] = mapped_column(String(240))
+
+
+class AgentModelUsage(Base, TimestampMixin):
+    """Server-owned model dispatch reservation; never stores prompt or credentials."""
+    __tablename__ = "agent_model_usage"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "message_id", "call_id", name="uq_agent_usage_call"),
+        UniqueConstraint("conversation_id", "reserve_key", name="uq_agent_usage_reserve_key"),
+        UniqueConstraint("conversation_id", "settle_key", name="uq_agent_usage_settle_key"),
+        Index("ix_agent_usage_business_window", "business_id", "window_start"),
+        Index("ix_agent_usage_sender_window", "business_id", "sender_hash", "window_start"),
+        Index("ix_agent_usage_conversation_window", "conversation_id", "window_start"),
+        CheckConstraint("reserved_tokens > 0 AND charged_tokens >= 0", name="ck_agent_usage_tokens"),
+        CheckConstraint("status IN ('reserved','settled','uncertain','denied')", name="ck_agent_usage_status"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"))
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"))
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("agent_conversations.id"))
+    message_id: Mapped[str] = mapped_column(String(240))
+    call_id: Mapped[str] = mapped_column(String(100))
+    sender_hash: Mapped[str | None] = mapped_column(String(64))
+    request_fingerprint: Mapped[str] = mapped_column(String(64))
+    reserve_fingerprint: Mapped[str] = mapped_column(String(64))
+    reserve_key: Mapped[str] = mapped_column(String(240))
+    model_id: Mapped[str] = mapped_column(String(120))
+    role: Mapped[str] = mapped_column(String(20))
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    reserved_tokens: Mapped[int] = mapped_column(BigInteger)
+    charged_tokens: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(20))
+    denial_reason: Mapped[str | None] = mapped_column(String(50))
+    attention_recorded: Mapped[bool] = mapped_column(Boolean, default=False)
+    usage_known: Mapped[bool | None] = mapped_column(Boolean)
+    input_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    output_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    cache_creation_input_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    cache_read_input_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    settle_key: Mapped[str | None] = mapped_column(String(240))
+    settlement_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AgentMessageDelivery(Base, TimestampMixin):
+    __tablename__ = "agent_message_deliveries"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", "message_id", name="uq_agent_delivery_input"),
+        Index("ix_agent_delivery_pending", "branch_id", "status", "created_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"), index=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("agent_conversations.id"))
+    message_id: Mapped[str] = mapped_column(String(240))
+    sender: Mapped[str] = mapped_column(String(120))
+    response: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    claim_hash: Mapped[str | None] = mapped_column(String(64))
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    receipt: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class AgentAttentionRequest(Base, TimestampMixin):
+    __tablename__ = "agent_attention_requests"
+    __table_args__ = (
+        UniqueConstraint("business_id", "branch_id", "source_key", name="uq_agent_attention_source"),
+        Index("ix_agent_attention_branch_status", "branch_id", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    business_id: Mapped[int] = mapped_column(ForeignKey("businesses.id"), index=True)
+    branch_id: Mapped[int] = mapped_column(ForeignKey("branches.id"), index=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), index=True)
+    sender: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(50))
+    summary: Mapped[str] = mapped_column(String(2000))
+    source_key: Mapped[str] = mapped_column(String(240))
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by: Mapped[str | None] = mapped_column(String(120))
+    resolution_note: Mapped[str | None] = mapped_column(String(2000))
 
 
 class IntegrationEvent(Base):

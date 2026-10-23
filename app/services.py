@@ -19,7 +19,7 @@ from .command_revisions import effective_ticket_items, retired_modifier_units
 from .order_folios import reserve_order_folio
 from .pos_printing import (
     create_checkout_print_job, invalidate_checkout_print_jobs, local_printer_config,
-    prepare_pos_print_intent, print_actor_name, table_print_context,
+    prepare_pos_print_intent, print_actor_name, table_print_context, supports_local_order_printing,
 )
 from .security_audit import item_audit_snapshot, order_identity_snapshot
 from .errors import CodedHTTPException
@@ -179,6 +179,7 @@ def serialize_order(order: Order) -> dict:
         "delivery_address": order.delivery_address,
         "subtotal": float(order.subtotal or 0),
         "discount": float(order.discount or 0),
+        "products_total": float(money((order.subtotal or 0) - (order.discount or 0))),
         "manual_discount": float(order.manual_discount or 0),
         "promotion_discount": float(order.promotion_discount or 0),
         "applied_promotions": order.applied_promotions or [],
@@ -248,10 +249,11 @@ def promotion_is_active(
     *,
     service_channel: str | None = None,
     now: datetime | None = None,
+    timezone_name: str = "America/Lima",
 ) -> bool:
     if not promotion.active or promotion.archived_at is not None:
         return False
-    local_now = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo("America/Lima"))
+    local_now = (now or datetime.now(timezone.utc)).astimezone(ZoneInfo(timezone_name))
     current_date = local_now.date()
     if promotion.starts_on and current_date < promotion.starts_on:
         return False
@@ -325,11 +327,21 @@ def apply_order_promotions(db: Session, order: Order) -> Decimal:
         )
     )
     channel = order_service_channel(order)
+    business = db.get(Business, order.business_id)
     promotions = [
         promotion
         for promotion in promotions
-        if promotion_is_active(promotion, service_channel=channel)
+        if promotion_is_active(promotion, service_channel=channel,
+            timezone_name=business.timezone if business else "America/Lima")
     ]
+    if promotions:
+        scheduled = list(db.execute(select(ScheduleAssignment.promotion_id, ServiceSchedule).join(
+            ServiceSchedule, ServiceSchedule.id == ScheduleAssignment.schedule_id).where(
+                ScheduleAssignment.promotion_id.in_([promotion.id for promotion in promotions]),
+                ServiceSchedule.business_id == order.business_id, ServiceSchedule.branch_id == order.branch_id,
+                ServiceSchedule.active.is_(True), ServiceSchedule.archived_at.is_(None))))
+        closed = {promotion_id for promotion_id, schedule in scheduled if not schedule_is_open(db, schedule)}
+        promotions = [promotion for promotion in promotions if promotion.id not in closed]
     if not promotions:
         order.promotion_discount = Decimal("0")
         return Decimal("0")
@@ -771,8 +783,10 @@ def create_order(
         recalculate_order(db, order)
     if payload.allow_pending_delivery_quote:
         from .agent_checkout import AGENT_SOURCES
+        validated_pending_quote = payload.delivery_quote_id and order.delivery_fee_status == "pending_quote"
         if (order.source not in AGENT_SOURCES or order.channel != "delivery" or not branch_settings
-                or branch_settings.delivery_mode != "quote" or not branch_settings.pos_delivery):
+                or not branch_settings.digital_delivery or (not validated_pending_quote and
+                    (payload.delivery_quote_id or branch_settings.delivery_mode != "quote"))):
             raise HTTPException(422, "Pending delivery is only allowed for WhatsApp orders with quotation pricing")
         order.delivery_fee_status = "pending_quote"
         order.delivery_fee = Decimal("0")
@@ -1127,7 +1141,7 @@ def create_kitchen_tickets(
     db.add(ticket)
     db.flush()
     settings = db.scalar(select(BranchSettings).where(BranchSettings.branch_id == order.branch_id))
-    if order.source != "pos" or local_printer_config(settings) is None:
+    if not supports_local_order_printing(order) or local_printer_config(settings) is None:
         enqueue_kitchen_print_jobs(db, order, [ticket])
     return [ticket]
 
@@ -1825,7 +1839,7 @@ def transition_order(
     return order
 
 
-def add_payment(db: Session, user: AuthContext, order: Order, payload: PaymentCreate) -> Payment:
+def add_payment(db: Session, user: AuthContext, order: Order, payload: PaymentCreate, *, allow_reviewed_overpayment: bool = False) -> Payment:
     if order.status in {"cancelled", "closed"}:
         raise HTTPException(status_code=409, detail="Cannot add a payment to this order")
     ensure_final_delivery_fee(order, allow_agent_pending=True)
@@ -1837,7 +1851,7 @@ def add_payment(db: Session, user: AuthContext, order: Order, payload: PaymentCr
             )
         )
     )
-    if paid_total + money(payload.amount) > money(order.total):
+    if paid_total + money(payload.amount) > money(order.total) and not allow_reviewed_overpayment:
         raise HTTPException(status_code=422, detail="Payment exceeds outstanding order amount")
     cash_session = resolve_payment_cash_session(
         db,

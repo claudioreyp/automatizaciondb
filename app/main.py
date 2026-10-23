@@ -10,6 +10,9 @@ from sqlalchemy import select
 
 from .api import api, legacy
 from .agent_checkout_api import router as agent_checkout_router
+from .agent_attention import router as agent_attention_router
+from .agent_runtime_api import router as agent_runtime_router
+from .agent_usage import router as agent_usage_router
 from .auth import AuthContext, decode_access_token, ensure_branch_scope, require_active_scope, resolve_membership
 from .config import get_settings
 from .database import Base, SessionLocal, engine
@@ -54,11 +57,16 @@ app.add_middleware(
         "X-Dev-Email",
         "X-Integration-Token",
         "X-CSRF-Token",
+        "X-Agent-Conversation",
+        "X-Agent-Lease",
     ],
 )
 app.include_router(api)
 app.include_router(legacy)
 app.include_router(agent_checkout_router)
+app.include_router(agent_attention_router)
+app.include_router(agent_runtime_router)
+app.include_router(agent_usage_router)
 
 
 @app.middleware("http")

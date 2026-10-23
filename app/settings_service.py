@@ -648,7 +648,14 @@ def apply_delivery_quote_to_order(db: Session, order: Order, quote_id: str) -> N
         raise HTTPException(status_code=409, detail="Order subtotal changed after the delivery quote")
     snapshot = quote.input_snapshot or {}
     if snapshot.get("pos_strict"):
-        if order.source != "pos" or order.channel != "delivery" or snapshot.get("context") != "pos":
+        agent_checkout = snapshot.get("context") == "agent_checkout"
+        if agent_checkout:
+            from .agent_checkout import AGENT_SOURCES, assert_sender
+            if order.source not in AGENT_SOURCES or order.channel != "delivery":
+                raise CodedHTTPException(409, "This quote is only valid for an agent checkout", "DELIVERY_QUOTE_CONTEXT_MISMATCH")
+            if snapshot.get("sender"):
+                assert_sender(order, snapshot["sender"])
+        elif order.source != "pos" or order.channel != "delivery" or snapshot.get("context") != "pos":
             raise CodedHTTPException(409, "This delivery quote is only valid for a POS delivery order", "DELIVERY_QUOTE_CONTEXT_MISMATCH")
         if snapshot.get("destination") != (order.delivery_address or {}):
             raise CodedHTTPException(409, "Delivery destination changed; request a new quote", "DELIVERY_QUOTE_DESTINATION_CHANGED")
@@ -669,7 +676,7 @@ def apply_delivery_quote_to_order(db: Session, order: Order, quote_id: str) -> N
                 current_origin = serialize_branch_origin(branch) if branch else None
             if current_origin is None or snapshot.get("origin") != current_origin:
                 raise CodedHTTPException(409, "Delivery origin changed; request a new quote", "DELIVERY_QUOTE_ORIGIN_CHANGED")
-        if quote.fee is None:
+        if quote.fee is None and not agent_checkout:
             raise CodedHTTPException(409, "Confirm the delivery fee before creating the order", "DELIVERY_FEE_PENDING")
     order.delivery_quote_id = quote.id
     order.delivery_fee = money(quote.fee)
@@ -906,7 +913,8 @@ def serialize_schedule(db: Session, schedule: ServiceSchedule) -> dict:
 def schedule_is_open(db: Session, schedule: ServiceSchedule, at: datetime | None = None) -> bool:
     if not schedule.active or schedule.archived_at is not None:
         return False
-    local = (at or utcnow()).astimezone(ZoneInfo("America/Lima"))
+    business = db.get(Business, schedule.business_id)
+    local = (at or utcnow()).astimezone(ZoneInfo(business.timezone if business else "America/Lima"))
     shifts = list(db.scalars(select(ScheduleShift).where(ScheduleShift.schedule_id == schedule.id)))
     if not shifts:
         return schedule.kind == "primary"

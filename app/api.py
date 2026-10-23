@@ -236,6 +236,8 @@ from PIL import Image, UnidentifiedImageError
 
 api = APIRouter(prefix="/api/v1")
 legacy = APIRouter(prefix="/api")
+from .agent_input_media import router as agent_input_media_router
+api.include_router(agent_input_media_router)
 api.include_router(settings_router)
 api.include_router(agent_router)
 api.include_router(device_router)
@@ -1666,6 +1668,7 @@ def serialize_integration_credential(credential: IntegrationCredential) -> dict:
         "name": credential.name,
         "token_prefix": credential.token_prefix,
         "scopes": credential.scopes,
+        "profile": credential.profile,
         "active": credential.active,
         "last_used_at": credential.last_used_at,
         "expires_at": credential.expires_at,
@@ -1875,6 +1878,7 @@ async def onboard_restaurant(
             business_id=business.id,
             branch_id=branch.id,
             name=payload.credential_name,
+            profile=payload.integration_profile,
             token_prefix=prefix,
             token_hash=token_hash,
             scopes=payload.integration_scopes,
@@ -1950,7 +1954,7 @@ async def onboard_restaurant(
     integration_base = f"{api_base_url}/integrations"
     response.headers["Cache-Control"] = "no-store"
     return {
-        "integration": integration_package(api_base_url, business.id, branch.id, credential.scopes),
+        "integration": integration_package(api_base_url, business.id, branch.id, credential.scopes, credential.profile),
         "business": serialize_business(db, business),
         "branch": serialize_branch(branch),
         "owner_access": {
@@ -2017,7 +2021,7 @@ def get_branch_integration_package(
     base = get_settings().public_api_base_url or f"{str(request.base_url).rstrip('/')}/api/v1"
     response.headers["Cache-Control"] = "no-store"
     return {
-        "integration": integration_package(base, branch.business_id, branch.id, credential.scopes),
+        "integration": integration_package(base, branch.business_id, branch.id, credential.scopes, credential.profile),
         "credential": serialize_integration_credential(credential),
     }
 
@@ -2098,6 +2102,7 @@ def create_integration_credential(
         token_prefix=prefix,
         token_hash=token_hash,
         scopes=payload.scopes,
+        profile=payload.profile,
         expires_at=payload.expires_at,
         created_by=user.user_id,
     )
@@ -6349,10 +6354,14 @@ async def assign_delivery(
     user: AuthContext = Depends(require_roles("superadmin", "owner", "manager", "dispatcher")),
     db: Session = Depends(get_db),
 ):
-    order = load_order(db, order_id)
+    order = load_order(db, order_id, for_update=True)
     ensure_branch_scope(user, order.business_id, order.branch_id)
+    if payload.expected_version is not None:
+        assert_version(order.version, payload.expected_version)
     if order.channel != "delivery":
         raise HTTPException(status_code=422, detail="Order is not a delivery")
+    if order.status in {"dispatched", "delivered", "closed", "cancelled"}:
+        raise CodedHTTPException(409, "Order no longer accepts a delivery assignment", "ORDER_ITEMS_LOCKED")
     if delivery_service(order) != "own":
         raise HTTPException(status_code=409, detail="Este pedido usa un servicio externo, no reparto propio.")
     if payload.courier_id:
@@ -6360,7 +6369,9 @@ async def assign_delivery(
         if not courier or courier.branch_id != order.branch_id or not courier.active:
             raise HTTPException(status_code=422, detail="Courier is not available for this branch")
         courier.status = "busy"
-    assignment = db.scalar(select(DeliveryAssignment).where(DeliveryAssignment.order_id == order.id))
+    assignment = db.scalar(select(DeliveryAssignment).where(DeliveryAssignment.order_id == order.id).with_for_update())
+    if assignment and (assignment.dispatched_at or assignment.delivered_at):
+        raise CodedHTTPException(409, "Delivery already dispatched", "ORDER_ITEMS_LOCKED")
     if not assignment:
         assignment = DeliveryAssignment(
             business_id=order.business_id,
@@ -6374,6 +6385,9 @@ async def assign_delivery(
     assignment.courier_id = payload.courier_id
     assignment.estimated_at = payload.estimated_at
     assignment.status = "assigned" if payload.courier_id else "ready"
+    assignment.address = dict(order.delivery_address or {})
+    assignment.fee = order.delivery_fee
+    order.version += 1
     audit(db, user, "delivery.assigned", "order", order.id, order.business_id)
     db.commit()
     result = {"order_id": order.id, "courier_id": assignment.courier_id, "status": assignment.status, "tracking_code": assignment.tracking_code}
@@ -6390,6 +6404,10 @@ async def transition_delivery(
 ):
     order = load_order(db, order_id, for_update=True)
     ensure_branch_scope(user, order.business_id, order.branch_id)
+    if payload.expected_version is not None:
+        assert_version(order.version, payload.expected_version)
+    if order.channel != "delivery" or order.status in {"cancelled", "closed"}:
+        raise CodedHTTPException(409, "Order no longer has an active delivery", "ORDER_ITEMS_LOCKED")
     assignment = db.scalar(select(DeliveryAssignment).where(DeliveryAssignment.order_id == order.id))
     if not assignment:
         raise HTTPException(status_code=404, detail="Delivery assignment not found")
@@ -6551,6 +6569,8 @@ def determine_evidence_status(db: Session, order: Order, values: dict) -> str:
 
 
 def ensure_payment_evidence_upload_allowed(db: Session, order: Order) -> None:
+    if order.status in {"cancelled", "closed"}:
+        raise CodedHTTPException(409, "Order no longer accepts a payment receipt", "ORDER_ITEMS_LOCKED")
     existing_status = db.scalar(
         select(PaymentEvidence.status)
         .where(
@@ -6583,6 +6603,8 @@ def serialize_payment_evidence(evidence: PaymentEvidence) -> dict:
         "provider": evidence.provider,
         "payment_request_id": evidence.payment_request_id,
         "expected_amount": (evidence.analysis or {}).get("expected_amount"),
+        "requires_financial_review": bool((evidence.analysis or {}).get("requires_financial_review")),
+        "financial_review": (evidence.analysis or {}).get("financial_review"),
         "amount_detected": float(evidence.amount_detected) if evidence.amount_detected is not None else None,
         "operation_number": evidence.operation_number,
         "security_code": evidence.security_code,
@@ -6828,7 +6850,7 @@ async def review_payment_evidence(
         evidence.status = "rejected"
         evidence.rejection_reason = payload.note or "Rejected by cashier"
         order.payment_status = "rejected"
-        if order.status not in {"cancelled", "closed"} and not requests_for_order(db, order):
+        if order.status not in {"cancelled", "closed"} and not requests_for_order(db, order) and not (evidence.analysis or {}).get("requires_financial_review"):
             released_table_id = order.table_id
             db.flush()
             transition_order(db, user, order, "cancelled")
@@ -6842,6 +6864,9 @@ async def review_payment_evidence(
     else:
         if not evidence.image_sha256 or not evidence.storage_path:
             raise HTTPException(status_code=409, detail="Payment evidence has no persisted image")
+        financial_review = bool((evidence.analysis or {}).get("requires_financial_review"))
+        if financial_review and (not (payload.note or "").strip() or payload.confirmed_amount is None or payload.expected_version is None):
+            raise CodedHTTPException(422, "Confirm the real received amount and acknowledge the delivery change", "FINANCIAL_REVIEW_REQUIRED")
         amount = money((evidence.analysis or {}).get("expected_amount", order.total))
         remaining = money(order.total) - money(
             db.scalar(
@@ -6851,7 +6876,9 @@ async def review_payment_evidence(
                 )
             )
         )
-        amount = min(money(amount), remaining)
+        amount = money(payload.confirmed_amount) if financial_review else min(money(amount), remaining)
+        if financial_review and amount < min(money((evidence.analysis or {}).get("expected_amount", order.total)), remaining):
+            raise CodedHTTPException(422, "The original order is not fully covered by this receipt", "PAYMENT_AMOUNT_INSUFFICIENT")
         if amount <= 0:
             raise HTTPException(status_code=409, detail="Order has no outstanding balance")
         payment = add_payment(
@@ -6865,6 +6892,7 @@ async def review_payment_evidence(
                 external_reference=evidence.operation_number,
                 note=payload.note or "Approved payment evidence",
             ),
+            allow_reviewed_overpayment=financial_review,
         )
         evidence.status = "paid"
         superseded_at = utcnow()
@@ -6886,6 +6914,10 @@ async def review_payment_evidence(
             other_evidence.reviewed_by = user.user_id
             other_evidence.reviewed_at = superseded_at
         tickets = send_order_to_kitchen(db, user, order)
+        if financial_review:
+            evidence.analysis = {**evidence.analysis, "requires_financial_review": False,
+                "financial_review_acknowledgement": {"actor_id": user.user_id, "amount": str(amount),
+                    "order_version": order.version, "note": payload.note}}
         if recipient_available and tickets:
             notification_event = create_integration_event(
                 db,
@@ -6898,7 +6930,7 @@ async def review_payment_evidence(
                     "purpose": "initial",
                     "status": order.status,
                     "message": (
-                        "¡Pago confirmado! Tu pedido fue aprobado y ya está en preparación. "
+                        "¡Pago confirmado! Tu pedido fue aprobado y se envió a cocina. "
                         + (
                             "Te avisaremos cuando esté listo. 🍕"
                             if order.channel == "delivery"
@@ -6907,6 +6939,9 @@ async def review_payment_evidence(
                     ),
                 },
             )
+        from .agent_checkout import resume_base_additions
+        if order.source in AGENT_SOURCES:
+            resume_base_additions(db, user, order)
     audit(db, user, f"payment_evidence.{evidence.status}", "payment_evidence", evidence.id, evidence.business_id)
     db.flush()
     result = {
@@ -7244,7 +7279,7 @@ def integration_context(
     branch_payload = serialize_branch(branch)
     response.headers["Cache-Control"] = "private, no-store"
     return {
-        **agent_context(db, branch),
+        **agent_context(db, branch, restaurant_agent=integration.profile == "restaurant_agent"),
         "business": {
             "id": business.id,
             "slug": business.slug,
@@ -7271,10 +7306,16 @@ def integration_context(
 @api.get("/integrations/context/yape-qr", tags=["integrations"])
 async def integration_yape_qr(
     branch_id: int | None = None,
+    format: str | None = Query(default=None, pattern="^whatsapp_cloud$"),
+    expected_revision: str | None = Query(default=None, min_length=64, max_length=64, pattern="^[a-f0-9]{64}$"),
     integration: IntegrationAuthContext = Depends(require_integration_scope("menu:read")),
     db: Session = Depends(get_db),
 ):
     _, branch = integration_branch_from_auth(db, integration, branch_id)
+    if expected_revision is not None:
+        from .agent_context import yape_revision
+        if yape_revision(branch) != expected_revision:
+            raise CodedHTTPException(409, "Yape payment instructions changed; refresh them before sending the QR", "YAPE_CONFIGURATION_STALE")
     if not branch.yape_qr_storage_path:
         raise HTTPException(status_code=404, detail="Yape QR is not configured")
     try:
@@ -7287,12 +7328,16 @@ async def integration_yape_qr(
         raise HTTPException(status_code=503, detail="Yape QR storage is temporarily unavailable") from exc
     except (httpx.HTTPError, OSError) as exc:
         raise HTTPException(status_code=503, detail="Yape QR storage is temporarily unavailable") from exc
+    if format == "whatsapp_cloud":
+        from .agent_media import whatsapp_cloud_image
+        data, content_type = whatsapp_cloud_image(data, content_type)
     return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
 
 
 @api.get("/integrations/context/menu-card", tags=["integrations"])
 async def integration_menu_card(
     branch_id: int | None = None,
+    format: str | None = Query(default=None, pattern="^whatsapp_cloud$"),
     integration: IntegrationAuthContext = Depends(require_integration_scope("menu:read")),
     db: Session = Depends(get_db),
 ):
@@ -7303,7 +7348,10 @@ async def integration_menu_card(
         data, content_type = await load_private_file(branch.menu_card_storage_path)
     except (FileNotFoundError, httpx.HTTPError) as exc:
         raise HTTPException(status_code=404, detail="No se encontró la imagen de la carta") from exc
-    return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, no-store"})
+    if format == "whatsapp_cloud":
+        from .agent_media import whatsapp_cloud_image
+        data, content_type = whatsapp_cloud_image(data, content_type)
+    return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
 
 
 @api.get("/public/{business_slug}/{branch_slug}/yape-qr", tags=["public"])
@@ -7513,10 +7561,79 @@ async def integration_create_order(
     if not idempotency_key:
         raise HTTPException(status_code=422, detail="Idempotency-Key is required")
     user, branch = integration_branch_from_auth(db, integration, payload.branch_id)
+    from .agent_checkout import fingerprint
     scope = f"integration-order:{branch.id}"
+    received_digest = fingerprint(payload.model_dump())
     existing = get_idempotent_response(db, scope, idempotency_key, branch.business_id)
+    if integration.profile == "restaurant_agent":
+        from .agent_runtime_api import normalize_sender
+        if (payload.discount or payload.table_id is not None or payload.customer_id is not None
+                or payload.channel not in {"counter", "takeaway", "delivery"}
+                or payload.payment_method not in {"cash", "yape"}
+                or not payload.items or payload.quoted_total is None
+                or any(not line.product_id or line.unit_price is not None for line in payload.items)):
+            raise HTTPException(422, "A complete catalog order with server pricing is required")
+        if not payload.whatsapp_chat_id or normalize_sender(payload.whatsapp_chat_id) != integration.sender:
+            raise HTTPException(403, "Order sender must match the authenticated conversation")
+        if not integration.verified_phone:
+            raise CodedHTTPException(409, "The transport must verify the customer phone before checkout", "TRANSPORT_PHONE_REQUIRED")
+        if not payload.customer_phone or normalize_sender(payload.customer_phone) != integration.verified_phone:
+            raise HTTPException(403, "Customer phone must match the authenticated conversation")
+        if existing and existing.get("received_digest") is not None:
+            if existing["received_digest"] != received_digest:
+                raise HTTPException(409, "Idempotency key already used with other data")
+            return existing["result"]
+        if payload.channel not in agent_context(db, branch)["capabilities"]["order_modes"]:
+            raise HTTPException(409, "Service is not enabled for restaurant messaging")
+        profile = integration.contact_display_name
+        from .models import AgentConversation
+        conversation = db.get(AgentConversation, integration.conversation_id)
+        identity = (conversation.state or {}).get("_operation_identity") if conversation else None
+        if identity and identity.get("idempotency_key") == idempotency_key:
+            if identity.get("body_digest") != received_digest:
+                raise HTTPException(409, "Pending operation body changed")
+            profile = identity.get("contact_display_name")
+        if payload.customer_name is not None and payload.customer_name != profile:
+            raise HTTPException(403, "Customer name must match the authenticated channel profile")
+        payload.customer_name = profile
+        if payload.delivery_quote_id:
+            from .models import DeliveryQuote
+            quote = db.scalar(select(DeliveryQuote).where(DeliveryQuote.id == payload.delivery_quote_id,
+                DeliveryQuote.business_id == branch.business_id, DeliveryQuote.branch_id == branch.id))
+            if not quote or (quote.input_snapshot or {}).get("context") != "agent_checkout" or (quote.input_snapshot or {}).get("sender") != integration.sender:
+                raise CodedHTTPException(409, "Quote this checkout destination in the current conversation", "DELIVERY_QUOTE_CONTEXT_MISMATCH")
+            from .agent_delivery import POLICY_VERSION
+            if (quote.input_snapshot or {}).get("agent_policy_version") != POLICY_VERSION:
+                raise CodedHTTPException(409, "Delivery policy changed; request a new quote", "DELIVERY_CONFIGURATION_STALE")
+        if payload.channel == "delivery" and not payload.delivery_quote_id:
+            delivery = agent_context(db, branch, restaurant_agent=True)["delivery"]
+            from .agent_checkout import preview_items
+            estimated = preview_items(db, branch, payload.channel, payload.items, payload.payment_method)
+            if estimated.subtotal < money(delivery["minimum_order_amount"]):
+                raise CodedHTTPException(409, "Delivery minimum purchase not reached", "DELIVERY_MINIMUM_REQUIRED")
+            if delivery["configured_mode"] in {"distance", "bands", "neighborhoods"}:
+                raise CodedHTTPException(409, "Quote the delivery destination before checkout", "DELIVERY_QUOTE_REQUIRED")
+            if delivery["mode"] == "quote":
+                if not payload.allow_pending_delivery_quote or money(payload.delivery_fee):
+                    raise CodedHTTPException(422, "Delivery requires a pending staff quotation", "DELIVERY_FEE_PENDING")
+            else:
+                fee = money(delivery["fee"])
+                if delivery["free_delivery_threshold"] is not None and estimated.subtotal >= money(delivery["free_delivery_threshold"]):
+                    fee = Decimal(0)
+                if payload.allow_pending_delivery_quote or money(payload.delivery_fee) != fee:
+                    raise CodedHTTPException(409, "Confirm the configured delivery fee", "DELIVERY_QUOTE_CHANGED")
+        payload = payload.model_copy(update={"source": "whatsapp_agent"})
+    request_digest = fingerprint(payload.model_dump())
     if existing:
+        if integration.profile == "restaurant_agent":
+            if existing.get("request_digest") != request_digest:
+                raise HTTPException(409, "Idempotency key already used with other data")
+            return existing["result"]
         return existing
+    # New agent orders must obey the active POS schedule even for legacy branches
+    # without BranchSettings. Exact retries above reconcile existing operations.
+    if integration.profile == "restaurant_agent" and not agent_context(db, branch)["open_now"]:
+        raise CodedHTTPException(409, "Branch is closed at this time", "SERVICE_CLOSED")
     requested_source = (payload.source or "").strip().lower()
     from .integration_order_validation import validate_integration_fulfillment
     validate_integration_fulfillment(payload)
@@ -7525,7 +7642,9 @@ async def integration_create_order(
     order = create_order(db, user, payload)
     db.flush()
     result = serialize_order(order)
-    save_idempotent_response(db, scope, idempotency_key, order.business_id, result)
+    save_idempotent_response(db, scope, idempotency_key, order.business_id,
+        {"request_digest": request_digest, "received_digest": received_digest, "result": result}
+        if integration.profile == "restaurant_agent" else result)
     db.commit()
     await hub.broadcast(order.branch_id, "order.created", result)
     return result
@@ -7646,6 +7765,8 @@ async def integration_cash_confirm_order(
         raise HTTPException(status_code=422, detail="Idempotency-Key is required")
     order = load_order(db, order_id, for_update=True)
     ensure_integration_order_scope(integration, order)
+    if integration.profile == "restaurant_agent" and order.payment_method != "cash":
+        raise HTTPException(409, "A registered payment method cannot be replaced by the agent")
     scope = f"integration-cash-confirm:{order.id}"
     existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
@@ -7759,6 +7880,8 @@ async def integration_upload_payment_evidence(
         if existing.get("request_fingerprint") and existing["request_fingerprint"] != upload_digest:
             raise HTTPException(409, "Idempotency key belongs to another receipt")
         return existing
+    if order.status in {"cancelled", "closed", "dispatched", "delivered"}:
+        raise CodedHTTPException(409, "Order no longer accepts an integration receipt", "ORDER_ITEMS_LOCKED")
     if target:
         ensure_request_upload(db, order, target)
     else:
@@ -7933,7 +8056,12 @@ def integration_order_status(
 ):
     order = load_order(db, order_id)
     ensure_integration_order_scope(integration, order)
-    return serialize_order(order)
+    result = serialize_order(order)
+    from .agent_checkout import AGENT_SOURCES
+    if order.source in AGENT_SOURCES:
+        from .agent_delivery import delivery_fee_notification
+        result["delivery_fee_notification"] = delivery_fee_notification(db, order)
+    return result
 
 
 @api.get("/integrations/events", tags=["integrations"])

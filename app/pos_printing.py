@@ -239,6 +239,12 @@ def local_printer_config(settings: BranchSettings | None) -> dict | None:
     return config
 
 
+def supports_local_order_printing(order: Order) -> bool:
+    # Import lazily: agent checkout itself uses the shared order services.
+    from .agent_checkout import AGENT_SOURCES
+    return order.source == "pos" or order.source in AGENT_SOURCES
+
+
 def table_print_context(db: Session, order: Order) -> dict:
     context = {"table_id": order.table_id, "table_name": None, "area_id": None, "area_name": None}
     if order.table_id is None:
@@ -282,10 +288,10 @@ def recorded_print_actor(context: dict) -> str | None:
 def prepare_pos_print_intent(db: Session, order: Order, ticket: KitchenTicket) -> bool:
     """Persist intent with the command, so a failed queue insert is recoverable.
 
-    Only newly created POS commands receive this marker. Reading old orders must
+    Only newly created POS/agent commands receive this marker. Reading old orders must
     never reconstruct jobs from today's printer settings or product catalog.
     """
-    if order.source != "pos":
+    if not supports_local_order_printing(order):
         return False
     settings = db.scalar(select(BranchSettings).where(BranchSettings.branch_id == order.branch_id))
     config = local_printer_config(settings)
@@ -310,10 +316,47 @@ def prepare_pos_print_intent(db: Session, order: Order, ticket: KitchenTicket) -
             "guard": {"order": content_digest(payload["order"], kitchen=kind == "kitchen_ticket"),
                       "ticket_version": ticket.version},
         })
-    ticket.context_snapshot = {**(ticket.context_snapshot or {}), INTENT: {"transport": TRANSPORT, "jobs": jobs}}
+    ticket.context_snapshot = {**(ticket.context_snapshot or {}), INTENT: {"transport": TRANSPORT, "jobs": jobs, "queue_pending": True}}
     db.flush()
+    if ticket.sequence > 1:
+        refresh_unclaimed_initial_receipt(db, order)
     recover_pos_print_jobs(db, order, [ticket])
     return True
+
+
+def refresh_unclaimed_initial_receipt(db: Session, order: Order) -> None:
+    """An addition can precede the initial dispatch, especially on base approval.
+
+    Refresh that one unsent receipt in place; never replace a claimed document
+    or create a second receipt. Keep its original printer/template configuration.
+    """
+    first = db.scalar(select(KitchenTicket).where(
+        KitchenTicket.business_id == order.business_id, KitchenTicket.branch_id == order.branch_id,
+        KitchenTicket.order_id == order.id, KitchenTicket.sequence == 1))
+    if first is None:
+        return
+    context = deepcopy(first.context_snapshot or {})
+    intent = context.get(INTENT, {})
+    if intent.get("transport") != TRANSPORT:
+        return
+    for definition in intent.get("jobs", []):
+        if definition.get("job_type") != "customer_receipt":
+            continue
+        job = db.scalar(select(PrintJob).where(PrintJob.id == definition["id"],
+            PrintJob.business_id == order.business_id, PrintJob.branch_id == order.branch_id).with_for_update())
+        if job is not None and (job.status != "pending" or job.attempts != 0):
+            continue
+        previous = definition["payload"]
+        payload = build_print_payload(db, order, first, previous, "customer_receipt", previous.get("template", {}))
+        # Business and staff labels remain the recorded ones, not today's settings.
+        for field in ("business", "branch", "created_by_name", "table_name"):
+            payload[field] = deepcopy(previous.get(field))
+        guard = {**definition["guard"], "order": content_digest(payload["order"])}
+        definition["payload"], definition["guard"] = payload, guard
+        if job is not None:
+            job.payload = {**job.payload, **payload, "_guard": guard}
+    first.context_snapshot = context
+    db.flush()
 
 
 def build_print_payload(db: Session, order: Order, ticket: KitchenTicket | None,
@@ -517,6 +560,12 @@ def recover_pos_print_jobs(db: Session, order: Order, tickets: list[KitchenTicke
         # A queue failure rolls back this savepoint, not the confirmed operation.
         with db.begin_nested():
             _insert_jobs(db, order, tickets)
+            for ticket in tickets:
+                context = deepcopy(ticket.context_snapshot or {})
+                if context.get(INTENT, {}).get("queue_pending"):
+                    context[INTENT]["queue_pending"] = False
+                    ticket.context_snapshot = context
+            db.flush()
         return True
     except Exception:
         logger.warning("POS printing queue unavailable for order %s; intent retained", order.id)

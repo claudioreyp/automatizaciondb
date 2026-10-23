@@ -1,8 +1,10 @@
 import asyncio
+import json
 from collections import defaultdict
 from typing import Any
 
 from fastapi import HTTPException, WebSocket
+from fastapi.encoders import jsonable_encoder
 
 
 class BranchRealtimeHub:
@@ -25,6 +27,11 @@ class BranchRealtimeHub:
         clients = list(self._clients.get(branch_id, set()))
         if not clients:
             return
+        # HTTP responses already normalize dates, Decimal and UUID values. Use
+        # the same boundary for sockets before classifying any client as stale.
+        # An invalid payload must raise, not silently remove healthy clients.
+        message = json.dumps(jsonable_encoder({"event": event, "payload": payload}),
+                             separators=(",", ":"), ensure_ascii=False, allow_nan=False)
         stale: list[WebSocket] = []
         for websocket in clients:
             try:
@@ -38,7 +45,7 @@ class BranchRealtimeHub:
                                               reason="Auth temporarily unavailable" if unavailable else "Session expired")
                         stale.append(websocket)
                         continue
-                await websocket.send_json({"event": event, "payload": payload})
+                await websocket.send_text(message)
             except Exception:
                 stale.append(websocket)
         for websocket in stale:

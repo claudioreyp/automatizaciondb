@@ -19,6 +19,8 @@ from .settings_service import schedule_is_open
 
 AGENT_SOURCES = {"agent", "n8n", "whatsapp", "whatsapp_agent"}
 TERMINAL = {"dispatched", "delivered", "cancelled", "closed"}
+PENDING_ADDITION_STATUSES = {"pending", "under_review", "awaiting_base_review", "requires_review"}
+INACTIVE_REQUEST_STATUSES = {"superseded", "waived", "cancelled", "declined"}
 
 
 def fingerprint(value):
@@ -115,7 +117,91 @@ def serialize_request(request):
     return {"id": request.id, "order_id": request.order_id, "purpose": request.purpose,
             "method": request.method, "amount": float(request.amount), "status": request.status,
             "version": request.version, "items": (request.snapshot or {}).get("pricing", {}).get("items", []),
-            "created_at": request.created_at, "payment_id": request.payment_id}
+            "created_at": request.created_at, "payment_id": request.payment_id,
+            "blocked_reason": (request.snapshot or {}).get("blocked_reason"),
+            "resolution_note": (request.snapshot or {}).get("resolution_note"),
+            "resolved_at": (request.snapshot or {}).get("resolved_at")}
+
+
+def initial_payment_pending(db, order):
+    """The original Yape review is independent of an addition's payment method."""
+    return order.payment_method == "yape" and not db.scalar(select(PaymentEvidence.id).where(
+        PaymentEvidence.order_id == order.id, PaymentEvidence.business_id == order.business_id,
+        PaymentEvidence.payment_request_id.is_(None), PaymentEvidence.status == "paid"))
+
+
+def commit_addition_request(db, user, order, request):
+    """Caller locks Order, then request. Persisted original lines/prices never change."""
+    from .models import Branch
+    from .agent_order_changes import record_agent_order_change
+    assert_open(order)
+    if initial_payment_pending(db, order):
+        raise CodedHTTPException(409, "Approve the initial receipt first", "INITIAL_PAYMENT_PENDING")
+    lines = [OrderLineInput.model_validate(x) for x in request.snapshot["lines"]]
+    draft = preview_items(db, db.get(Branch, order.branch_id), order.channel, lines, request.method)
+    if fingerprint(priced_snapshot(draft)) != fingerprint(request.snapshot["pricing"]):
+        raise CodedHTTPException(409, "Addition pricing changed; a staff member must review it", "ADDITION_REQUIRES_REVIEW")
+    new_items = list(draft.items)
+    for item in new_items:
+        draft.items.remove(item)
+        order.items.append(item)
+    order.subtotal = money(order.subtotal + draft.subtotal)
+    order.discount = money(order.discount + draft.discount)
+    order.promotion_discount = money(order.promotion_discount + draft.promotion_discount)
+    order.applied_promotions = [*(order.applied_promotions or []), *(draft.applied_promotions or [])]
+    order.total = money(order.total + request.amount)
+    _, tickets = finalize_order_item_batch(db, user, order, new_items, order.status,
+        ticket_context={"agent_addition": True, "agent_payment_request_id": request.id})
+    record_agent_order_change(db, user, order, "agent.items_added",
+        {"item_ids": [item.id for item in new_items], "ticket_ids": [ticket.id for ticket in tickets],
+         "payment_request_id": request.id})
+    order._agent_addition_result = {"items": new_items, "tickets": tickets}
+    return new_items, tickets
+
+
+def resume_base_additions(db, user, order):
+    """Resume durable dependencies within the base approval transaction, once only.
+
+    A quote/availability failure retains the requested addition for staff review;
+    it must not undo approval of the original order or manufacture a command.
+    """
+    if initial_payment_pending(db, order):
+        return []
+    results = []
+    requests = list(db.scalars(select(OrderPaymentRequest).where(
+        OrderPaymentRequest.order_id == order.id, OrderPaymentRequest.purpose == "addition",
+        OrderPaymentRequest.status.in_(["awaiting_base_review", "under_review"])).order_by(
+            OrderPaymentRequest.created_at, OrderPaymentRequest.id).with_for_update()))
+    for request in requests:
+        if request.method == "yape":
+            if request.status == "awaiting_base_review":
+                request.status = "pending"
+            request.snapshot = {**request.snapshot, "blocked_reason": None}
+            request.version += 1
+            continue
+        try:
+            with db.begin_nested():
+                items, tickets = commit_addition_request(db, user, order, request)
+                request.status = "committed"  # Cash remains uncollected.
+                request.snapshot = {**request.snapshot, "blocked_reason": None,
+                    "appended_item_ids": [item.id for item in items], "ticket_ids": [ticket.id for ticket in tickets]}
+                request.version += 1
+                create_integration_event(db, order, "order.addition_committed", {
+                    "payment_request_id": request.id, "purpose": "addition", "payment_method": "cash",
+                    "addition_amount": float(request.amount), "sent_to_kitchen": bool(tickets),
+                    "appended_item_ids": [item.id for item in items], "ticket_ids": [ticket.id for ticket in tickets]})
+                results.extend(tickets)
+        except HTTPException as exc:
+            request.status = "requires_review"
+            request.snapshot = {**request.snapshot, "blocked_reason": getattr(exc, "code", "ADDITION_REQUIRES_REVIEW")}
+            request.version += 1
+            from .agent_attention import create_attention
+            create_attention(db, business_id=order.business_id, branch_id=order.branch_id,
+                sender=order.whatsapp_chat_id or order.customer_phone, kind="financial_review",
+                summary="La adición pendiente necesita revisión antes de incorporarla.", order_id=order.id,
+                source_key=f"addition-review:{request.id}", details={"payment_request_id": request.id,
+                    "reason": str(exc.detail)})
+    return results
 
 
 def requests_for_order(db, order):
@@ -134,7 +220,7 @@ def payment_request(db, order, request_id):
 
 def ensure_request_upload(db, order, request):
     assert_open(order)
-    if request.method != "yape" or request.status not in {"pending", "rejected"}:
+    if request.method != "yape" or request.status not in {"pending", "rejected", "awaiting_base_review"}:
         raise CodedHTTPException(409, "This payment request cannot receive another receipt", "PAYMENT_REQUEST_LOCKED")
     existing = db.scalar(select(PaymentEvidence.id).where(PaymentEvidence.payment_request_id == request.id,
         PaymentEvidence.status.in_(["evidence_received", "under_review", "paid"])))
@@ -144,13 +230,15 @@ def ensure_request_upload(db, order, request):
 
 def ensure_dispatch(db, order):
     requests = requests_for_order(db, order)
-    if any(r.purpose == "addition" and r.status in {"pending", "under_review"} for r in requests):
+    if any(r.purpose == "addition" and r.status in PENDING_ADDITION_STATUSES for r in requests):
         raise CodedHTTPException(409, "Resolve the pending addition before completion", "ADDITION_PENDING")
     if order.channel != "delivery":
         return
     if order.delivery_fee_status != "final":
         raise CodedHTTPException(409, "Confirm delivery fee before dispatch", "DELIVERY_FEE_PENDING")
     for request in requests:
+        if request.status in INACTIVE_REQUEST_STATUSES:
+            continue
         if request.purpose == "delivery" and (request.method == "unselected" or
                 (request.method == "yape" and request.status != "paid")):
             raise CodedHTTPException(409, "Confirm how delivery will be paid and review its receipt", "DELIVERY_PAYMENT_PENDING")
@@ -168,37 +256,13 @@ def review_request(db, user, order, evidence, payload):
     else:
         if not evidence.image_sha256 or not evidence.storage_path or evidence.status == "not_a_receipt":
             raise HTTPException(409, "A persisted payment receipt is required")
-        if order.payment_method == "yape" and not db.scalar(select(PaymentEvidence.id).where(
-                PaymentEvidence.order_id == order.id, PaymentEvidence.payment_request_id.is_(None),
-                PaymentEvidence.status == "paid")):
+        if initial_payment_pending(db, order):
             raise CodedHTTPException(409, "Approve the initial receipt first", "INITIAL_PAYMENT_PENDING")
         if request.status not in {"pending", "under_review"}:
             raise CodedHTTPException(409, "Request is not pending", "PAYMENT_REQUEST_LOCKED")
         tickets = []
         if request.purpose == "addition":
-            from .models import Branch
-            lines = [OrderLineInput.model_validate(x) for x in request.snapshot["lines"]]
-            draft = preview_items(db, db.get(Branch, order.branch_id), order.channel, lines, "yape")
-            if fingerprint(priced_snapshot(draft)) != fingerprint(request.snapshot["pricing"]):
-                raise CodedHTTPException(409, "Prices or promotions changed; a staff member must reconcile this receipt", "ADDITION_REQUIRES_REVIEW")
-            # Freeze the original paid lines. Only the new batch receives current promotions.
-            new_items = list(draft.items)
-            for item in new_items:
-                draft.items.remove(item)
-                order.items.append(item)
-            db.flush()
-            order.subtotal = money(order.subtotal + draft.subtotal)
-            order.discount = money(order.discount + draft.discount)
-            order.promotion_discount = money(order.promotion_discount + draft.promotion_discount)
-            order.applied_promotions = [*(order.applied_promotions or []), *(draft.applied_promotions or [])]
-            order.total = money(order.total + request.amount)
-            _, tickets = finalize_order_item_batch(db, user, order, new_items, order.status,
-                ticket_context={"agent_addition": True, "agent_payment_request_id": request.id})
-            from .agent_order_changes import record_agent_order_change
-            record_agent_order_change(db, user, order, "agent.items_added",
-                {"item_ids": [item.id for item in new_items], "ticket_ids": [ticket.id for ticket in tickets],
-                 "payment_request_id": request.id})
-            order._agent_addition_result = {"items": new_items, "tickets": tickets}
+            new_items, tickets = commit_addition_request(db, user, order, request)
         payment = add_payment(db, user, order, PaymentCreate(method="yape", amount=request.amount,
             register_id=payload.register_id, external_reference=evidence.operation_number,
             note=payload.note or f"Approved {request.purpose} receipt"))
@@ -225,7 +289,7 @@ def ready_event(db, order):
         KitchenTicket.status != "cancelled").order_by(KitchenTicket.id)))
     if not tickets or any(t.status not in {"ready", "served"} for t in tickets):
         return None
-    if any(r.purpose == "addition" and r.status in {"pending", "under_review"} for r in requests_for_order(db, order)):
+    if any(r.purpose == "addition" and r.status in PENDING_ADDITION_STATUSES for r in requests_for_order(db, order)):
         return None
     from .command_revisions import effective_ticket_items
     digest = fingerprint([{ "id": t.id, "items": effective_ticket_items(t)} for t in tickets])

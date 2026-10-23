@@ -26,17 +26,34 @@ ROUTES = (
     ("create_reservation", "POST", "/reservations", "reservations:write"),
     ("events", "GET", "/events", "events:read"),
     ("ack_event", "POST", "/events/{event_id}/ack", "events:read"),
+    ("fulfillment_preview", "POST", "/orders/{order_id}/fulfillment-preview", "orders:write"),
+    ("change_fulfillment", "PATCH", "/orders/{order_id}/fulfillment", "orders:write"),
+    ("attention_request", "POST", "/attention-requests", "agent:attention"),
+    ("conversation_claim", "POST", "/conversations/claim", "agent:state"),
+    ("conversation_commit", "POST", "/conversations/{conversation_id}/commit", "agent:state"),
+    ("conversation_renew", "POST", "/conversations/{conversation_id}/renew", "agent:state"),
+    ("conversation_next", "POST", "/conversations/{conversation_id}/next", "agent:state"),
+    ("model_usage_reserve", "POST", "/conversations/{conversation_id}/model-usage/reserve", "agent:state"),
+    ("model_usage_settle", "POST", "/conversations/{conversation_id}/model-usage/{reservation_id}/settle", "agent:state"),
+    ("conversation_enqueue", "POST", "/conversations/enqueue", "agent:state"),
+    ("conversation_work", "POST", "/conversations/work/claim", "agent:state"),
+    ("conversation_outbox", "POST", "/conversations/outbox/claim", "agent:state"),
+    ("conversation_response_ack", "PATCH", "/conversations/outbox/{delivery_id}/ack", "agent:state"),
 )
 
 
-def integration_package(api_base_url: str, business_id: int, branch_id: int, scopes: list[str]) -> dict:
+def integration_package(api_base_url: str, business_id: int, branch_id: int, scopes: list[str], profile: str = "generic") -> dict:
     base = api_base_url.rstrip("/")
+    from .agent_runtime_api import AGENT_ROUTE_ALLOWLIST
     return {
         "api_base_url": base, "business_id": business_id, "branch_id": branch_id,
         "authentication": "bearer", "authorization_header": "Authorization",
         "write_idempotency_header": "Idempotency-Key", "scopes": sorted(set(scopes)),
+        "profile": profile,
+        "conversation_headers": ["X-Agent-Conversation", "X-Agent-Lease"] if profile == "restaurant_agent" else [],
         "endpoints": {
             name: {"method": method, "url": f"{base}/integrations{path}", "scope": scope}
             for name, method, path, scope in ROUTES if scope in scopes
+            and (profile != "restaurant_agent" or (method, f"/integrations{path}") in AGENT_ROUTE_ALLOWLIST)
         },
     }

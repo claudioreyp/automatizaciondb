@@ -1,8 +1,17 @@
 from functools import lru_cache
 from pathlib import Path
+import os
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class AgentUsageOverride(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    conversation_tokens: int | None = Field(default=None, ge=1, le=10**12)
+    sender_tokens: int | None = Field(default=None, ge=1, le=10**12)
+    business_tokens: int | None = Field(default=None, ge=1, le=10**12)
+    alert_percent: int | None = Field(default=None, ge=1, le=100)
 
 
 class Settings(BaseSettings):
@@ -36,6 +45,34 @@ class Settings(BaseSettings):
     upload_dir: Path = Field(default=Path("./uploads"))
     payment_vision_model: str = "gpt-4.1-mini"
     openai_api_key: str | None = None
+    agent_messages_per_minute: int = Field(default=30, ge=3, le=300)
+    agent_messages_per_hour: int = Field(default=120, ge=3, le=3000)
+    agent_media_max_bytes: int = Field(default=8 * 1024 * 1024, ge=1024, le=8 * 1024 * 1024)
+    agent_media_max_pixels: int = Field(default=25_000_000, ge=1, le=25_000_000)
+    agent_media_conversation_bytes: int = Field(default=32 * 1024 * 1024, ge=1024, le=10**12)
+    agent_media_conversation_files: int = Field(default=64, ge=1, le=10000)
+    agent_media_branch_bytes: int = Field(default=256 * 1024 * 1024, ge=1024, le=10**12)
+    agent_media_branch_files: int = Field(default=1000, ge=1, le=100000)
+    agent_media_cleanup_batch: int = Field(default=4, ge=1, le=32)
+    agent_usage_conversation_tokens: int = Field(default=1_000_000, ge=1, le=10**12)
+    agent_usage_sender_tokens: int = Field(default=2_000_000, ge=1, le=10**12)
+    agent_usage_business_tokens: int = Field(default=50_000_000, ge=1, le=10**12)
+    agent_usage_alert_percent: int = Field(default=80, ge=1, le=100)
+    agent_usage_business_overrides: dict[str, AgentUsageOverride] = Field(default_factory=dict)
+
+    @field_validator("agent_usage_conversation_tokens", "agent_usage_sender_tokens", "agent_usage_business_tokens", "agent_usage_alert_percent", mode="before")
+    @classmethod
+    def strict_usage_integer(cls, value):
+        if isinstance(value, bool) or isinstance(value, float):
+            raise ValueError("Usage limits must be positive integer values")
+        return value
+
+    @field_validator("agent_usage_business_overrides")
+    @classmethod
+    def usage_business_keys(cls, value):
+        if any(not key.isascii() or not key.isdigit() or key.startswith("0") for key in value):
+            raise ValueError("Usage override keys must be canonical positive business IDs")
+        return value
 
     @property
     def is_development(self) -> bool:
@@ -65,4 +102,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    # Isolated rehearsals must not inherit private .env files from the checkout.
+    return Settings(_env_file=None) if os.environ.get("ESCALAR_ENV_FILE_DISABLED") == "true" else Settings()

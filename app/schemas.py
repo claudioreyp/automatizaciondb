@@ -75,9 +75,12 @@ INTEGRATION_SCOPES = {
     "payments:write",
     "reservations:write",
     "events:read",
+    "agent:state",
+    "agent:attention",
 }
 
-DEFAULT_AGENT_SCOPES = INTEGRATION_SCOPES - {"inventory:write"}
+DEFAULT_AGENT_SCOPES = INTEGRATION_SCOPES - {"inventory:write", "agent:state", "agent:attention"}
+RESTAURANT_AGENT_SCOPES = {"menu:read", "orders:read", "orders:write", "payments:write", "agent:state", "agent:attention"}
 
 
 class IntegrationCredentialCreate(ApiModel):
@@ -85,6 +88,16 @@ class IntegrationCredentialCreate(ApiModel):
     name: str = Field(min_length=2, max_length=120)
     scopes: list[str] = Field(default_factory=lambda: sorted(DEFAULT_AGENT_SCOPES))
     expires_at: datetime | None = None
+    profile: Literal["generic", "restaurant_agent"] = "generic"
+
+    @model_validator(mode="after")
+    def restrict_agent_profile(self):
+        if self.profile == "restaurant_agent":
+            if "scopes" in self.model_fields_set and not set(self.scopes).issubset(RESTAURANT_AGENT_SCOPES):
+                raise ValueError("Restaurant agents cannot receive administrative integration scopes")
+            if "scopes" not in self.model_fields_set:
+                self.scopes = sorted(RESTAURANT_AGENT_SCOPES)
+        return self
 
     @field_validator("scopes")
     @classmethod
@@ -106,6 +119,16 @@ class RestaurantOnboardingCreate(ApiModel):
     owner_password: SecretStr = Field(min_length=12, max_length=128)
     credential_name: str = Field(default="Integracion principal", min_length=2, max_length=120)
     integration_scopes: list[str] = Field(default_factory=lambda: sorted(DEFAULT_AGENT_SCOPES))
+    integration_profile: Literal["generic", "restaurant_agent"] = "generic"
+
+    @model_validator(mode="after")
+    def restrict_agent_profile(self):
+        if self.integration_profile == "restaurant_agent":
+            if "integration_scopes" in self.model_fields_set and not set(self.integration_scopes).issubset(RESTAURANT_AGENT_SCOPES):
+                raise ValueError("Restaurant agents cannot receive administrative integration scopes")
+            if "integration_scopes" not in self.model_fields_set:
+                self.integration_scopes = sorted(RESTAURANT_AGENT_SCOPES)
+        return self
 
     @field_validator("owner_password")
     @classmethod
@@ -740,11 +763,13 @@ class CourierCreate(ApiModel):
 
 
 class DeliveryAssign(ApiModel):
+    expected_version: int | None = Field(default=None, ge=1)
     courier_id: int | None = None
     estimated_at: datetime | None = None
 
 
 class DeliveryTransition(ApiModel):
+    expected_version: int | None = Field(default=None, ge=1)
     status: Literal["preparing", "ready", "assigned", "dispatched", "delivered", "cancelled"]
 
 
@@ -764,6 +789,7 @@ class EvidenceReview(ApiModel):
     note: str | None = None
     register_id: int | None = None
     expected_version: int | None = None
+    confirmed_amount: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
 
 
 class IntegrationEvidenceCreate(EvidenceMetadata):

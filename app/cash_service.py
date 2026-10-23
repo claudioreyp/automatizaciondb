@@ -796,7 +796,10 @@ def financial_summary(order: Order, collected: Decimal, refunded: Decimal) -> di
         status = "refunded" if collected > 0 and net == 0 else "refund_not_recorded" if net > 0 else "voided"
     else:
         status = "paid" if collected >= cash_money(order.total) else "partial" if collected > 0 else "pending"
-    return {"collected": float(collected), "refunded": float(refunded), "net_collected": float(net), "refundable": float(max(net, Decimal("0"))), "status": status}
+    return {"collected": float(collected), "refunded": float(refunded), "net_collected": float(net),
+            "refundable": float(max(net, Decimal("0"))), "status": status,
+            **({"overpayment_amount": float(max(Decimal("0"), net - cash_money(order.total)))
+                if order.delivery_fee_status != "pending_quote" else 0.0} if order.status != "cancelled" else {})}
 
 
 def order_refunds(db: Session, order: Order) -> list[dict]:

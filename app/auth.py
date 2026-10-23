@@ -49,6 +49,11 @@ class IntegrationAuthContext:
     branch_id: int | None
     scopes: frozenset[str]
     legacy: bool = False
+    profile: str = "generic"
+    sender: str | None = None
+    conversation_id: str | None = None
+    verified_phone: str | None = None
+    contact_display_name: str | None = None
 
 
 ALL_INTEGRATION_SCOPES = frozenset(
@@ -61,6 +66,8 @@ ALL_INTEGRATION_SCOPES = frozenset(
         "payments:write",
         "reservations:write",
         "events:read",
+        "agent:state",
+        "agent:attention",
     }
 )
 
@@ -258,6 +265,7 @@ def require_integration_scope(required_scope: str):
         raise ValueError(f"Unsupported integration scope: {required_scope}")
 
     def dependency(
+        request: Request,
         authorization: str | None = Header(default=None),
         x_integration_token: str | None = Header(default=None),
         db: Session = Depends(get_db),
@@ -300,13 +308,24 @@ def require_integration_scope(required_scope: str):
         if not branch:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Integration branch is inactive")
         require_active_scope(db, credential.business_id, credential.branch_id)
+        profile = credential.profile or "generic"
+        sender = None
+        conversation_id = None
+        if profile == "restaurant_agent":
+            from .agent_runtime_api import authorize_agent_request
+            sender, conversation_id = authorize_agent_request(db, request, credential)
+        # Do not commit here: the agent lease is locked through the domain write.
         credential.last_used_at = utcnow()
-        db.commit()
+        if profile == "generic":
+            db.commit()
         return IntegrationAuthContext(
             credential.id,
             credential.business_id,
             credential.branch_id,
             frozenset(credential.scopes or []),
+            profile=profile, sender=sender, conversation_id=conversation_id,
+            verified_phone=getattr(request.state, "agent_verified_phone", None),
+            contact_display_name=getattr(request.state, "agent_contact_display_name", None),
         )
 
     return dependency

@@ -4,8 +4,8 @@ from datetime import timedelta
 import secrets
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
-from sqlalchemy import select, update
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from sqlalchemy import exists, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from .auth import AuthContext, get_current_user
@@ -15,7 +15,7 @@ from .pos_printing import (
     OPERATIONAL_ROLES, TRANSPORT, PosPrintClaim, PosPrintClaimResponse, PosPrintComplete, PosPrintCreate,
     PosPrintJob, PosPrintingResponse, PosQzResponse, digest, invalidate_stale_job, is_local_job,
     public_job, recover_pos_print_jobs, build_print_payload, content_digest, local_printer_config,
-    checkout_receipt_context,
+    checkout_receipt_context, INTENT,
 )
 from .settings_service import effective_roles, scoped_branch
 from .qz_signing import qz_connection_settings
@@ -112,6 +112,36 @@ def _audit(db: Session, user: AuthContext, job: PrintJob, action: str) -> None:
         entity_id=job.id, payload={"order_id": job.order_id, "job_type": job.job_type,
                                    "attempt": job.attempts},
     ))
+
+
+@router.get("/orders/printing/pending")
+def pending_order_printing(branch_id: int, after_order_id: int = Query(0, ge=0),
+                           limit: int = Query(50, ge=1, le=100),
+                           user: AuthContext = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Discover only existing automatic work; no claim, backfill or printer I/O."""
+    branch = scoped_branch(db, user, branch_id)
+    if not effective_roles(db, user, branch.business_id).intersection(OPERATIONAL_ROLES):
+        raise HTTPException(403, "Insufficient POS printing permission")
+    pending_job = exists(select(PrintJob.id).where(
+        PrintJob.order_id == Order.id, PrintJob.business_id == Order.business_id,
+        PrintJob.branch_id == Order.branch_id, PrintJob.status == "pending",
+        PrintJob.paired_device_id.is_(None), PrintJob.printer_id.is_(None),
+        PrintJob.payload["_transport"].as_string() == TRANSPORT,
+        or_(PrintJob.payload["_manual"].as_boolean().is_(None), PrintJob.payload["_manual"].as_boolean().is_(False)),
+    ))
+    retained_intent = exists(select(KitchenTicket.id).where(
+        KitchenTicket.order_id == Order.id, KitchenTicket.business_id == Order.business_id,
+        KitchenTicket.branch_id == Order.branch_id,
+        KitchenTicket.context_snapshot[INTENT]["transport"].as_string() == TRANSPORT,
+        KitchenTicket.context_snapshot[INTENT]["queue_pending"].as_boolean().is_(True),
+    ))
+    orders = list(db.scalars(select(Order).where(Order.business_id == branch.business_id,
+        Order.branch_id == branch.id, Order.id > after_order_id, or_(pending_job, retained_intent))
+        .order_by(Order.id).limit(limit + 1)))
+    has_more = len(orders) > limit
+    page = orders[:limit]
+    return {"branch_id": branch.id, "items": [{"order_id": row.id, "version": row.version} for row in page],
+            "next_after_order_id": page[-1].id if has_more else None}
 
 
 @router.get("/orders/{order_id}/printing", response_model=PosPrintingResponse)

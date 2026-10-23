@@ -4,7 +4,7 @@ import json
 from uuid import uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -204,13 +204,16 @@ async def delete_agent_image(branch_id: int, payload: MediaDelete, image_id: str
     return result
 
 
-async def image_response(path):
+async def image_response(path, transport_format=None):
     if not path:
         raise HTTPException(404, "Imagen no encontrada")
     try:
         data, media_type = await load_private_file(path)
     except FileNotFoundError as exc:
         raise HTTPException(404, "Imagen no encontrada") from exc
+    if transport_format == "whatsapp_cloud":
+        from .agent_media import whatsapp_cloud_image
+        data, media_type = whatsapp_cloud_image(data, media_type)
     return Response(data, media_type=media_type, headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 
@@ -224,10 +227,11 @@ async def read_agent_image(branch_id: int, image_id: str = "yape-qr", user: Auth
 
 
 @router.get("/integrations/context/menu-cards/{image_id}")
-async def integration_menu_image(image_id: str, auth=Depends(require_integration_scope("menu:read")), db: Session = Depends(get_db)):
+async def integration_menu_image(image_id: str, format: str | None = Query(default=None, pattern="^whatsapp_cloud$"),
+        auth=Depends(require_integration_scope("menu:read")), db: Session = Depends(get_db)):
     if auth.legacy or not auth.branch_id:
         raise HTTPException(403, "Se requiere una credencial de sucursal")
     branch = db.scalar(select(Branch).where(Branch.id == auth.branch_id, Branch.business_id == auth.business_id, Branch.active.is_(True)))
     if not branch:
         raise HTTPException(404, "Sucursal no encontrada")
-    return await image_response(next((i["path"] for i in menu_images(branch) if i["id"] == image_id), None))
+    return await image_response(next((i["path"] for i in menu_images(branch) if i["id"] == image_id), None), format)
