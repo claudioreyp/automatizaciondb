@@ -1341,8 +1341,18 @@ def finalize_order_item_batch(
             select(func.count(KitchenTicket.id)).where(KitchenTicket.order_id == order.id)
         ) or 0
         if previous_status == "confirmed" and existing_ticket_count == 0:
-            tickets = create_kitchen_tickets(db, order, active_order_items(order),
-                context={"created_by": user.user_id, **(ticket_context or {})})
+            if (ticket_context or {}).get("agent_addition") is True:
+                # Preserve a never-issued base command separately from this addition.
+                new_item_ids = {item.id for item in new_items}
+                base_items = [item for item in active_order_items(order) if item.id not in new_item_ids]
+                if base_items:
+                    tickets.extend(create_kitchen_tickets(db, order, base_items,
+                        context={"created_by": user.user_id, "suppress_customer_receipt": True}))
+                tickets.extend(create_kitchen_tickets(db, order, new_items, kind="addition",
+                    context={"created_by": user.user_id, **ticket_context}))
+            else:
+                tickets = create_kitchen_tickets(db, order, active_order_items(order),
+                    context={"created_by": user.user_id, **(ticket_context or {})})
             order.status = "sent_to_kitchen"
             order.sent_to_kitchen_at = order.sent_to_kitchen_at or utcnow()
         else:

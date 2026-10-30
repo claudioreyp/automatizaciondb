@@ -62,9 +62,12 @@ def pending_delivery_allowed(order):
     return order.source in AGENT_SOURCES and order.channel == "delivery" and order.delivery_fee_status == "pending_quote"
 
 
-def preview_items(db, branch, channel, lines, method=None):
+def preview_items(db, branch, channel, lines, method=None, *, verify_agent_service=False, check_schedules=True):
     if channel not in {"counter", "takeaway", "delivery"} or not lines:
         raise HTTPException(422, "Select a service and at least one product")
+    if verify_agent_service:
+        from .agent_service import require_agent_service
+        require_agent_service(db, branch)
     settings = db.scalar(select(BranchSettings).where(BranchSettings.branch_id == branch.id))
     service = "pos_counter" if channel == "counter" else service_channel_for_order(channel, "whatsapp_agent")
     if settings:
@@ -89,13 +92,13 @@ def preview_items(db, branch, channel, lines, method=None):
     schedules = db.scalars(select(ServiceSchedule).where(
         ServiceSchedule.branch_id == branch.id, ServiceSchedule.active.is_(True),
         ServiceSchedule.archived_at.is_(None), ServiceSchedule.kind == "primary"))
-    if any(not schedule_is_open(db, schedule) for schedule in schedules):
+    if check_schedules and any(not schedule_is_open(db, schedule) for schedule in schedules):
         raise CodedHTTPException(409, "Restaurant is currently closed", "SERVICE_CLOSED")
     additional = db.scalars(select(ServiceSchedule).join(ScheduleAssignment).where(
         ServiceSchedule.branch_id == branch.id, ServiceSchedule.active.is_(True),
         ServiceSchedule.archived_at.is_(None), ServiceSchedule.kind == "additional",
         ScheduleAssignment.product_id.in_(quantities)))
-    if any(not schedule_is_open(db, schedule) for schedule in additional):
+    if check_schedules and any(not schedule_is_open(db, schedule) for schedule in additional):
         raise CodedHTTPException(409, "Product schedule is closed", "PRODUCT_SCHEDULE_CLOSED")
     recalculate_order(db, draft)
     return draft
@@ -138,7 +141,13 @@ def commit_addition_request(db, user, order, request):
     if initial_payment_pending(db, order):
         raise CodedHTTPException(409, "Approve the initial receipt first", "INITIAL_PAYMENT_PENDING")
     lines = [OrderLineInput.model_validate(x) for x in request.snapshot["lines"]]
-    draft = preview_items(db, db.get(Branch, order.branch_id), order.channel, lines, request.method)
+    # The API already verified opening hours when it durably accepted this
+    # scoped agent request. Staff review completes that accepted addition;
+    # it is not permission to request a new one after closing. Catalog,
+    # prices, quantities, original payment and dispatch guards still apply.
+    retained_agent_addition = request.purpose == "addition" and request.snapshot.get("verify_agent_service") is True
+    draft = preview_items(db, db.get(Branch, order.branch_id), order.channel, lines, request.method,
+                          verify_agent_service=False, check_schedules=not retained_agent_addition)
     if fingerprint(priced_snapshot(draft)) != fingerprint(request.snapshot["pricing"]):
         raise CodedHTTPException(409, "Addition pricing changed; a staff member must review it", "ADDITION_REQUIRES_REVIEW")
     new_items = list(draft.items)

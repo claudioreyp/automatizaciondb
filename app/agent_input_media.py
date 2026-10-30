@@ -332,21 +332,22 @@ def record_media_disposition(db, row, value):
 @private_transaction
 async def stage_media(response: Response, file: UploadFile = File(...), sender: str = Form(...),
     channel: str = Form(default="whatsapp"), message_id: str = Form(...),
+    verified_phone: str | None = Form(default=None),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     integration: IntegrationAuthContext = Depends(require_integration_scope("agent:state")), db=Depends(get_db)):
-    from .agent_runtime_api import normalize_sender, require_key
+    from .agent_runtime_api import transport_identity, require_key
     agent_only(integration)
     require_key(idempotency_key)
     require_key(message_id)
     if channel != "whatsapp":
         fail(422, "AGENT_MEDIA_CHANNEL_INVALID")
-    sender = normalize_sender(sender)
+    sender, verified_phone = transport_identity(sender, verified_phone)
     limits = get_settings()
     data = await file.read(limits.agent_media_max_bytes + 1)
     mime = validate_image(data, file.content_type)
     legacy, content = hashes(data)
     from .agent_runtime_api import lock_or_create_conversation
-    row = lock_or_create_conversation(db, integration, channel, sender)
+    row = lock_or_create_conversation(db, integration, channel, sender, verified_phone, message_id)
     lock_media_quota(db, row)
     record = media_record(db, row, message_id, lock=True)
     if record:

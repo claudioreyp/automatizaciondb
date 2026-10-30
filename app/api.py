@@ -6752,6 +6752,9 @@ async def review_payment_evidence(
     )
     order = scoped_order_for_user(db, user, evidence.order_id, for_update=True)
     evidence = scoped_payment_evidence_for_user(db, user, evidence_id, for_update=True)
+    if order.source in AGENT_SOURCES and evidence.payment_request_id is None:
+        from .agent_original_payment import require_current_original_evidence
+        require_current_original_evidence(order, evidence)
     if evidence.payment_request_id:
         from .agent_checkout_api import replay, finish
         if payload.expected_version is None:
@@ -6846,11 +6849,13 @@ async def review_payment_evidence(
     evidence.reviewed_at = utcnow()
     notification_event: IntegrationEvent | None = None
     released_table_id: int | None = None
+    agent_kitchen_already_released = order.source in AGENT_SOURCES and bool(db.scalar(
+        select(KitchenTicket.id).where(KitchenTicket.order_id == order.id).limit(1)))
     if not payload.approve:
         evidence.status = "rejected"
         evidence.rejection_reason = payload.note or "Rejected by cashier"
         order.payment_status = "rejected"
-        if order.status not in {"cancelled", "closed"} and not requests_for_order(db, order) and not (evidence.analysis or {}).get("requires_financial_review"):
+        if order.status not in {"cancelled", "closed"} and not requests_for_order(db, order) and not (evidence.analysis or {}).get("requires_financial_review") and not agent_kitchen_already_released:
             released_table_id = order.table_id
             db.flush()
             transition_order(db, user, order, "cancelled")
@@ -6913,12 +6918,16 @@ async def review_payment_evidence(
             other_evidence.rejection_reason = "Another payment evidence was approved"
             other_evidence.reviewed_by = user.user_id
             other_evidence.reviewed_at = superseded_at
-        tickets = send_order_to_kitchen(db, user, order)
+        # A method change cannot send a second command or rewind a ready,
+        # dispatched or delivered order that already entered kitchen.
+        existing_kitchen = list(db.scalars(select(KitchenTicket).where(KitchenTicket.order_id == order.id)))
+        preserved_kitchen = order.source in AGENT_SOURCES and bool(existing_kitchen)
+        tickets = [] if preserved_kitchen else send_order_to_kitchen(db, user, order)
         if financial_review:
             evidence.analysis = {**evidence.analysis, "requires_financial_review": False,
                 "financial_review_acknowledgement": {"actor_id": user.user_id, "amount": str(amount),
                     "order_version": order.version, "note": payload.note}}
-        if recipient_available and tickets:
+        if recipient_available and (tickets or preserved_kitchen):
             notification_event = create_integration_event(
                 db,
                 order,
@@ -6926,11 +6935,17 @@ async def review_payment_evidence(
                 {
                     "evidence_id": evidence.id,
                     "payment_id": payment.id,
-                    "sent_to_kitchen": True,
+                    "sent_to_kitchen": bool(tickets),
                     "purpose": "initial",
+                    "payment_method": evidence.provider,
+                    "payment_approved": True,
+                    "kitchen_release": "previously_released" if preserved_kitchen else "released_now",
+                    "ticket_ids": [ticket.id for ticket in tickets],
+                    "original_payment_method_change": preserved_kitchen,
                     "status": order.status,
                     "message": (
-                        "¡Pago confirmado! Tu pedido fue aprobado y se envió a cocina. "
+                        "¡Pago confirmado! El pedido conserva su estado actual en el restaurante."
+                        if preserved_kitchen else "¡Pago confirmado! Tu pedido fue aprobado y se envió a cocina. "
                         + (
                             "Te avisaremos cuando esté listo. 🍕"
                             if order.channel == "delivery"
@@ -7328,6 +7343,12 @@ async def integration_yape_qr(
         raise HTTPException(status_code=503, detail="Yape QR storage is temporarily unavailable") from exc
     except (httpx.HTTPError, OSError) as exc:
         raise HTTPException(status_code=503, detail="Yape QR storage is temporarily unavailable") from exc
+    if expected_revision is not None:
+        # Storage is awaited: configuration may change while the image downloads.
+        # Re-read instead of combining a stale image with newer public instructions.
+        db.refresh(branch)
+        if yape_revision(branch) != expected_revision:
+            raise CodedHTTPException(409, "Yape payment instructions changed; refresh them before sending the QR", "YAPE_CONFIGURATION_STALE")
     if format == "whatsapp_cloud":
         from .agent_media import whatsapp_cloud_image
         data, content_type = whatsapp_cloud_image(data, content_type)
@@ -7583,7 +7604,12 @@ async def integration_create_order(
             if existing["received_digest"] != received_digest:
                 raise HTTPException(409, "Idempotency key already used with other data")
             return existing["result"]
-        if payload.channel not in agent_context(db, branch)["capabilities"]["order_modes"]:
+        if not existing:
+            # Delivery pricing also evaluates schedules. Verify the agent's
+            # explicit service contract first, including invalid timezones.
+            from .agent_service import require_agent_service
+            require_agent_service(db, branch)
+        if payload.channel not in agent_context(db, branch, restaurant_agent=True)["capabilities"]["order_modes"]:
             raise HTTPException(409, "Service is not enabled for restaurant messaging")
         profile = integration.contact_display_name
         from .models import AgentConversation
@@ -7632,8 +7658,9 @@ async def integration_create_order(
         return existing
     # New agent orders must obey the active POS schedule even for legacy branches
     # without BranchSettings. Exact retries above reconcile existing operations.
-    if integration.profile == "restaurant_agent" and not agent_context(db, branch)["open_now"]:
-        raise CodedHTTPException(409, "Branch is closed at this time", "SERVICE_CLOSED")
+    if integration.profile == "restaurant_agent":
+        from .agent_service import require_agent_service
+        require_agent_service(db, branch)
     requested_source = (payload.source or "").strip().lower()
     from .integration_order_validation import validate_integration_fulfillment
     validate_integration_fulfillment(payload)
@@ -7859,6 +7886,7 @@ async def integration_upload_payment_evidence(
     if target or sender or initial_agent_receipt:
         from .agent_checkout import assert_sender
         assert_sender(order, sender)
+    initial_receipt_amount = None
     if initial_agent_receipt:
         if order.payment_method != "yape" or provider.lower() != "yape":
             raise CodedHTTPException(409, "This order is not awaiting a Yape receipt", "PAYMENT_METHOD_NOT_YAPE")
@@ -7879,13 +7907,29 @@ async def integration_upload_payment_evidence(
     if existing:
         if existing.get("request_fingerprint") and existing["request_fingerprint"] != upload_digest:
             raise HTTPException(409, "Idempotency key belongs to another receipt")
+        if initial_agent_receipt and existing.get("evidence", {}).get("id"):
+            from .agent_original_payment import require_current_original_evidence
+            stored_evidence = db.get(PaymentEvidence, existing["evidence"]["id"])
+            if stored_evidence is not None:
+                require_current_original_evidence(order, stored_evidence)
         return existing
-    if order.status in {"cancelled", "closed", "dispatched", "delivered"}:
+    if order.status in {"cancelled", "closed", "delivered"} or (order.status == "dispatched" and not initial_agent_receipt):
         raise CodedHTTPException(409, "Order no longer accepts an integration receipt", "ORDER_ITEMS_LOCKED")
+    if initial_agent_receipt and order.status == "dispatched":
+        # A dispatched order can receive its original unpaid Yape receipt, but
+        # accepting it without any real kitchen history would let approval
+        # attempt a new kitchen release in an inconsistent delivery state.
+        history = db.scalar(select(KitchenTicket.id).where(KitchenTicket.order_id == order.id,
+            KitchenTicket.business_id == order.business_id, KitchenTicket.branch_id == order.branch_id).limit(1))
+        if history is None:
+            raise CodedHTTPException(409, "The dispatched order has no verifiable kitchen history; ask the manager to reconcile it", "KITCHEN_HISTORY_UNVERIFIABLE")
     if target:
         ensure_request_upload(db, order, target)
     else:
         ensure_payment_evidence_upload_allowed(db, order)
+        if initial_agent_receipt:
+            from .agent_original_payment import original_payment_amount
+            initial_receipt_amount = original_payment_amount(db, order)
     content_type = file.content_type or "application/octet-stream"
     if not content_type.startswith("image/"):
         raise HTTPException(status_code=422, detail="A real payment evidence image is required")
@@ -7902,7 +7946,15 @@ async def integration_upload_payment_evidence(
     )
     if duplicate_image:
         raise HTTPException(status_code=409, detail="This payment evidence image was already used")
-    analysis = await analyze_payment_image(data, content_type)
+    # Integration hints are review data. Model dispatch belongs to the native
+    # agent coordinator; receiving an image never approves or releases payment.
+    # The direct POS upload retains its own analyzer and configuration.
+    analysis = {
+        "available": False,
+        "reason": "integration_secondary_analysis_disabled",
+        "metadata_source": "integration_workflow_hints",
+        "requires_human_review": True,
+    }
     if initial_agent_receipt and analysis.get("available") is True and analysis.get("looks_like_payment_receipt") is not True:
         raise CodedHTTPException(422, "The image could not be confirmed as a payment receipt", "PAYMENT_RECEIPT_REQUIRED")
     supplied_warnings: list[str] = []
@@ -7930,7 +7982,7 @@ async def integration_upload_payment_evidence(
         raise CodedHTTPException(422, "The image is not a payment receipt", "PAYMENT_RECEIPT_REQUIRED")
     analysis = {
         **analysis,
-        "expected_amount": float(target.amount if target else order.total),
+        "expected_amount": float(target.amount if target else initial_receipt_amount if initial_agent_receipt else order.total),
         "workflow_looks_like_payment_receipt": looks_like_payment_receipt,
         "receipt_detected": receipt_detected,
     }
@@ -7946,6 +7998,15 @@ async def integration_upload_payment_evidence(
         },
         analysis,
     )
+    # Preserve image warnings as review data, including genuine-looking receipts.
+    # Receiving a receipt never approves its payment.
+    values["warnings"] = list(
+        dict.fromkeys(
+            str(warning).strip()[:240]
+            for warning in [*values.get("warnings", []), *supplied_warnings]
+            if str(warning).strip()
+        )
+    )[:10]
     if not receipt_detected:
         values.update(
             {
@@ -7959,7 +8020,6 @@ async def integration_upload_payment_evidence(
                     dict.fromkeys(
                         [
                             "La imagen no parece ser un comprobante de pago.",
-                            *supplied_warnings,
                             *values.get("warnings", []),
                         ]
                     )

@@ -1,5 +1,6 @@
 """Read-only projection of the configuration maintained in the POS."""
 from copy import deepcopy
+from datetime import time
 import hashlib
 import json
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -9,6 +10,36 @@ from sqlalchemy.orm import Session
 
 from .models import Branch, BranchSettings, DeliveryBand, ServiceSchedule, Business, utcnow
 from .settings_service import serialize_delivery_band, serialize_delivery_policy, serialize_schedule, schedule_is_open
+
+
+def public_agent_schedule(schedule: dict) -> dict:
+    """Name POS weekdays explicitly so a model cannot infer a different convention."""
+    days = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+    shifts = []
+    for shift in schedule["shifts"]:
+        value = dict(shift)
+        day = shift["day_of_week"]
+        try:
+            if type(day) is not int or not 0 <= day <= 6:
+                raise ValueError("invalid weekday")
+            start, end = time.fromisoformat(shift["starts_at"]), time.fromisoformat(shift["ends_at"])
+        except (ValueError, TypeError):
+            value["display"] = None
+        else:
+            overnight = end <= start
+            end_day = (day + int(overnight)) % 7
+            start_minute, end_minute = start.hour * 60 + start.minute, end.hour * 60 + end.minute
+            duration = (end_minute - start_minute) % 1440 or 1440
+            display = f"{days[day]} de {start:%H:%M} a {end:%H:%M}"
+            if overnight:
+                display += f" del {days[end_day]} siguiente"
+            if duration == 1440:
+                display += " (24 horas)"
+            value.update(day_name=days[day], ends_day_name=days[end_day],
+                         spans_next_day=overnight, duration_minutes=duration, display=display)
+        shifts.append(value)
+    return {**schedule, "weekday_numbering": "monday_zero", "shifts": shifts,
+            "display_intervals": [s["display"] for s in shifts if s.get("display")]}
 
 
 def yape_revision(branch: Branch) -> str:
@@ -33,6 +64,8 @@ def agent_calendar(timezone_name: str | None) -> dict:
 
 
 def agent_context(db: Session, branch: Branch, *, restaurant_agent: bool = False) -> dict:
+    from .agent_service import service_availability
+    availability = service_availability(db, branch) if restaurant_agent else None
     settings = db.scalar(select(BranchSettings).where(
         BranchSettings.business_id == branch.business_id, BranchSettings.branch_id == branch.id,
     ))
@@ -69,8 +102,10 @@ def agent_context(db: Session, branch: Branch, *, restaurant_agent: bool = False
             "registered_product_changes": False, "registered_cancellation": False,
             "fulfillment_changes_until": "actual_dispatch_or_collection",
             "receipt_requires_human_approval": True},
-        "schedules": [{**serialize_schedule(db, schedule), "open_now": schedule_is_open(db, schedule)} for schedule in schedules],
-        "open_now": all(schedule_is_open(db, schedule) for schedule in schedules if schedule.kind == "primary"),
+        "schedules": [{**serialize_schedule(db, schedule), "open_now":
+            None if availability and availability["status"] == "unverified" else schedule_is_open(db, schedule)} for schedule in schedules],
+        "open_now": (availability["status"] == "open" if availability["status"] != "unverified" else None)
+            if availability else all(schedule_is_open(db, schedule) for schedule in schedules if schedule.kind == "primary"),
         "estimates": {"source": "pos_settings", "delivery_min_minutes": settings.delivery_min_minutes,
             "delivery_max_minutes": settings.delivery_max_minutes, "pickup_minutes": settings.pickup_minutes,
             "is_guarantee": False} if settings else None,
@@ -125,6 +160,12 @@ def agent_context(db: Session, branch: Branch, *, restaurant_agent: bool = False
         },
     }
     if restaurant_agent:
+        result["schedules"] = [public_agent_schedule(schedule) for schedule in result["schedules"]]
+        result["service_availability"] = availability
+        yape = result["payments"]["yape"]
+        yape["missing_fields"] = [field for field in ("number", "recipient_name")
+                                  if not str(yape.get(field) or "").strip()]
+        yape["instructions_ready"] = not yape["missing_fields"]
         from .agent_delivery import project_delivery
         result["delivery"] = project_delivery(result["delivery"])
         result["payments"]["methods"] = {channel: [method for method in methods if method in {"cash", "yape"}]

@@ -30,6 +30,25 @@ from .errors import CodedHTTPException
 router = APIRouter(prefix="/api/v1", tags=["agent-checkout"])
 
 
+def fulfillment_change_notice(order, destination):
+    """Visible staff warning built only after the POS confirms the mutation."""
+    title = "REVISIÓN: CAMBIO DE UBICACIÓN DE ENTREGA"
+    parts = [title + (f". Pedido #{order.folio}." if order.folio else ".")]
+    if order.channel == "delivery" and destination:
+        location = destination.get("address") or destination.get("maps_url")
+        if not location and destination.get("latitude") is not None and destination.get("longitude") is not None:
+            location = f"{destination['latitude']}, {destination['longitude']}"
+        if location:
+            parts.append("Nuevo destino: " + str(location)[:900] + ".")
+        if destination.get("reference"):
+            parts.append("Referencia: " + str(destination["reference"])[:500] + ".")
+        parts.append("Revisar el nuevo destino antes de entregar el pedido al repartidor.")
+    else:
+        parts.append("Modalidad actual: recojo en el restaurante. Revisar el cambio antes de entregar el pedido.")
+    return " ".join(parts)
+
+
+
 class Preview(BaseModel):
     channel: Literal["counter", "takeaway", "delivery"]
     purpose: Literal["initial", "addition"] = "initial"
@@ -50,7 +69,18 @@ class Addition(CustomerOperation):
 
 
 class Revision(CustomerOperation):
+    model_config = ConfigDict(extra="forbid")
     operations: list[OrderItemRevisionOperation] = Field(min_length=1, max_length=100)
+
+
+class RevisionCommit(Revision):
+    quote_fingerprint: str = Field(min_length=64, max_length=64)
+    expected_total: Decimal = Field(ge=0)
+
+
+class OriginalCancellation(CustomerOperation):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=1, max_length=1000)
 
 
 class Fulfillment(CustomerOperation):
@@ -149,7 +179,8 @@ def catalog(response: Response, integration: IntegrationAuthContext = Depends(re
     response.headers["Cache-Control"] = "no-store"
     from .agent_catalog import complete_catalog
     return complete_catalog(db, branch, {"business_id": branch.business_id, "branch_id": branch.id, "categories": categories,
-            "products": products, "promotions": raw["promotions"]})
+            "products": products, "promotions": raw["promotions"]},
+            restaurant_agent=integration.profile == "restaurant_agent")
 
 
 @router.post("/integrations/orders/preview")
@@ -167,7 +198,8 @@ def preview(payload: Preview, response: Response, integration: IntegrationAuthCo
             if previous.get("request_digest") != digest:
                 raise HTTPException(409, "Idempotency key belongs to different content")
             return previous["result"]
-    draft = preview_items(db, branch, payload.channel, payload.items, payload.payment_method)
+    draft = preview_items(db, branch, payload.channel, payload.items, payload.payment_method,
+                          verify_agent_service=integration.profile == "restaurant_agent")
     is_restaurant_agent = integration.profile == "restaurant_agent"
     delivery = agent_context(db, branch, restaurant_agent=is_restaurant_agent)["delivery"]
     fee = Decimal(0)
@@ -230,19 +262,26 @@ def customer_state(order_id: int, sender: str, response: Response, integration: 
     is_open = order.status not in {"dispatched", "delivered", "cancelled", "closed"} and not order.table_released_at
     requests = requests_for_order(db, order)
     kitchen_completed = kitchen_was_completed(db, order)
+    from .agent_original_payment import original_payment_policy
+    payment_policy, _, _, _, _ = original_payment_policy(db, order)
+    from .agent_original_policy import before_kitchen_mutable, kitchen_started
+    original_mutable = before_kitchen_mutable(db, order)
     return {**serialize_order(order), "paid_amount": float(paid),
+        "initial_payment_amount": payment_policy["initial_payment_amount"],
+        "payment_method_change": payment_policy,
         "remaining_amount": float(max(Decimal(0), money(order.total) - paid)),
-        "kitchen_completed": kitchen_completed,
+        "kitchen_completed": kitchen_completed, "kitchen_started": kitchen_started(db, order),
         "allowed_actions": {
             "add_items": bool(is_open and order.status not in {"draft", "pending_confirmation"}
                               and order.payment_method in {"cash", "yape"}),
-            "cancel_order": False,
-            "revise_items": False,
+            "cancel_order": original_mutable,
+            "change_original_payment": payment_policy["allowed"],
+            "revise_items": original_mutable,
             "change_fulfillment": is_open,
             "change_to_delivery": is_open,
             "change_to_takeaway": is_open,
             "fulfillment_change_block_reason": None if is_open else "order_dispatched_or_completed",
-            "editable_item_ids": [],
+            "editable_item_ids": [item.id for item in order.items if item.status not in {"cancelled", "superseded"}] if original_mutable else [],
             "choose_delivery_payment": bool(is_open and any(r.purpose == "delivery" and r.method == "unselected" for r in requests)),
         }, "payment_requests": [serialize_request(r) for r in requests],
         "payment_evidence": [{k: v for k, v in serialize_payment_evidence(e).items() if k in {
@@ -450,7 +489,7 @@ async def change_fulfillment(order_id: int, payload: FulfillmentCommit,
                 "requires_financial_review": True}
             financial_review = True
     create_attention(db, business_id=order.business_id, branch_id=order.branch_id, sender=payload.sender,
-        kind="fulfillment_change", summary="El cliente cambió la modalidad o el destino de entrega.",
+        kind="fulfillment_change", summary=fulfillment_change_notice(order, destination),
         order_id=order.id, source_key=f"fulfillment:{quote.id}", details=details)
     if financial_review or (quote.fee is not None and financial["overpayment_amount"] > 0):
         create_attention(db, business_id=order.business_id, branch_id=order.branch_id, sender=payload.sender,
@@ -476,11 +515,14 @@ async def add_items(order_id: int, payload: Addition, idempotency_key: str | Non
     previous, digest = replay(db, order, scope, idempotency_key, payload)
     if previous is not None:
         return previous
+    if integration.profile == "restaurant_agent" and payload.payment_method is None:
+        raise CodedHTTPException(409, "Choose Yape or cash for this addition", "ADDITION_PAYMENT_METHOD_REQUIRED")
     assert_registered(order)
     method = payload.payment_method or order.payment_method
     if method not in {"cash", "yape"} or order.payment_method not in {"cash", "yape"}:
         raise HTTPException(409, "A staff member must handle this payment method")
-    draft = preview_items(db, db.get(Branch, order.branch_id), order.channel, payload.items, method)
+    draft = preview_items(db, db.get(Branch, order.branch_id), order.channel, payload.items, method,
+                          verify_agent_service=integration.profile == "restaurant_agent")
     if money(payload.expected_amount) != draft.total:
         raise HTTPException(409, "Review the updated addition price")
     user = AuthContext("integration", "owner", order.business_id, order.branch_id)
@@ -490,6 +532,7 @@ async def add_items(order_id: int, payload: Addition, idempotency_key: str | Non
             order_id=order.id, purpose="addition", method=method, amount=draft.total,
             status="awaiting_base_review" if waiting_base else "pending",
             snapshot={"lines": [x.model_dump(mode="json") for x in payload.items], "pricing": priced_snapshot(draft),
+                "verify_agent_service": integration.profile == "restaurant_agent",
                 "blocked_reason": "initial_payment_pending" if waiting_base else None})
         db.add(request)
         db.flush()
@@ -514,12 +557,45 @@ async def add_items(order_id: int, payload: Addition, idempotency_key: str | Non
 
 
 @router.post("/integrations/orders/{order_id}/item-revisions")
-async def revise_items(order_id: int, payload: Revision, idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+async def revise_items(order_id: int, payload: RevisionCommit, idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     integration: IntegrationAuthContext = Depends(require_integration_scope("orders:write")), db: Session = Depends(get_db)):
-    scoped(db, integration, order_id, payload.sender)
-    if not idempotency_key or len(idempotency_key) > 240:
-        raise HTTPException(422, "Idempotency-Key is required (max 240 characters)")
-    reject_agent_order_change()
+    from .agent_original_items import commit_revisions
+    order = scoped(db, integration, order_id, payload.sender)
+    scope = f"agent-original-items:{order.id}"
+    previous, digest = replay(db, order, scope, idempotency_key, payload)
+    if previous is not None:
+        return previous
+    result = commit_revisions(db, order, payload.operations, quote_fingerprint=payload.quote_fingerprint,
+        expected_total=payload.expected_total, operation_key=digest, verify_agent_service=integration.profile == 'restaurant_agent')
+    return await finish(db, order, scope, idempotency_key, digest, result)
+
+
+@router.post("/integrations/orders/{order_id}/item-revisions/preview")
+def preview_original_items(order_id: int, payload: Revision, idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    integration: IntegrationAuthContext = Depends(require_integration_scope("orders:write")), db: Session = Depends(get_db)):
+    from .agent_original_items import preview_revisions
+    order = scoped(db, integration, order_id, payload.sender)
+    scope = f"agent-original-items-preview:{order.id}"
+    previous, digest = replay(db, order, scope, idempotency_key, payload)
+    if previous is not None:
+        return previous
+    result = preview_revisions(db, order, payload.operations, verify_agent_service=integration.profile == 'restaurant_agent')
+    save_idempotent_response(db, scope, idempotency_key, order.business_id, {"request_digest": digest, "result": result})
+    db.commit()
+    return result
+
+
+@router.post("/integrations/orders/{order_id}/cancel-before-kitchen")
+async def cancel_original_order(order_id: int, payload: OriginalCancellation, idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    integration: IntegrationAuthContext = Depends(require_integration_scope("orders:write")), db: Session = Depends(get_db)):
+    from .agent_original_items import cancel_before_kitchen
+    order = scoped(db, integration, order_id, payload.sender)
+    scope = f"agent-original-cancel:{order.id}"
+    previous, digest = replay(db, order, scope, idempotency_key, payload)
+    if previous is not None:
+        return previous
+    result = cancel_before_kitchen(db, order, reason=payload.reason, operation_key=digest)
+    return await finish(db, order, scope, idempotency_key, digest, result)
 
 
 
@@ -679,3 +755,55 @@ def select_delivery_method(db, user, order, method):
     audit(db, user, "order.delivery_payment_selected", "order", order.id, order.business_id,
           {"request_id": request.id, "method": method}, branch_id=order.branch_id)
     return request
+
+
+class OriginalPaymentMethod(CustomerOperation):
+    model_config = ConfigDict(extra="forbid")
+    method: Literal["cash", "yape"]
+
+
+class OriginalPaymentMethodCommit(OriginalPaymentMethod):
+    preview_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+@router.post("/integrations/orders/{order_id}/payment-method-preview")
+async def preview_original_payment_method(order_id: int, payload: OriginalPaymentMethod,
+    response: Response, idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    integration: IntegrationAuthContext = Depends(require_integration_scope("orders:write")), db: Session = Depends(get_db)):
+    order = scoped(db, integration, order_id, payload.sender)
+    from .agent_original_payment import require_accepted_original
+    require_accepted_original(order)
+    scope = f"agent-original-payment-preview:{order.id}"
+    previous, digest = replay(db, order, scope, idempotency_key, payload)
+    if previous is not None:
+        return previous
+    from .agent_original_payment import original_payment_policy
+    info, preview_fingerprint, _, _, tickets = original_payment_policy(db, order, payload.method)
+    response.headers["Cache-Control"] = "no-store"
+    result = {"order_id": order.id, "order_version": order.version,
+        "from_method": order.payment_method, "to_method": payload.method,
+        "preview_fingerprint": preview_fingerprint, **info,
+        "effects": {"existing_kitchen_preserved": bool(tickets),
+            "initial_kitchen_release": bool(info["allowed"] and payload.method == "cash" and not tickets),
+            "approved_payments_modified": False, "products_or_amounts_modified": False}}
+    return await finish(db, order, scope, idempotency_key, digest, result)
+
+
+@router.patch("/integrations/orders/{order_id}/payment-method")
+async def change_original_payment_method(order_id: int, payload: OriginalPaymentMethodCommit,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    integration: IntegrationAuthContext = Depends(require_integration_scope("orders:write")), db: Session = Depends(get_db)):
+    order = scoped(db, integration, order_id, payload.sender)
+    from .agent_original_payment import require_accepted_original
+    require_accepted_original(order)
+    scope = f"agent-original-payment:{order.id}"
+    previous, digest = replay(db, order, scope, idempotency_key, payload)
+    if previous is not None:
+        return previous
+    from .agent_original_payment import apply_original_payment_method
+    user = AuthContext("integration", "owner", order.business_id, order.branch_id)
+    result = apply_original_payment_method(db, user, order, payload.sender,
+        payload.method, payload.preview_fingerprint)
+    db.flush()
+    result = {"order": serialize_order(order), **result}
+    return await finish(db, order, scope, idempotency_key, digest, result)

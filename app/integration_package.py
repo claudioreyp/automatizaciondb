@@ -22,6 +22,8 @@ ROUTES = (
     ("customer_order_state", "GET", "/orders/{order_id}/customer-state", "orders:read"),
     ("add_order_items", "POST", "/orders/{order_id}/item-batches", "orders:write"),
     ("choose_delivery_payment", "PATCH", "/orders/{order_id}/delivery-payment", "orders:write"),
+    ("preview_original_payment_method", "POST", "/orders/{order_id}/payment-method-preview", "orders:write"),
+    ("change_original_payment_method", "PATCH", "/orders/{order_id}/payment-method", "orders:write"),
     ("request_human", "POST", "/orders/{order_id}/request-human", "orders:write"),
     ("create_reservation", "POST", "/reservations", "reservations:write"),
     ("events", "GET", "/events", "events:read"),

@@ -41,7 +41,9 @@ def public_promotion(promotion, products, allowed_channels):
         "eligible_products": eligible, "application_rules": promotion_application_rules(promotion)}
 
 
-def complete_catalog(db, branch, payload):
+def complete_catalog(db, branch, payload, *, restaurant_agent=False):
+    from .agent_service import service_availability
+    availability = service_availability(db, branch) if restaurant_agent else None
     business = db.get(Business, branch.business_id)
     settings = db.scalar(select(BranchSettings).where(BranchSettings.branch_id == branch.id,
         BranchSettings.business_id == branch.business_id))
@@ -53,16 +55,20 @@ def complete_catalog(db, branch, payload):
     schedules = list(db.scalars(select(ServiceSchedule).where(ServiceSchedule.branch_id == branch.id,
         ServiceSchedule.business_id == branch.business_id, ServiceSchedule.active.is_(True),
         ServiceSchedule.archived_at.is_(None))))
-    open_schedules = {s.id: schedule_is_open(db, s) for s in schedules}
-    primary_open = all(open_schedules[s.id] for s in schedules if s.kind == "primary")
+    open_schedules = {s.id: False if availability and availability["status"] == "unverified"
+                      else schedule_is_open(db, s) for s in schedules}
+    primary_open = (availability["status"] == "open" if availability["status"] != "unverified" else None) \
+        if availability else all(open_schedules[s.id] for s in schedules if s.kind == "primary")
     assignments = list(db.scalars(select(ScheduleAssignment).where(
         ScheduleAssignment.schedule_id.in_(list(open_schedules))))) if schedules else []
     for product in payload["products"]:
-        schedule_open = primary_open and all(open_schedules[a.schedule_id] for a in assignments if a.product_id == product["id"])
+        schedule_open = primary_open is True and all(open_schedules[a.schedule_id] for a in assignments if a.product_id == product["id"])
         product["available"] = product["available"] and schedule_open
         product["schedule_available"] = schedule_open
-    local = utcnow().astimezone(ZoneInfo(business.timezone))
+    local = None if availability and availability["reason"] == "invalid_timezone" else utcnow().astimezone(ZoneInfo(business.timezone))
     def active(promotion):
+        if local is None:
+            return False
         starts = promotion.get("starts_on")
         ends = promotion.get("ends_on")
         starts = date.fromisoformat(starts) if isinstance(starts, str) else starts
@@ -77,5 +83,11 @@ def complete_catalog(db, branch, payload):
     payload.update(currency=business.currency, timezone=business.timezone,
         complete=True, next_cursor=None, product_count=len(payload["products"]),
         schema_version=1, open_now=primary_open)
-    payload["catalog_version"] = fingerprint(payload)
+    if availability:
+        payload["service_availability"] = availability
+    version_payload = {**payload}
+    if availability:
+        version_payload["service_availability"] = {k: v for k, v in availability.items()
+            if k not in {"checked_at", "local_time"}}
+    payload["catalog_version"] = fingerprint(version_payload)
     return payload
