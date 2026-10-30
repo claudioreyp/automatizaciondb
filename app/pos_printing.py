@@ -301,7 +301,9 @@ def prepare_pos_print_intent(db: Session, order: Order, ticket: KitchenTicket) -
         return True
     definitions = []
     table_order = order.channel == "dine_in" and order.table_id is not None
-    if ticket.sequence == 1 and not table_order and config.get("manual_customer_receipt") is False:
+    addition_command = ticket.kind == "addition" or (ticket.context_snapshot or {}).get("agent_addition") is True
+    suppress_receipt = (ticket.context_snapshot or {}).get("suppress_customer_receipt") is True
+    if ticket.sequence == 1 and not table_order and not addition_command and not suppress_receipt and config.get("manual_customer_receipt") is False:
         definitions.append(("customer_receipt", settings.customer_ticket_template or {}))
     if config.get("auto_print_kitchen") is True:
         definitions.append(("kitchen_ticket", settings.kitchen_ticket_template or {}))

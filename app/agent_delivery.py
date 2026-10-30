@@ -36,7 +36,10 @@ def project_delivery(delivery):
         "agent_policy_version": POLICY_VERSION,
         "fee_status": "disabled" if not enabled else "pending_quote" if mode == "quote" else "configured",
         "requires_quote": bool(enabled and mode == "quote"),
-        "requires_destination": bool(enabled),
+        # Destination is needed to quote a manual fee; every delivery order
+        # still requires its address independently of the fee.
+        "requires_destination": bool(enabled and mode == "quote"),
+        "address_required_for_order": bool(enabled),
         "fee": None if mode == "quote" else delivery["fee"],
         "distance_base_fee": None, "distance_fee_per_km": None, "distance_max_km": None,
         "free_delivery_threshold": None, "policy": None, "bands": []}
