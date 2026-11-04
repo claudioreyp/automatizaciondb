@@ -18,7 +18,20 @@ import threading
 from urllib.parse import parse_qs, urlsplit
 
 HERE=Path(__file__).resolve().parent
-WORKSPACE=HERE.parents[2]
+
+def resolve_api_root():
+    # The packaged image uses /sandbox, whose parent chain is shorter than the
+    # Windows workspace. Honor its explicit API root before traversing parents.
+    configured=os.environ.get("ESCALAR_QR_SANDBOX_API_ROOT")
+    if configured:
+        root=Path(configured)
+        assert root.is_absolute()
+        return root.resolve()
+    if len(HERE.parents)>2:
+        workspace_root=HERE.parents[2]
+        candidate=workspace_root/".worktrees/api-tools"
+        if (candidate/"app/main.py").is_file():return candidate.resolve()
+    return (HERE/"api").resolve()
 
 def create_sandbox():
     # Set these before importing app.database/config; no user .env is read.
@@ -28,7 +41,7 @@ def create_sandbox():
         LEGACY_PUBLIC_READS_ENABLED="false",SUPABASE_URL="",SUPABASE_JWT_SECRET="",
         SUPABASE_JWKS_URL="",SUPABASE_SERVICE_ROLE_KEY="",QZ_TRAY_CERTIFICATE="",
         QZ_TRAY_PRIVATE_KEY="",QZ_TRAY_CERTIFICATE_FILE="",QZ_TRAY_PRIVATE_KEY_FILE="")
-    api_root=Path(os.environ.get("ESCALAR_QR_SANDBOX_API_ROOT",str(WORKSPACE/".worktrees/api-tools"))).resolve()
+    api_root=resolve_api_root()
     assert api_root.is_absolute() and (api_root/"app/main.py").is_file()
     sys.path.insert(0,str(api_root))
     from fastapi.testclient import TestClient

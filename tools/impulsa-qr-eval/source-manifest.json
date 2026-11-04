@@ -429,8 +429,8 @@
     {
       "source": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\api-sandbox.py",
       "file": "api-sandbox.py",
-      "sha256": "626bfcd676888ab117ceb6f7daad0ec46236453ce06821a53b637e622385a4ef",
-      "bytes": 14989
+      "sha256": "2c7b2a5abf20b1c12efcd343d4c04823f1b37f8857802682aa443e8fcd1489fe",
+      "bytes": 15471
     }
   ],
   "internal_service": "http://impulsa-qr-api-eval:8769",
