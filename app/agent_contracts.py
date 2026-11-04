@@ -260,6 +260,20 @@ class EvidenceSummary(PublicModel):
     reviewed_at: datetime | None
 
 
+class PaymentMethodPolicy(PublicModel):
+    allowed: bool
+    methods: list[str]
+    block_reason: str | None
+    requires_human_review: bool
+    has_approved_payments: bool
+    has_approved_evidence: bool
+    paid_amount: float
+    initial_payment_amount: float | None
+    kitchen_already_released: bool
+    initial_receipt_required: bool
+    initial_receipt_under_review: bool
+
+
 class CustomerOrderState(PublicModel):
     id: int
     business_id: int
@@ -279,6 +293,7 @@ class CustomerOrderState(PublicModel):
     payment_requests: list[PaymentRequest]
     tickets: list[KitchenTicket]
     payment_evidence: list[EvidenceSummary]
+    payment_method_change: PaymentMethodPolicy
 
 
 class SelectionIssue(PublicModel):
@@ -378,6 +393,12 @@ class OrderToolResult(PublicModel):
     status: str | None = None
     order: OrderSnapshot | None = None
     payment_request: PaymentRequest | None = None
+    payment_requests: list[PaymentRequest] | None = None
+    evidence: EvidenceSummary | None = None
+    requires_human_review: bool | None = None
+    total: float | None = None
+    paid_amount: float | None = None
+    remaining_amount: float | None = None
     tickets: list[KitchenTicket] | None = None
     sent_to_kitchen: bool | None = None
     command_committed: bool | None = None
@@ -422,7 +443,7 @@ class EventAcknowledgement(PublicModel):
     acknowledged_at: str
 
 
-class PaymentMethodPreview(PublicModel):
+class PaymentMethodPreview(PaymentMethodPolicy):
     order_id: int
     order_version: int
     from_method: str | None

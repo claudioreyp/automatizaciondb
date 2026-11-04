@@ -45610,6 +45610,9 @@
             },
             "type": "array",
             "title": "Payment Evidence"
+          },
+          "payment_method_change": {
+            "$ref": "#/components/schemas/PaymentMethodPolicy"
           }
         },
         "additionalProperties": true,
@@ -45632,7 +45635,8 @@
           "allowed_actions",
           "payment_requests",
           "tickets",
-          "payment_evidence"
+          "payment_evidence",
+          "payment_method_change"
         ],
         "title": "CustomerOrderState"
       },
@@ -49387,6 +49391,87 @@
           "amount"
         ],
         "title": "PaymentCreate"
+      },
+      "PaymentMethodPolicy": {
+        "properties": {
+          "allowed": {
+            "type": "boolean",
+            "title": "Allowed"
+          },
+          "methods": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Methods"
+          },
+          "block_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Reason"
+          },
+          "requires_human_review": {
+            "type": "boolean",
+            "title": "Requires Human Review"
+          },
+          "has_approved_payments": {
+            "type": "boolean",
+            "title": "Has Approved Payments"
+          },
+          "has_approved_evidence": {
+            "type": "boolean",
+            "title": "Has Approved Evidence"
+          },
+          "paid_amount": {
+            "type": "number",
+            "title": "Paid Amount"
+          },
+          "initial_payment_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial Payment Amount"
+          },
+          "kitchen_already_released": {
+            "type": "boolean",
+            "title": "Kitchen Already Released"
+          },
+          "initial_receipt_required": {
+            "type": "boolean",
+            "title": "Initial Receipt Required"
+          },
+          "initial_receipt_under_review": {
+            "type": "boolean",
+            "title": "Initial Receipt Under Review"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "allowed",
+          "methods",
+          "block_reason",
+          "requires_human_review",
+          "has_approved_payments",
+          "has_approved_evidence",
+          "paid_amount",
+          "initial_payment_amount",
+          "kitchen_already_released",
+          "initial_receipt_required",
+          "initial_receipt_under_review"
+        ],
+        "title": "PaymentMethodPolicy"
       },
       "PaymentRequest": {
         "properties": {
@@ -54553,6 +54638,80 @@
             ],
             "default": null
           },
+          "payment_requests": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PaymentRequest"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Payment Requests"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvidenceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "requires_human_review": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Requires Human Review"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Total"
+          },
+          "paid_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Paid Amount"
+          },
+          "remaining_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Remaining Amount"
+          },
           "tickets": {
             "anyOf": [
               {
@@ -54884,6 +55043,67 @@
       "PaymentMethodPreview": {
         "additionalProperties": true,
         "properties": {
+          "allowed": {
+            "title": "Allowed",
+            "type": "boolean"
+          },
+          "methods": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Methods",
+            "type": "array"
+          },
+          "block_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Block Reason"
+          },
+          "requires_human_review": {
+            "title": "Requires Human Review",
+            "type": "boolean"
+          },
+          "has_approved_payments": {
+            "title": "Has Approved Payments",
+            "type": "boolean"
+          },
+          "has_approved_evidence": {
+            "title": "Has Approved Evidence",
+            "type": "boolean"
+          },
+          "paid_amount": {
+            "title": "Paid Amount",
+            "type": "number"
+          },
+          "initial_payment_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initial Payment Amount"
+          },
+          "kitchen_already_released": {
+            "title": "Kitchen Already Released",
+            "type": "boolean"
+          },
+          "initial_receipt_required": {
+            "title": "Initial Receipt Required",
+            "type": "boolean"
+          },
+          "initial_receipt_under_review": {
+            "title": "Initial Receipt Under Review",
+            "type": "boolean"
+          },
           "order_id": {
             "title": "Order Id",
             "type": "integer"
@@ -54911,10 +55131,6 @@
             "title": "Preview Fingerprint",
             "type": "string"
           },
-          "allowed": {
-            "title": "Allowed",
-            "type": "boolean"
-          },
           "effects": {
             "additionalProperties": {
               "type": "boolean"
@@ -54924,12 +55140,22 @@
           }
         },
         "required": [
+          "allowed",
+          "methods",
+          "block_reason",
+          "requires_human_review",
+          "has_approved_payments",
+          "has_approved_evidence",
+          "paid_amount",
+          "initial_payment_amount",
+          "kitchen_already_released",
+          "initial_receipt_required",
+          "initial_receipt_under_review",
           "order_id",
           "order_version",
           "from_method",
           "to_method",
           "preview_fingerprint",
-          "allowed",
           "effects"
         ],
         "title": "PaymentMethodPreview",
