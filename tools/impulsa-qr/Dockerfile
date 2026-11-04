@@ -19,5 +19,6 @@ COPY --chown=node:node package.json ./
 COPY --chown=node:node scripts/start-qr.sh ./scripts/start-qr.sh
 RUN chmod 0555 ./scripts/start-qr.sh && mkdir -p /var/lib/impulsa/session && chown node:node /var/lib/impulsa/session
 USER node
+WORKDIR /var/lib/impulsa/session
 STOPSIGNAL SIGTERM
 ENTRYPOINT ["/bin/sh", "/app/scripts/start-qr.sh"]
