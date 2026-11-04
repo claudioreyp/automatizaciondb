@@ -1,0 +1,6 @@
+{
+  "name": "@escalar/native-static-node-operational-r01",
+  "version": "0.0.0-r01",
+  "private": true,
+  "main": "EscalarStaticBody.node.js"
+}

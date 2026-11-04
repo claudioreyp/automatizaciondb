@@ -1,0 +1,31 @@
+{
+  "schema": "escalarai.native-static-node-persistent-r12-pack.v1",
+  "state": "PREPARED_NOT_APPLIED",
+  "expected_image_id": "sha256:4f448824ec99e1160e49eeb1c5bf2130a5d244fe9029e871a9f4d9f126dbfc98",
+  "module_package": "@escalar/native-static-node-operational-r01",
+  "registry_sha256": "152ad9c508bf880cc08c514322162f7dde7727d1224df2f133c705e6ff89d2fb",
+  "r12_manifest_sha256": "858e8914c935ae96fd26f70ed73725f5ef233ec9909738da54d90b3cb587b951",
+  "r12_independent_review_sha256": "6410739216572dce0894236502a145408febf4cde9f80a2f0369dc90f45111fb",
+  "files": {
+    "node/trusted-runtime.cjs": {
+      "sha256": "c95877b63cbc6a4dec66d51afd6536f2941ee1ed2b355e1d3c56a16ae0703b52",
+      "bytes": 9195
+    },
+    "node/EscalarStaticBody.node.js": {
+      "sha256": "197b97e7be40883d97b3780f086d81ad3268cc25aeb03b4895eac7432a3dc0ed",
+      "bytes": 2186
+    },
+    "node/code-output.cjs": {
+      "sha256": "9fbea889c1639748c6b2e4dc1df13862cbf11f94a615444f971d7e4080d2715b",
+      "bytes": 12450
+    },
+    "node/package.json": {
+      "sha256": "02f85a9671a93e24063f23d7d653a54759674644331144aded7ee0a9c1ae10ed",
+      "bytes": 144
+    },
+    "node/registry.json": {
+      "sha256": "152ad9c508bf880cc08c514322162f7dde7727d1224df2f133c705e6ff89d2fb",
+      "bytes": 38888
+    }
+  }
+}
