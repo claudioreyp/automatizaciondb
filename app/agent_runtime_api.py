@@ -1240,14 +1240,11 @@ def ack_delivery(delivery_id: str, payload: DeliveryAck, background_tasks: Backg
         if previous.response_body["digest"] != digest:
             raise HTTPException(409, "Idempotency key already used with other data")
         return previous.response_body["result"]
-    if not row.claim_hash or not secrets.compare_digest(row.claim_hash, hashlib.sha256(payload.delivery_token.encode()).hexdigest()):
-        raise HTTPException(409, "Response claim is stale")
+    from .agent_delivery_claims import validate_delivery_claim, validate_delivery_ack_receipt
+    validate_delivery_claim(row, payload.delivery_token)
     if row.status == "sent":
         raise HTTPException(409, "Response already sent")
-    if payload.status == "sent" and not str(payload.receipt.get("transport_id", "")).strip():
-        raise HTTPException(422, "Confirmed transport receipt is required")
-    if payload.status == "not_sent" and payload.receipt.get("transport_attempted") is not False:
-        raise HTTPException(422, "Only a response never attempted by the transport may be released")
+    validate_delivery_ack_receipt(payload.status, payload.receipt)
     row.status = "pending" if payload.status == "not_sent" else payload.status
     row.receipt = deepcopy(payload.receipt)
     if payload.status == "sent" and isinstance(row.response, dict) and "_pos_notice" in row.response:

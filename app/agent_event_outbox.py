@@ -4,20 +4,25 @@ No conversational policy or text generation belongs here. The API binds the
 prepared notice to current own POS rows, and uses the existing native outbox.
 """
 from copy import deepcopy
+from datetime import timezone
 import hashlib
 import json
 import re
 from typing import Literal
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import ConfigDict, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from .auth import IntegrationAuthContext, require_integration_scope
 from .database import get_db
 from .models import AgentConversation, AgentMessageDelivery, IdempotencyRecord, IntegrationEvent, Order, utcnow
 from .schemas import ApiModel
 from .agent_checkout import fingerprint
+from .agent_delivery_claims import validate_delivery_claim, validate_delivery_ack_receipt
+from .errors import CodedHTTPException
 from . import agent_message_batching as batching
 
 router = APIRouter(prefix="/api/v1/integrations/events", tags=["pos-event-outbox"])
@@ -51,6 +56,62 @@ class PreparedNotice(ApiModel):
     recipient: str = Field(min_length=8, max_length=40)
     message: str = Field(min_length=1, max_length=2000)
     confirmation_key: str | None = Field(default=None, max_length=500)
+
+
+class RetiredNoticeAttempt(ApiModel):
+    """Attestation from the fixed internal transport, never a consumer tool input.
+
+    The transport validates the real v1 records and wins the complete CAS before
+    calling this route. The POS validates its own reservation and source here;
+    it does not pretend this descriptor alone independently proves n8n storage.
+    """
+    model_config = ConfigDict(extra="forbid", strict=True)
+    schema_version: Literal["native-qr-mailbox-retirement/v1"]
+    business_id: int = Field(gt=0)
+    branch_id: int = Field(gt=0)
+    delivery_id: str = Field(min_length=1, max_length=36)
+    message_id: str = Field(min_length=1, max_length=240)
+    sender: str = Field(min_length=8, max_length=120)
+    source_row_id: int = Field(gt=0)
+    source_workflow_id: str = Field(pattern=r"^[A-Za-z0-9_.:-]{1,200}$")
+    source_run_id: str = Field(pattern=r"^[A-Za-z0-9_.:-]{1,200}$")
+    source_head: int = Field(ge=0)
+    source_state: Literal["mailbox_admission_consumed"]
+    source_body_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    source_deadline_at_ms: int = Field(gt=0)
+    mailbox_row_id: int = Field(gt=0)
+    mailbox_workflow_id: str = Field(pattern=r"^[A-Za-z0-9_.:-]{1,200}$")
+    mailbox_code_manifest: str = Field(pattern=r"^[a-f0-9]{64}$")
+    mailbox_head_before: Literal[0]
+    mailbox_head_after: Literal[1]
+    mailbox_state: Literal["retired_no_transport"]
+    mailbox_body_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
+    mailbox_deadline_at_ms: int = Field(gt=0)
+    retirement_owner_execution: str = Field(pattern=r"^[A-Za-z0-9_.:-]{1,200}$")
+    retirement_nonce: str = Field(pattern=r"^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$")
+
+    @model_validator(mode="before")
+    @classmethod
+    def heads_are_integers(cls, value):
+        if isinstance(value, dict) and any(type(value.get(key)) is not int for key in ("mailbox_head_before", "mailbox_head_after")):
+            raise ValueError("Retirement heads must be literal integers")
+        return value
+
+
+class ReplaceRetiredNotice(ApiModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    expected_event_fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    delivery_token: str = Field(min_length=20, max_length=150, repr=False)
+    retirement: RetiredNoticeAttempt
+
+
+class NoticeReplacementResult(ApiModel):
+    status: Literal["pending"]
+    old_delivery_id: str
+    delivery_id: str
+    message_id: str
+    event_id: str
+    event_acknowledged: Literal[False]
 
 
 def source_scope(branch_id):
@@ -146,6 +207,38 @@ def ensure_conversation(db, business_id, branch_id, sender):
     return row
 
 
+def current_notice_replacement(db, original):
+    """Resolve an audited replacement using the POS's current source pointer.
+
+    A late alias still discovers the original stable message identity. The
+    original event mapping advances atomically with every replacement, so this
+    resolves the latest child without rewriting or walking historical audits.
+    Caller-provided event/delivery IDs never select the replacement target.
+    """
+    audit = db.scalar(select(IdempotencyRecord).where(IdempotencyRecord.business_id == original.business_id,
+        IdempotencyRecord.scope == replacement_scope(original.branch_id), IdempotencyRecord.idempotency_key == original.id))
+    if audit is None:
+        return original
+    result = (audit.response_body or {}).get("result", {})
+    if (result.get("old_delivery_id") != original.id or result.get("delivery_id") != (original.receipt or {}).get("replacement_delivery_id")
+            or original.status != "suppressed" or original.claim_hash is not None):
+        raise HTTPException(409, "Notice replacement audit requires review")
+    notice = (original.response or {}).get("_pos_notice", {})
+    mapping = db.scalar(select(IdempotencyRecord).where(IdempotencyRecord.business_id == original.business_id,
+        IdempotencyRecord.scope == source_scope(original.branch_id), IdempotencyRecord.idempotency_key == notice.get("event_id")))
+    if not mapping or mapping.response_body.get("event_fingerprint") != notice.get("event_fingerprint"):
+        raise HTTPException(409, "Current notice source pointer requires review")
+    child = db.scalar(select(AgentMessageDelivery).where(AgentMessageDelivery.id == mapping.response_body.get("delivery_id"),
+        AgentMessageDelivery.business_id == original.business_id, AgentMessageDelivery.branch_id == original.branch_id,
+        AgentMessageDelivery.conversation_id == original.conversation_id).with_for_update().execution_options(populate_existing=True))
+    expected = deepcopy(original.response)
+    if child is not None:
+        expected["turn"] = {**expected["turn"], "id": child.message_id}
+    if not child or child.id == original.id or child.sender != original.sender or child.response != expected:
+        raise HTTPException(409, "Current notice replacement identity requires review")
+    return child
+
+
 @router.post("/{event_id}/outbox")
 def queue_prepared_notice(event_id: str, payload: PreparedNotice,
     integration: IntegrationAuthContext = Depends(require_integration_scope("events:deliver")), db=Depends(get_db)):
@@ -175,6 +268,9 @@ def queue_prepared_notice(event_id: str, payload: PreparedNotice,
         raise HTTPException(409, "Notice confirmation identity mismatch")
     message_id = "pos-notice:" + fingerprint([integration.branch_id, order.id, target, identity if identity is not None else ["event", event.id]])
     conversation = ensure_conversation(db, integration.business_id, integration.branch_id, target)
+    conversation = db.scalar(select(AgentConversation).where(AgentConversation.id == conversation.id,
+        AgentConversation.business_id == integration.business_id, AgentConversation.branch_id == integration.branch_id)
+        .with_for_update().execution_options(populate_existing=True))
     # Create/find the conversation before locking an order, matching the existing
     # conversation-to-order lock order; delivery/source locks follow below.
     order = db.scalar(order_query.with_for_update(read=True).execution_options(populate_existing=True))
@@ -206,6 +302,7 @@ def queue_prepared_notice(event_id: str, payload: PreparedNotice,
         row = db.scalar(query)
     if row is None or (row.response or {}).get("_pos_notice", {}).get("request_fingerprint") != request_fingerprint:
         raise HTTPException(409, "Notice outbox identity already has different data")
+    row = current_notice_replacement(db, row)
     mapping_query = select(IdempotencyRecord).where(IdempotencyRecord.business_id == integration.business_id,
         IdempotencyRecord.scope == source_scope(integration.branch_id), IdempotencyRecord.idempotency_key == event.id)
     mapping = db.scalar(mapping_query)
@@ -220,8 +317,153 @@ def queue_prepared_notice(event_id: str, payload: PreparedNotice,
         # A later alias for an already confirmed operation earns only its ACK.
         acknowledge_notice_sources(db, row)
     db.commit()
-    return {"status": row.status, "delivery_id": row.id, "message_id": message_id,
+    return {"status": row.status, "delivery_id": row.id, "message_id": row.message_id,
         "event_id": event.id, "event_acknowledged": event.acknowledged_at is not None}
+
+
+def replacement_scope(branch_id):
+    return f"pos-notice-replacement:{branch_id}"
+
+
+def retry_error(detail, code="notice_replacement_conflict", status=409):
+    raise CodedHTTPException(status, detail, code)
+
+
+def replacement_fingerprint(event_id, delivery_id, payload):
+    # Store only this digest. Neither a raw delivery token nor a copy of the
+    # source checkpoint is persisted in the replacement audit.
+    return fingerprint({"event_id": event_id, "delivery_id": delivery_id,
+        "event_fingerprint": payload.expected_event_fingerprint,
+        "claim_sha256": hashlib.sha256(payload.delivery_token.encode()).hexdigest(),
+        "retirement": payload.retirement.model_dump()})
+
+
+def replacement_replay(db, business_id, branch_id, delivery_id, digest):
+    row = db.scalar(select(IdempotencyRecord).where(IdempotencyRecord.business_id == business_id,
+        IdempotencyRecord.scope == replacement_scope(branch_id), IdempotencyRecord.idempotency_key == delivery_id))
+    if row is None:
+        return None
+    if row.response_body.get("request_fingerprint") != digest:
+        retry_error("Notice replacement identity already has different retirement data")
+    return deepcopy(row.response_body["result"])
+
+
+def replace_retired_notice(db, integration, event_id, delivery_id, payload):
+    """One SQL transaction, including token release, replacement and alias audit.
+
+    The caller is a dedicated internal events:deliver transport. It must already
+    have retired the actual never-claimed v1 queue with a complete CAS/readback.
+    Restaurant agents cannot use the attestation boundary, even with a token.
+    """
+    if integration.profile != "generic" or not integration.credential_id or not integration.business_id or not integration.branch_id:
+        retry_error("A dedicated internal notice credential is required", "notice_replacement_internal_only", 403)
+    digest = replacement_fingerprint(event_id, delivery_id, payload)
+    replay = replacement_replay(db, integration.business_id, integration.branch_id, delivery_id, digest)
+    if replay is not None:
+        return replay
+    query = select(AgentMessageDelivery).where(AgentMessageDelivery.id == delivery_id,
+        AgentMessageDelivery.business_id == integration.business_id, AgentMessageDelivery.branch_id == integration.branch_id)
+    discovered = db.scalar(query)
+    notice = (discovered.response or {}).get("_pos_notice") if discovered is not None else None
+    if not isinstance(notice, dict) or notice.get("version") != 1:
+        retry_error("Own POS notice delivery not found", "notice_replacement_not_found", 404)
+    # Keep the existing conversation -> order -> delivery -> event lock order.
+    conversation = db.scalar(select(AgentConversation).where(AgentConversation.id == discovered.conversation_id,
+        AgentConversation.business_id == integration.business_id, AgentConversation.branch_id == integration.branch_id).with_for_update())
+    order = db.scalar(select(Order).where(Order.id == notice.get("order_id"), Order.business_id == integration.business_id,
+        Order.branch_id == integration.branch_id).with_for_update(read=True))
+    row = db.scalar(query.with_for_update().execution_options(populate_existing=True))
+    replay = replacement_replay(db, integration.business_id, integration.branch_id, delivery_id, digest)
+    if replay is not None:
+        return replay
+    if not conversation or not order or not row:
+        retry_error("Notice context changed before replacement")
+    validate_delivery_claim(row, payload.delivery_token)
+    # POS uncertain means a reserved response, not a transport UNKNOWN. The
+    # latter is rejected by the fixed retirement adapter before this route.
+    if row.status != "uncertain" or row.receipt not in (None, {}):
+        retry_error("Only an unreconciled POS reservation with no receipt can be replaced")
+    proof = payload.retirement
+    if (proof.business_id != integration.business_id or proof.branch_id != integration.branch_id
+            or proof.delivery_id != row.id or proof.message_id != row.message_id or proof.sender != row.sender
+            or proof.mailbox_head_before != 0 or proof.mailbox_head_after != 1):
+        retry_error("Retirement does not match the own reserved notice", "notice_replacement_retirement_mismatch")
+    now_ms = int(utcnow().timestamp() * 1000)
+    if now_ms < proof.source_deadline_at_ms or now_ms < proof.mailbox_deadline_at_ms:
+        retry_error("Original source and mailbox windows must both have expired", "notice_replacement_not_expired")
+    sources = source_rows(db, row)
+    if not sources or len(sources) > 200:
+        retry_error("Notice source mappings require review")
+    # Lock every alias and revalidate the unchanged business source, rather than
+    # creating another event or accepting a caller-generated replacement text.
+    snapshots = []
+    selected_event = None
+    for mapping in sources:
+        event = db.scalar(select(IntegrationEvent).where(IntegrationEvent.id == mapping.idempotency_key,
+            IntegrationEvent.business_id == row.business_id, IntegrationEvent.branch_id == row.branch_id).with_for_update())
+        created = event.created_at if event is not None else None
+        if created is not None and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        age_ms = now_ms - int(created.timestamp() * 1000) if created is not None else -1
+        if (not event or event.acknowledged_at is not None or event.event_type not in NOTICE_TYPES
+                or event.aggregate_type != "order" or event.aggregate_id != str(order.id)
+                or event_fingerprint(event) != mapping.response_body.get("event_fingerprint")
+                or not 0 <= age_ms <= 86400000 or disposition_record(db, row.business_id, row.branch_id, event.id)):
+            retry_error("Notice source is no longer eligible for replacement", "notice_replacement_source_changed")
+        snapshots.append({"idempotency_key": mapping.idempotency_key, "scope": mapping.scope,
+            "response_body": deepcopy(mapping.response_body)})
+        if event.id == event_id:
+            selected_event = event
+    if (selected_event is None or event_fingerprint(selected_event) != payload.expected_event_fingerprint
+            or not notice_is_current(db, row)):
+        retry_error("Current event, order or recipient changed", "notice_replacement_source_changed")
+    original_response = deepcopy(row.response)
+    original_claim_hash = row.claim_hash
+    # This conditional reservation transition is also a database fence where
+    # SELECT FOR UPDATE is unavailable. A loser cannot insert another child.
+    changed = db.execute(update(AgentMessageDelivery).where(AgentMessageDelivery.id == row.id,
+        AgentMessageDelivery.business_id == row.business_id, AgentMessageDelivery.branch_id == row.branch_id,
+        AgentMessageDelivery.status == "uncertain", AgentMessageDelivery.claim_hash == original_claim_hash)
+        .values(status="suppressed", claim_hash=None).execution_options(synchronize_session=False))
+    if changed.rowcount != 1:
+        retry_error("Notice reservation changed before atomic replacement")
+    new_id = str(uuid4())
+    message_id = "pos-notice-retry:" + fingerprint([row.business_id, row.branch_id, row.id])
+    response = deepcopy(original_response)
+    response["turn"] = {**response["turn"], "id": message_id}
+    new_row = AgentMessageDelivery(id=new_id, business_id=row.business_id, branch_id=row.branch_id,
+        conversation_id=row.conversation_id, message_id=message_id, sender=row.sender, response=response, status="pending")
+    db.add(new_row)
+    db.flush()
+    receipt = {"transport_attempted": False, "reason": "expired_before_transport",
+        "replacement_delivery_id": new_id, "retirement_body_hash": proof.mailbox_body_hash}
+    validate_delivery_ack_receipt("not_sent", receipt)
+    row.status, row.claim_hash, row.receipt = "suppressed", None, receipt
+    for mapping in sources:
+        mapping.response_body = {**mapping.response_body, "delivery_id": new_id}
+    result = {"status": "pending", "old_delivery_id": row.id, "delivery_id": new_id, "message_id": message_id,
+        "event_id": event_id, "event_acknowledged": False}
+    db.add(IdempotencyRecord(business_id=row.business_id, scope=replacement_scope(row.branch_id), idempotency_key=row.id,
+        response_body={"request_fingerprint": digest, "result": deepcopy(result), "audit": {
+            "issuer_credential_id": integration.credential_id, "kind": "never_transport_replacement",
+            "retirement": proof.model_dump(), "old_status": "uncertain", "new_old_status": "suppressed",
+            "old_message_id": row.message_id, "old_response_fingerprint": fingerprint(original_response),
+            "old_source_mappings": snapshots, "receipt": deepcopy(receipt)}}))
+    db.commit()
+    return result
+
+
+@router.post("/{event_id}/outbox/{delivery_id}/replace-never-transported", response_model=NoticeReplacementResult)
+def replace_expired_notice(event_id: str, delivery_id: str, payload: ReplaceRetiredNotice,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    integration: IntegrationAuthContext = Depends(require_integration_scope("events:deliver")), db=Depends(get_db)):
+    if idempotency_key != "notice-replacement:" + delivery_id:
+        retry_error("Use the stable replacement key for this delivery", "notice_replacement_key_required", 422)
+    try:
+        return replace_retired_notice(db, integration, event_id, delivery_id, payload)
+    except (IntegrityError, OperationalError):
+        db.rollback()
+        retry_error("Notice replacement contention; reconcile the same operation key before retrying")
 
 
 def without_queued_notices(statement, branch):
