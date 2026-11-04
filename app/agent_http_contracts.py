@@ -8,7 +8,8 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 from .agent_contracts import (AgentError, OrderToolResult, ConversationToolResult, AttentionToolResult,
     IntegrationEventResult, EventAcknowledgement, PaymentMethodPreview, InventoryContext,
-    InventoryItemResult, TableAvailability, LegacyMenu)
+    InventoryItemResult, TableAvailability, LegacyMenu, FulfillmentPreview, OriginalItemsPreview,
+    ConversationWorkClaim, ProductAvailabilityResult, ReservationResult, EventNoticeResult, OrderSnapshot)
 from .agent_tools import TOOLS_BY_ROUTE
 
 
@@ -39,7 +40,9 @@ def install_openapi(app):
         components.update(definitions)
         components["AgentError"] = errors
         for model in (OrderToolResult, ConversationToolResult, AttentionToolResult, IntegrationEventResult,
-                      EventAcknowledgement, PaymentMethodPreview, InventoryContext, InventoryItemResult, TableAvailability, LegacyMenu):
+                      EventAcknowledgement, PaymentMethodPreview, InventoryContext, InventoryItemResult, TableAvailability, LegacyMenu,
+                      FulfillmentPreview, OriginalItemsPreview, ConversationWorkClaim, ProductAvailabilityResult,
+                      ReservationResult, EventNoticeResult, OrderSnapshot):
             model_schema = model.model_json_schema(ref_template="#/components/schemas/{model}", mode="serialization")
             for name, value in model_schema.pop("$defs", {}).items():
                 components.setdefault(name, value)
@@ -80,7 +83,17 @@ def install_openapi(app):
                             model = {"ack_event": EventAcknowledgement, "inventory": InventoryContext,
                                 "adjust_inventory": InventoryItemResult, "tables": TableAvailability,
                                 "reservation_availability": TableAvailability, "menu": LegacyMenu,
-                                "preview_original_payment_method": PaymentMethodPreview}.get(tool.name)
+                                "preview_original_payment_method": PaymentMethodPreview,
+                                "fulfillment_preview": FulfillmentPreview,
+                                "preview_original_items": OriginalItemsPreview,
+                                "conversation_work": ConversationWorkClaim,
+                                "conversations_native_work_claim": ConversationWorkClaim,
+                                "set_product_availability": ProductAvailabilityResult,
+                                "create_reservation": ReservationResult,
+                                "queue_event_notice": EventNoticeResult,
+                                "resolve_event_notice": EventNoticeResult,
+                                "create_order_draft": OrderSnapshot, "update_order": OrderSnapshot,
+                                "order_status": OrderSnapshot}.get(tool.name)
                             model = model or (ConversationToolResult if "/conversations/" in tool.path
                                               else AttentionToolResult if "attention" in tool.path else OrderToolResult)
                             shape = {"$ref": f"#/components/schemas/{model.__name__}"}

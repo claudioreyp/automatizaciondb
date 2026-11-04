@@ -90,3 +90,84 @@ def test_published_schemas_describe_binary_events_and_private_transport_tokens(c
         assert operation["x-idempotency-location"] == tool.idempotency_location
         assert operation["x-conversation-auth-fields"] == list(tool.conversation_auth_fields)
         assert operation["security"] == [{"IntegrationBearer": []}]
+
+
+def test_success_contracts_publish_values_needed_by_following_operations(client):
+    document = client.get("/openapi.json").json()
+    expected = {
+        ("post", "orders/{order_id}/fulfillment-preview"): ("FulfillmentPreview", {"order_version", "quote", "final_total"}),
+        ("post", "orders/{order_id}/item-revisions/preview"): ("OriginalItemsPreview", {"order_version", "quote_fingerprint", "expected_total", "items"}),
+        ("post", "conversations/work/claim"): ("ConversationWorkClaim", {"status"}),
+        ("post", "conversations/native/work/claim"): ("ConversationWorkClaim", {"status"}),
+        ("patch", "context/menu/{product_id}/availability"): ("ProductAvailabilityResult", {"id", "available"}),
+        ("post", "reservations"): ("ReservationResult", {"id", "business_id", "branch_id", "table_ids", "version"}),
+        ("get", "orders/{order_id}/status"): ("OrderSnapshot", {"id", "version", "payment_status", "items"}),
+        ("post", "events/{event_id}/outbox"): ("EventNoticeResult", {"event_id", "event_acknowledged"}),
+    }
+    for (method, path), (model, required) in expected.items():
+        responses = document["paths"]["/api/v1/integrations/" + path][method]["responses"]
+        success = next(value for status, value in responses.items() if status.startswith("2"))
+        assert success["content"]["application/json"]["schema"]["$ref"].endswith("/" + model)
+        schema = document["components"]["schemas"][model]
+        assert set(schema["required"]) >= required
+        assert schema["additionalProperties"] is True
+    quote = document["components"]["schemas"]["DeliveryQuoteSnapshot"]
+    assert set(quote["required"]) >= {"id", "fee", "configuration_version", "expires_at"}
+    work = document["components"]["schemas"]["ConversationWorkClaim"]
+    assert set(work["properties"]) >= {"message", "input_ids", "lease_until", "retry_after_ms"}
+    assert "lease_token" not in work["required"]  # Idle/queued responses never grant a lease.
+    notice = document["components"]["schemas"]["EventNoticeResult"]
+    assert {item["type"] for item in notice["properties"]["attention_id"]["anyOf"]} == {"string", "null"}
+
+
+def test_fulfillment_preview_contract_supports_the_real_commit(client, tenant, auth_headers):
+    from app.agent_contracts import FulfillmentPreview
+    from test_agent_domain_revision import setup_order, PHONE, DESTINATION
+    headers, order = setup_order(client, tenant, auth_headers, fee=6)
+    body = {"sender": PHONE, "expected_version": order["version"], "channel": "delivery", "delivery_address": DESTINATION}
+    path = f"/api/v1/integrations/orders/{order['id']}"
+    response = client.post(path + "/fulfillment-preview", headers={**headers, "Idempotency-Key": "contract-fulfillment"}, json=body)
+    assert response.status_code == 200, response.text
+    preview = FulfillmentPreview.model_validate(response.json())
+    assert preview.order_version == order["version"] and preview.final_total == 26
+    committed = client.patch(path + "/fulfillment", headers={**headers, "Idempotency-Key": "contract-fulfillment-commit"},
+        json={**body, "expected_version": preview.order_version, "quote_id": preview.quote.id, "expected_delivery_fee": preview.quote.fee})
+    assert committed.status_code == 200, committed.text
+    assert committed.json()["order"]["total"] == preview.final_total
+
+
+def test_original_items_preview_contract_supports_the_real_commit(client, tenant, auth_headers):
+    from app.agent_contracts import OriginalItemsPreview
+    from test_agent_checkout import setup, PHONE
+    headers, order = setup(client, tenant, auth_headers, method="yape")
+    body = {"sender": PHONE, "expected_version": order["version"], "operations": [{"type": "edit", "item_id": order["items"][0]["id"],
+        "replacement": {"product_id": tenant["product_id"], "quantity": 2, "notes": "Corrección sintética"}}]}
+    path = f"/api/v1/integrations/orders/{order['id']}/item-revisions"
+    response = client.post(path + "/preview", headers={**headers, "Idempotency-Key": "contract-items"}, json=body)
+    assert response.status_code == 200, response.text
+    preview = OriginalItemsPreview.model_validate(response.json())
+    assert preview.order_version == order["version"] and preview.expected_total == 40
+    committed = client.post(path, headers={**headers, "Idempotency-Key": "contract-items-commit"},
+        json={**body, "expected_version": preview.order_version, "quote_fingerprint": preview.quote_fingerprint, "expected_total": preview.expected_total})
+    assert committed.status_code == 200, committed.text
+    assert committed.json()["order"]["total"] == preview.expected_total
+
+
+def test_work_claim_schema_matches_idle_and_acquired_without_granting_a_second_lease(client, agent_headers):
+    from app.agent_contracts import ConversationWorkClaim
+    from test_restaurant_agent_boundary import SENDER
+    path = "/api/v1/integrations/conversations/work/claim"
+    idle = client.post(path, headers={**agent_headers, "Idempotency-Key": "contract-idle"}, json={})
+    assert idle.status_code == 200, idle.text
+    assert ConversationWorkClaim.model_validate(idle.json()).status == "idle"
+    enqueued = client.post("/api/v1/integrations/conversations/enqueue", headers={**agent_headers, "Idempotency-Key": "contract-enqueue"},
+        json={"sender": SENDER, "message_id": "contract-message", "message": {"text": "dos pizzas"}})
+    assert enqueued.status_code == 200, enqueued.text
+    response = client.post(path, headers={**agent_headers, "Idempotency-Key": "contract-work"}, json={})
+    assert response.status_code == 200, response.text
+    acquired = ConversationWorkClaim.model_validate(response.json())
+    assert acquired.status == "acquired" and acquired.input_ids == ["contract-message"]
+    assert acquired.message["text"] == "dos pizzas" and acquired.lease_until is not None
+    again = client.post(path, headers={**agent_headers, "Idempotency-Key": "contract-work-2"}, json={})
+    assert again.status_code == 200, again.text
+    assert ConversationWorkClaim.model_validate(again.json()).status == "idle"

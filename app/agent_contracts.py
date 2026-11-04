@@ -229,6 +229,13 @@ class PaymentRequest(PublicModel):
     method: str
     amount: float
     status: str
+    version: int | None = None
+    items: list[dict[str, Any]] | None = None
+    created_at: datetime | None = None
+    payment_id: int | None = None
+    blocked_reason: str | None = None
+    resolution_note: str | None = None
+    resolved_at: str | None = None
 
 
 class KitchenTicket(PublicModel):
@@ -358,6 +365,22 @@ class PricedLine(PublicModel):
     line_total: str
 
 
+class DeliveryQuoteSnapshot(PublicModel):
+    id: str
+    branch_id: int
+    mode: str
+    subtotal: float
+    distance_km: float | None
+    fee: float | None
+    fee_status: str
+    requires_quote: bool
+    pos_strict: bool
+    manually_confirmed: bool
+    minimum_order_amount: float | None
+    configuration_version: int
+    expires_at: datetime
+
+
 class OrderPreview(PublicModel):
     business_id: int
     branch_id: int
@@ -371,6 +394,27 @@ class OrderPreview(PublicModel):
     delivery_fee: float | None
     delivery_fee_status: str
     delivery_quote_id: str | None
+    quote: DeliveryQuoteSnapshot | None = None
+
+
+class FulfillmentPreview(PublicModel):
+    order_id: int
+    order_version: int
+    quote: DeliveryQuoteSnapshot
+    channel: Literal["takeaway", "delivery"]
+    delivery_address: dict[str, Any] | None
+    previous_delivery_fee: float
+    products_total: float
+    final_total: float | None
+
+
+class OriginalItemsPreview(PublicModel):
+    allowed: Literal[True]
+    order_id: int
+    order_version: int
+    quote_fingerprint: str
+    expected_total: float
+    items: list[PricedLine]
 
 
 class OrderSnapshot(PublicModel):
@@ -403,6 +447,12 @@ class OrderToolResult(PublicModel):
     sent_to_kitchen: bool | None = None
     command_committed: bool | None = None
     appended_item_ids: list[int] | None = None
+    payment_method: str | None = None
+    addition_amount: float | None = None
+    event_id: str | None = None
+    changed: bool | None = None
+    financial_summary: dict[str, Any] | None = None
+    recent_modification: dict[str, Any] | None = None
 
 
 class ConversationToolResult(PublicModel):
@@ -417,6 +467,54 @@ class ConversationToolResult(PublicModel):
     pending_count: int | None = None
     duplicate: bool | None = None
     response: dict[str, Any] | None = None
+    lease_until: datetime | None = None
+    retry_after_ms: int | None = None
+    state: dict[str, Any] | None = None
+    message: dict[str, Any] | None = None
+    input_ids: list[str] | None = None
+    sender: str | None = None
+    verified_phone: str | None = None
+    contact_display_name: str | None = None
+    order_reference_recovery: dict[str, Any] | None = None
+    confirmed_response_context: dict[str, Any] | None = None
+    confirmed_original_policy_context: dict[str, Any] | None = None
+    confirmed_selection_summary_context: dict[str, Any] | None = None
+
+
+class ConversationWorkClaim(ConversationToolResult):
+    status: Literal["idle", "queued", "acquired"]
+
+
+class ProductAvailabilityResult(PublicModel):
+    id: int
+    branch_id: int
+    name: str
+    available: bool
+
+
+class ReservationResult(PublicModel):
+    id: int
+    business_id: int
+    branch_id: int
+    customer_name: str
+    customer_phone: str | None
+    party_size: int
+    start_at: datetime
+    end_at: datetime
+    status: str
+    source: str
+    notes: str | None
+    table_ids: list[int]
+    version: int
+
+
+class EventNoticeResult(PublicModel):
+    status: str
+    event_id: str
+    event_acknowledged: bool
+    delivery_id: str | None = None
+    message_id: str | None = None
+    attention_id: str | None = None
 
 
 class AttentionToolResult(PublicModel):

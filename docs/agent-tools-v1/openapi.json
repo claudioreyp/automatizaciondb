@@ -32994,7 +32994,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrderToolResult"
+                  "$ref": "#/components/schemas/ProductAvailabilityResult"
                 }
               }
             }
@@ -33369,7 +33369,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrderToolResult"
+                  "$ref": "#/components/schemas/OrderSnapshot"
                 }
               }
             }
@@ -33568,7 +33568,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrderToolResult"
+                  "$ref": "#/components/schemas/OrderSnapshot"
                 }
               }
             }
@@ -34518,7 +34518,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrderToolResult"
+                  "$ref": "#/components/schemas/OrderSnapshot"
                 }
               }
             }
@@ -35083,7 +35083,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrderToolResult"
+                  "$ref": "#/components/schemas/ReservationResult"
                 }
               }
             }
@@ -36141,7 +36141,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrderToolResult"
+                  "$ref": "#/components/schemas/FulfillmentPreview"
                 }
               }
             }
@@ -36937,7 +36937,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrderToolResult"
+                  "$ref": "#/components/schemas/OriginalItemsPreview"
                 }
               }
             }
@@ -40054,7 +40054,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConversationToolResult"
+                  "$ref": "#/components/schemas/ConversationWorkClaim"
                 }
               }
             }
@@ -40211,7 +40211,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConversationToolResult"
+                  "$ref": "#/components/schemas/ConversationWorkClaim"
                 }
               }
             }
@@ -42621,7 +42621,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrderToolResult"
+                  "$ref": "#/components/schemas/EventNoticeResult"
                 }
               }
             }
@@ -42781,7 +42781,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OrderToolResult"
+                  "$ref": "#/components/schemas/EventNoticeResult"
                 }
               }
             }
@@ -46062,6 +46062,102 @@
         ],
         "title": "DeliveryQuoteCreate"
       },
+      "DeliveryQuoteSnapshot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "branch_id": {
+            "type": "integer",
+            "title": "Branch Id"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "subtotal": {
+            "type": "number",
+            "title": "Subtotal"
+          },
+          "distance_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distance Km"
+          },
+          "fee": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fee"
+          },
+          "fee_status": {
+            "type": "string",
+            "title": "Fee Status"
+          },
+          "requires_quote": {
+            "type": "boolean",
+            "title": "Requires Quote"
+          },
+          "pos_strict": {
+            "type": "boolean",
+            "title": "Pos Strict"
+          },
+          "manually_confirmed": {
+            "type": "boolean",
+            "title": "Manually Confirmed"
+          },
+          "minimum_order_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Order Amount"
+          },
+          "configuration_version": {
+            "type": "integer",
+            "title": "Configuration Version"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "branch_id",
+          "mode",
+          "subtotal",
+          "distance_km",
+          "fee",
+          "fee_status",
+          "requires_quote",
+          "pos_strict",
+          "manually_confirmed",
+          "minimum_order_amount",
+          "configuration_version",
+          "expires_at"
+        ],
+        "title": "DeliveryQuoteSnapshot"
+      },
       "DeliveryTransition": {
         "properties": {
           "expected_version": {
@@ -48473,6 +48569,16 @@
               }
             ],
             "title": "Delivery Quote Id"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryQuoteSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": true,
@@ -49498,6 +49604,88 @@
           "status": {
             "type": "string",
             "title": "Status"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "items": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Items"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "payment_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Id"
+          },
+          "blocked_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blocked Reason"
+          },
+          "resolution_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution Note"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
           }
         },
         "additionalProperties": true,
@@ -54765,6 +54953,80 @@
             ],
             "default": null,
             "title": "Appended Item Ids"
+          },
+          "payment_method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Payment Method"
+          },
+          "addition_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Addition Amount"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Event Id"
+          },
+          "changed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Changed"
+          },
+          "financial_summary": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Financial Summary"
+          },
+          "recent_modification": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Recent Modification"
           }
         },
         "title": "OrderToolResult",
@@ -54896,6 +55158,160 @@
             ],
             "default": null,
             "title": "Response"
+          },
+          "lease_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lease Until"
+          },
+          "retry_after_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Retry After Ms"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "State"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "input_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Input Ids"
+          },
+          "sender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sender"
+          },
+          "verified_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Verified Phone"
+          },
+          "contact_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Contact Display Name"
+          },
+          "order_reference_recovery": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Order Reference Recovery"
+          },
+          "confirmed_response_context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Confirmed Response Context"
+          },
+          "confirmed_original_policy_context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Confirmed Original Policy Context"
+          },
+          "confirmed_selection_summary_context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Confirmed Selection Summary Context"
           }
         },
         "title": "ConversationToolResult",
@@ -55534,6 +55950,582 @@
           "promotions"
         ],
         "title": "LegacyMenu",
+        "type": "object"
+      },
+      "FulfillmentPreview": {
+        "additionalProperties": true,
+        "properties": {
+          "order_id": {
+            "title": "Order Id",
+            "type": "integer"
+          },
+          "order_version": {
+            "title": "Order Version",
+            "type": "integer"
+          },
+          "quote": {
+            "$ref": "#/components/schemas/DeliveryQuoteSnapshot"
+          },
+          "channel": {
+            "enum": [
+              "takeaway",
+              "delivery"
+            ],
+            "title": "Channel",
+            "type": "string"
+          },
+          "delivery_address": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Address"
+          },
+          "previous_delivery_fee": {
+            "title": "Previous Delivery Fee",
+            "type": "number"
+          },
+          "products_total": {
+            "title": "Products Total",
+            "type": "number"
+          },
+          "final_total": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Total"
+          }
+        },
+        "required": [
+          "order_id",
+          "order_version",
+          "quote",
+          "channel",
+          "delivery_address",
+          "previous_delivery_fee",
+          "products_total",
+          "final_total"
+        ],
+        "title": "FulfillmentPreview",
+        "type": "object"
+      },
+      "OriginalItemsPreview": {
+        "additionalProperties": true,
+        "properties": {
+          "allowed": {
+            "const": true,
+            "title": "Allowed",
+            "type": "boolean"
+          },
+          "order_id": {
+            "title": "Order Id",
+            "type": "integer"
+          },
+          "order_version": {
+            "title": "Order Version",
+            "type": "integer"
+          },
+          "quote_fingerprint": {
+            "title": "Quote Fingerprint",
+            "type": "string"
+          },
+          "expected_total": {
+            "title": "Expected Total",
+            "type": "number"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PricedLine"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "allowed",
+          "order_id",
+          "order_version",
+          "quote_fingerprint",
+          "expected_total",
+          "items"
+        ],
+        "title": "OriginalItemsPreview",
+        "type": "object"
+      },
+      "ConversationWorkClaim": {
+        "additionalProperties": true,
+        "properties": {
+          "status": {
+            "enum": [
+              "idle",
+              "queued",
+              "acquired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Conversation Id"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message Id"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Version"
+          },
+          "lease_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Private runtime token; never pass to the language model.",
+            "title": "Lease Token"
+          },
+          "delivery_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Delivery Id"
+          },
+          "delivery_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Private transport token for freshness and ACK; never pass to the language model.",
+            "title": "Delivery Token"
+          },
+          "pending_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pending Count"
+          },
+          "duplicate": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Duplicate"
+          },
+          "response": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Response"
+          },
+          "lease_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lease Until"
+          },
+          "retry_after_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Retry After Ms"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "State"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message"
+          },
+          "input_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Input Ids"
+          },
+          "sender": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sender"
+          },
+          "verified_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Verified Phone"
+          },
+          "contact_display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Contact Display Name"
+          },
+          "order_reference_recovery": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Order Reference Recovery"
+          },
+          "confirmed_response_context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Confirmed Response Context"
+          },
+          "confirmed_original_policy_context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Confirmed Original Policy Context"
+          },
+          "confirmed_selection_summary_context": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Confirmed Selection Summary Context"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ConversationWorkClaim",
+        "type": "object"
+      },
+      "ProductAvailabilityResult": {
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "branch_id": {
+            "title": "Branch Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "branch_id",
+          "name",
+          "available"
+        ],
+        "title": "ProductAvailabilityResult",
+        "type": "object"
+      },
+      "ReservationResult": {
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "business_id": {
+            "title": "Business Id",
+            "type": "integer"
+          },
+          "branch_id": {
+            "title": "Branch Id",
+            "type": "integer"
+          },
+          "customer_name": {
+            "title": "Customer Name",
+            "type": "string"
+          },
+          "customer_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Phone"
+          },
+          "party_size": {
+            "title": "Party Size",
+            "type": "integer"
+          },
+          "start_at": {
+            "format": "date-time",
+            "title": "Start At",
+            "type": "string"
+          },
+          "end_at": {
+            "format": "date-time",
+            "title": "End At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "table_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Table Ids",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "business_id",
+          "branch_id",
+          "customer_name",
+          "customer_phone",
+          "party_size",
+          "start_at",
+          "end_at",
+          "status",
+          "source",
+          "notes",
+          "table_ids",
+          "version"
+        ],
+        "title": "ReservationResult",
+        "type": "object"
+      },
+      "EventNoticeResult": {
+        "additionalProperties": true,
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_acknowledged": {
+            "title": "Event Acknowledged",
+            "type": "boolean"
+          },
+          "delivery_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Delivery Id"
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Message Id"
+          },
+          "attention_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Attention Id"
+          }
+        },
+        "required": [
+          "status",
+          "event_id",
+          "event_acknowledged"
+        ],
+        "title": "EventNoticeResult",
         "type": "object"
       }
     },
