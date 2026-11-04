@@ -1,0 +1,106 @@
+{
+  "id": "NativeStaticPocR01pngcode",
+  "name": "NativeStaticPocR01pngcode OFF",
+  "active": false,
+  "nodes": [
+    {
+      "id": "public-manual",
+      "name": "Run public isolated proof",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "public-source",
+      "name": "Static native nominal source",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{json:{case_name:\"png\",text:\"Synthetic á / 2 items\",payload:{deep:7}}}];"
+      },
+      "retryOnFail": false
+    },
+    {
+      "id": "public-proof-0",
+      "name": "Pinned public pngPrepare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return await require(\"@escalar/native-static-node-poc-fixtures-r01\")[\"body_7bc1108c934b5c81dc6e3cde459312e567aa917ee9fd698f5b4607e7d62d3470\"].call(this,{reads:{\"$input\":()=>$input,\"Buffer\":()=>Buffer,\"Error\":()=>Error},types:{},lookups:[]},[],[]);"
+      },
+      "retryOnFail": false
+    },
+    {
+      "id": "public-proof-1",
+      "name": "Pinned public pngRead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        250,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return await require(\"@escalar/native-static-node-poc-fixtures-r01\")[\"body_3682e61578c18c275e67b8c6b715d5f4091af932761cfc9957f62cd9f1a1accd\"].call(this,{reads:{\"$execution\":()=>$execution,\"$input\":()=>$input,\"$workflow\":()=>$workflow,\"String\":()=>String},types:{},lookups:[]},[],[]);"
+      },
+      "retryOnFail": false
+    }
+  ],
+  "connections": {
+    "Run public isolated proof": {
+      "main": [
+        [
+          {
+            "node": "Static native nominal source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Static native nominal source": {
+      "main": [
+        [
+          {
+            "node": "Pinned public pngPrepare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pinned public pngPrepare": {
+      "main": [
+        [
+          {
+            "node": "Pinned public pngRead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 180,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {},
+  "staticData": {}
+}

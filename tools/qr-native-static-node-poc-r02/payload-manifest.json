@@ -1,0 +1,626 @@
+{
+  "schema": "escalarai.native-static-node-public-pack.v1",
+  "state": "PREPARED_NOT_EXECUTED",
+  "source_manifest_sha256": "a196014328137d507683aa1f78b9ecb5d8c4cca09ddd504870d28341bdab82a9",
+  "sources": [
+    {
+      "profile": "test",
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "relative_path": "n8n/joint-r11/test/main.OFF.json",
+      "sha256": "5353d04677c789989e573a15ef2af64bf4044506d8d3097d3d90378ba12ef252",
+      "compact_bytes": 1053204,
+      "nodes": 164,
+      "code": 51
+    },
+    {
+      "profile": "final",
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "relative_path": "n8n/joint-r11/final/main.OFF.json",
+      "sha256": "43bd39fe914296b0a093b2dbf5ec7038b64aef7fd15225a9da3a1d1a8e08bcb8",
+      "compact_bytes": 1053100,
+      "nodes": 164,
+      "code": 51
+    }
+  ],
+  "current_wrapper_hashes": 102,
+  "public_fixture_functions": 6,
+  "component_cases": 8,
+  "component_variants": 2,
+  "benchmark": {
+    "label": "SIZE_MATCHED_SYNTHETIC_METADATA",
+    "private_workflow": false,
+    "nodes": 164,
+    "hops": 180,
+    "definition_bytes": 1053204,
+    "history_bytes": 204541,
+    "input_padding_bytes": 1024,
+    "models": 0,
+    "production_changes": 0,
+    "timeout_seconds": 240
+  },
+  "private_cfg_in_public_pack": false,
+  "financial_authority": false,
+  "ambient_reads": [
+    "$execution",
+    "$input",
+    "$mode",
+    "$workflow",
+    "AbortSignal",
+    "Array",
+    "Boolean",
+    "Buffer",
+    "DataView",
+    "Date",
+    "Error",
+    "Infinity",
+    "Intl",
+    "JSON",
+    "Map",
+    "Math",
+    "NaN",
+    "Number",
+    "Object",
+    "Promise",
+    "Reflect",
+    "RegExp",
+    "Set",
+    "String",
+    "TypeError",
+    "URL",
+    "Uint32Array",
+    "Uint8Array",
+    "clearTimeout",
+    "decodeURIComponent",
+    "encodeURIComponent",
+    "fetch",
+    "parseInt",
+    "require",
+    "setTimeout",
+    "undefined"
+  ],
+  "ambient_types": [
+    "AbortSignal",
+    "Array",
+    "Boolean",
+    "DataView",
+    "Date",
+    "Error",
+    "Infinity",
+    "Intl",
+    "JSON",
+    "Map",
+    "Math",
+    "NaN",
+    "Number",
+    "Object",
+    "Promise",
+    "Reflect",
+    "RegExp",
+    "Set",
+    "String",
+    "TypeError",
+    "URL",
+    "Uint32Array",
+    "Uint8Array",
+    "clearTimeout",
+    "decodeURIComponent",
+    "encodeURIComponent",
+    "fetch",
+    "parseInt",
+    "setTimeout",
+    "undefined"
+  ],
+  "named_queries": [
+    {
+      "node_id": "native-live-dispatch-plan",
+      "target": "Revalidar débito observado antes de preparar",
+      "accessor": "item"
+    },
+    {
+      "node_id": "native-live-dispatch-verify",
+      "target": "Plan comprobación viva antes de HTTP",
+      "accessor": "item"
+    },
+    {
+      "node_id": "native-live-dispatch-verify",
+      "target": "Aceptar sólo respuesta nativa fresca",
+      "accessor": "item"
+    },
+    {
+      "node_id": "native-live-dispatch-verify",
+      "target": "Plan despacho único del efecto",
+      "accessor": "item"
+    },
+    {
+      "node_id": "native-live-dispatch-verify",
+      "target": "CAS intención antes de HTTP",
+      "accessor": "all()"
+    },
+    {
+      "node_id": "native-live-continue",
+      "target": "Verificar admisión leída",
+      "accessor": "item"
+    },
+    {
+      "node_id": "native-live-continue",
+      "target": "Decodificar y planificar resultado durable",
+      "accessor": "item"
+    },
+    {
+      "node_id": "native-live-continue",
+      "target": "CAS resultado antes de continuar",
+      "accessor": "all()"
+    },
+    {
+      "node_id": "mbx-source-awaiting",
+      "target": "Autorizar HTTP tras lectura y nonce",
+      "accessor": "item"
+    },
+    {
+      "node_id": "mbx-source-awaiting",
+      "target": "Mailbox · Plan inserción sólo rama ganadora",
+      "accessor": "item"
+    },
+    {
+      "node_id": "mbx-source-awaiting",
+      "target": "Mailbox · Insertar una vez sin reintento",
+      "accessor": "all()"
+    },
+    {
+      "node_id": "c450-private-text-lookup-plan",
+      "target": "C450 Preparar ingreso privado de texto",
+      "accessor": "first()"
+    },
+    {
+      "node_id": "c450-private-text-receipt",
+      "target": "C450 Plan lectura del recibo privado",
+      "accessor": "first()"
+    },
+    {
+      "node_id": "qr-unsupported-decide admission",
+      "target": "C647 prepare",
+      "accessor": "first()"
+    },
+    {
+      "node_id": "qr-unsupported-complete plan",
+      "target": "C647 decide admission",
+      "accessor": "first()"
+    },
+    {
+      "node_id": "qr-unsupported-verified backend receipt",
+      "target": "C647 complete plan",
+      "accessor": "first()"
+    },
+    {
+      "node_id": "qr-unsupported-verified backend receipt",
+      "target": "C647 CAS10 complete",
+      "accessor": "all()"
+    },
+    {
+      "node_id": "qr-reserve-quota-before_verify-accept",
+      "target": "Reserva · ¿releer GLOBAL before_verify?",
+      "accessor": "all()"
+    },
+    {
+      "node_id": "native-live-dispatch-plan",
+      "target": "Revalidar débito observado antes de preparar",
+      "accessor": "item"
+    },
+    {
+      "node_id": "native-live-dispatch-verify",
+      "target": "Plan comprobación viva antes de HTTP",
+      "accessor": "item"
+    },
+    {
+      "node_id": "native-live-dispatch-verify",
+      "target": "Aceptar sólo respuesta nativa fresca",
+      "accessor": "item"
+    },
+    {
+      "node_id": "native-live-dispatch-verify",
+      "target": "Plan despacho único del efecto",
+      "accessor": "item"
+    },
+    {
+      "node_id": "native-live-dispatch-verify",
+      "target": "CAS intención antes de HTTP",
+      "accessor": "all()"
+    },
+    {
+      "node_id": "native-live-continue",
+      "target": "Verificar admisión leída",
+      "accessor": "item"
+    },
+    {
+      "node_id": "native-live-continue",
+      "target": "Decodificar y planificar resultado durable",
+      "accessor": "item"
+    },
+    {
+      "node_id": "native-live-continue",
+      "target": "CAS resultado antes de continuar",
+      "accessor": "all()"
+    },
+    {
+      "node_id": "mbx-source-awaiting",
+      "target": "Autorizar HTTP tras lectura y nonce",
+      "accessor": "item"
+    },
+    {
+      "node_id": "mbx-source-awaiting",
+      "target": "Mailbox · Plan inserción sólo rama ganadora",
+      "accessor": "item"
+    },
+    {
+      "node_id": "mbx-source-awaiting",
+      "target": "Mailbox · Insertar una vez sin reintento",
+      "accessor": "all()"
+    },
+    {
+      "node_id": "c450-private-text-lookup-plan",
+      "target": "C450 Preparar ingreso privado de texto",
+      "accessor": "first()"
+    },
+    {
+      "node_id": "c450-private-text-receipt",
+      "target": "C450 Plan lectura del recibo privado",
+      "accessor": "first()"
+    },
+    {
+      "node_id": "qr-unsupported-decide admission",
+      "target": "C647 prepare",
+      "accessor": "first()"
+    },
+    {
+      "node_id": "qr-unsupported-complete plan",
+      "target": "C647 decide admission",
+      "accessor": "first()"
+    },
+    {
+      "node_id": "qr-unsupported-verified backend receipt",
+      "target": "C647 complete plan",
+      "accessor": "first()"
+    },
+    {
+      "node_id": "qr-unsupported-verified backend receipt",
+      "target": "C647 CAS10 complete",
+      "accessor": "all()"
+    },
+    {
+      "node_id": "qr-reserve-quota-before_verify-accept",
+      "target": "Reserva · ¿releer GLOBAL before_verify?",
+      "accessor": "all()"
+    }
+  ],
+  "differences": [
+    "Native main process has no TaskRunner process kill boundary",
+    "Abort/timeout rejects and blocks later helpers; already running trusted CJS cannot be forcibly cancelled",
+    "Fresh VM does not globally freeze n8n host prototypes",
+    "Only the exact ambient names used by these 102 wrappers are supplied; no generic Code API",
+    "Only the two binary helpers used by MAIN are exposed"
+  ],
+  "native_run": false,
+  "production_changes": 0,
+  "models": 0,
+  "expected_image_id": "sha256:4f448824ec99e1160e49eeb1c5bf2130a5d244fe9029e871a9f4d9f126dbfc98",
+  "workflow_package_version": "2.14.1",
+  "task_timeout_seconds": 60,
+  "components": [
+    {
+      "case_name": "text",
+      "variant": "code",
+      "workflow_id": "NativeStaticPocR01textcode",
+      "file": "workflows/component-text-code.OFF.json",
+      "expected": "PASS",
+      "proof_node_name": "Pinned public contract"
+    },
+    {
+      "case_name": "text",
+      "variant": "native",
+      "workflow_id": "NativeStaticPocR01textnative",
+      "file": "workflows/component-text-native.OFF.json",
+      "expected": "PASS",
+      "proof_node_name": "Pinned public contract"
+    },
+    {
+      "case_name": "ambient",
+      "variant": "code",
+      "workflow_id": "NativeStaticPocR01ambientcode",
+      "file": "workflows/component-ambient-code.OFF.json",
+      "expected": "PASS",
+      "proof_node_name": "Pinned public contract"
+    },
+    {
+      "case_name": "ambient",
+      "variant": "native",
+      "workflow_id": "NativeStaticPocR01ambientnative",
+      "file": "workflows/component-ambient-native.OFF.json",
+      "expected": "PASS",
+      "proof_node_name": "Pinned public contract"
+    },
+    {
+      "case_name": "isolation",
+      "variant": "code",
+      "workflow_id": "NativeStaticPocR01isolationcode",
+      "file": "workflows/component-isolation-code.OFF.json",
+      "expected": "PASS",
+      "proof_node_name": "Pinned public contract"
+    },
+    {
+      "case_name": "isolation",
+      "variant": "native",
+      "workflow_id": "NativeStaticPocR01isolationnative",
+      "file": "workflows/component-isolation-native.OFF.json",
+      "expected": "PASS",
+      "proof_node_name": "Pinned public contract"
+    },
+    {
+      "case_name": "null",
+      "variant": "code",
+      "workflow_id": "NativeStaticPocR01nullcode",
+      "file": "workflows/component-null-code.OFF.json",
+      "expected": "EMPTY",
+      "proof_node_name": "Pinned public contract"
+    },
+    {
+      "case_name": "null",
+      "variant": "native",
+      "workflow_id": "NativeStaticPocR01nullnative",
+      "file": "workflows/component-null-native.OFF.json",
+      "expected": "EMPTY",
+      "proof_node_name": "Pinned public contract"
+    },
+    {
+      "case_name": "malformed",
+      "variant": "code",
+      "workflow_id": "NativeStaticPocR01malformedcode",
+      "file": "workflows/component-malformed-code.OFF.json",
+      "expected": "EXPECTED_VALIDATION_ERROR",
+      "proof_node_name": "Pinned public contract"
+    },
+    {
+      "case_name": "malformed",
+      "variant": "native",
+      "workflow_id": "NativeStaticPocR01malformednative",
+      "file": "workflows/component-malformed-native.OFF.json",
+      "expected": "EXPECTED_VALIDATION_ERROR",
+      "proof_node_name": "Pinned public contract"
+    },
+    {
+      "case_name": "png",
+      "variant": "code",
+      "workflow_id": "NativeStaticPocR01pngcode",
+      "file": "workflows/component-png-code.OFF.json",
+      "expected": "PASS",
+      "proof_node_name": "Pinned public pngRead"
+    },
+    {
+      "case_name": "png",
+      "variant": "native",
+      "workflow_id": "NativeStaticPocR01pngnative",
+      "file": "workflows/component-png-native.OFF.json",
+      "expected": "PASS",
+      "proof_node_name": "Pinned public pngRead"
+    },
+    {
+      "case_name": "nominal",
+      "variant": "code",
+      "workflow_id": "NativeStaticPocR01nominalcode",
+      "file": "workflows/component-nominal-code.OFF.json",
+      "expected": "PASS",
+      "proof_node_name": "Public paired result"
+    },
+    {
+      "case_name": "nominal",
+      "variant": "native",
+      "workflow_id": "NativeStaticPocR01nominalnative",
+      "file": "workflows/component-nominal-native.OFF.json",
+      "expected": "PASS",
+      "proof_node_name": "Public paired result"
+    },
+    {
+      "case_name": "kernel",
+      "variant": "code",
+      "workflow_id": "NativeStaticPocR01kernelcode",
+      "file": "workflows/component-kernel-code.OFF.json",
+      "expected": "PASS",
+      "proof_node_name": "Pinned public kernel"
+    },
+    {
+      "case_name": "kernel",
+      "variant": "native",
+      "workflow_id": "NativeStaticPocR01kernelnative",
+      "file": "workflows/component-kernel-native.OFF.json",
+      "expected": "PASS",
+      "proof_node_name": "Pinned public kernel"
+    }
+  ],
+  "benchmark_runs": [
+    {
+      "variant": "code",
+      "workflow_id": "NativeStaticPocR01Bench",
+      "file": "workflows/benchmark-code.OFF.json",
+      "final_node_name": "Public metadata 10"
+    },
+    {
+      "variant": "native",
+      "workflow_id": "NativeStaticPocR01Bench",
+      "file": "workflows/benchmark-native.OFF.json",
+      "final_node_name": "Public metadata 10"
+    }
+  ],
+  "execution_order": [
+    "workflows/component-text-code.OFF.json",
+    "workflows/component-text-native.OFF.json",
+    "workflows/component-ambient-code.OFF.json",
+    "workflows/component-ambient-native.OFF.json",
+    "workflows/component-isolation-code.OFF.json",
+    "workflows/component-isolation-native.OFF.json",
+    "workflows/component-null-code.OFF.json",
+    "workflows/component-null-native.OFF.json",
+    "workflows/component-malformed-code.OFF.json",
+    "workflows/component-malformed-native.OFF.json",
+    "workflows/component-png-code.OFF.json",
+    "workflows/component-png-native.OFF.json",
+    "workflows/component-nominal-code.OFF.json",
+    "workflows/component-nominal-native.OFF.json",
+    "workflows/component-kernel-code.OFF.json",
+    "workflows/component-kernel-native.OFF.json",
+    "workflows/benchmark-code.OFF.json",
+    "workflows/benchmark-native.OFF.json"
+  ],
+  "total_workflow_executions": 18,
+  "total_wall_deadline_seconds": 500,
+  "workflow_timeout_ceiling_seconds": 360,
+  "benchmark_final_schema": {
+    "schema": "escalarai.native-static-benchmark.v1",
+    "status": "PASS",
+    "hops": 180,
+    "history_bytes": 204541,
+    "kind": "SIZE_MATCHED_SYNTHETIC_METADATA",
+    "models": 0,
+    "production_changes": 0
+  },
+  "final_result_schema": "escalarai.native-static-node-isolated-result.v1",
+  "final_result_required": {
+    "status": "PASS",
+    "components": 16,
+    "benchmarks": 2,
+    "models": 0,
+    "production_changes": 0
+  },
+  "mounts": {
+    "node": "@escalar/native-static-node-poc-r01",
+    "static": "@escalar/static-code-body-poc-r01",
+    "r03": "@escalar/qr-native-r03",
+    "fixtures": "@escalar/native-static-node-poc-fixtures-r01"
+  },
+  "baseline_external_allow": [
+    "@escalar/qr-native-r03",
+    "@escalar/static-code-body-poc-r01",
+    "@escalar/native-static-node-poc-fixtures-r01"
+  ],
+  "native_custom_extensions": "/usr/local/lib/node_modules/n8n/node_modules/@escalar/native-static-node-poc-r01",
+  "files": {
+    "node/EscalarStaticBody.node.js": {
+      "sha256": "197b97e7be40883d97b3780f086d81ad3268cc25aeb03b4895eac7432a3dc0ed",
+      "bytes": 2186
+    },
+    "node/trusted-runtime.cjs": {
+      "sha256": "1569d5ed7c5821c3b406f43f32d5006f35341fcb6248efd26a29e5ab8899ad11",
+      "bytes": 9206
+    },
+    "node/code-output.cjs": {
+      "sha256": "9fbea889c1639748c6b2e4dc1df13862cbf11f94a615444f971d7e4080d2715b",
+      "bytes": 12450
+    },
+    "node/package.json": {
+      "sha256": "a6712b99df90c886acd280656bb08c7d3c047a4d25948450db08cc72ac2df46e",
+      "bytes": 140
+    },
+    "node/registry.json": {
+      "sha256": "266220706382cc639416aa0fdeaafdaa915144257266a430263642182c47e372",
+      "bytes": 46472
+    },
+    "fixtures/index.cjs": {
+      "sha256": "4b328c3a93b46b11ccb305f22313caabdca5dceabacb660cde20b918afcaac98",
+      "bytes": 3556
+    },
+    "fixtures/package.json": {
+      "sha256": "de0ed41aadc82ac3f1d0d6d41b56644b9cc3d921e13f151b55eaaa9b99126047",
+      "bytes": 133
+    },
+    "static/index.cjs": {
+      "sha256": "1bb60b6fd4b06d781a69029bfaf6c51d73e3f3287a65564b8eb971e7c5e86c25",
+      "bytes": 8322620
+    },
+    "static/package.json": {
+      "sha256": "9cd6c0419caf525325314a42013f858057f4f6898ec5bc2532ba449a2f1aa2a5",
+      "bytes": 144
+    },
+    "r03/index.cjs": {
+      "sha256": "cc64011e21b074ae1fcad83909294fb8e200ab70712d872a898404a5fbf6ec92",
+      "bytes": 731506
+    },
+    "r03/package.json": {
+      "sha256": "7c3bc2f85ae6fe16a20eefa74569cdbdaf3eb319c8056ecf0b04b3e8607d5ea9",
+      "bytes": 133
+    },
+    "workflows/component-text-code.OFF.json": {
+      "sha256": "91ffeaaca7765060cfdbcd840a2344c8a79d947949708dcde2477e27fc9ed420",
+      "bytes": 2224
+    },
+    "workflows/component-text-native.OFF.json": {
+      "sha256": "1c0727981bf08d52cb306aa517a1010a1c735ec77f6eb73f11a198161990079b",
+      "bytes": 2233
+    },
+    "workflows/component-ambient-code.OFF.json": {
+      "sha256": "c966b87021d10454a97b2eb659edae1c08f04c4ba9ae14219b5de7b170e5c809",
+      "bytes": 2233
+    },
+    "workflows/component-ambient-native.OFF.json": {
+      "sha256": "ac88b3d6a9cdced18ea8e6d65dcfe38009c5210bb88bc3e51dbf9916f7f824d8",
+      "bytes": 2242
+    },
+    "workflows/component-isolation-code.OFF.json": {
+      "sha256": "89c7ed0ea9d0c3428bff52550ba9ed46d86c4714aa6c29ecc18727ab45ac30c0",
+      "bytes": 2928
+    },
+    "workflows/component-isolation-native.OFF.json": {
+      "sha256": "ba32af6e01ab4a76d33589eec03e6531e029ce8246faed8229b50b9ca4609d95",
+      "bytes": 2937
+    },
+    "workflows/component-null-code.OFF.json": {
+      "sha256": "cd3998d831675579ea37e8e933502bb8e901cb5339e57ea611109e7427ae859a",
+      "bytes": 2224
+    },
+    "workflows/component-null-native.OFF.json": {
+      "sha256": "f0185518e8cba2fa60c0a4a47044ad7c2b7cf80d17c5820fb390c9b4f3c658c8",
+      "bytes": 2233
+    },
+    "workflows/component-malformed-code.OFF.json": {
+      "sha256": "78c84e8108ed1cfd25cad868fc3114a47cfbf21b7a7df94351e7894871d44206",
+      "bytes": 2239
+    },
+    "workflows/component-malformed-native.OFF.json": {
+      "sha256": "cc752e1df9950871c0ec89c3148a0462396774258161abec8c7bcf6a2ad6f78b",
+      "bytes": 2248
+    },
+    "workflows/component-png-code.OFF.json": {
+      "sha256": "0a4593d6070b5f3c6c2cc6f51b173192e6348d108841ce055fb634276776afc9",
+      "bytes": 2774
+    },
+    "workflows/component-png-native.OFF.json": {
+      "sha256": "e10d40092a601cadabf93d28e2a0e48341097d56a694504fe30fec8ca812dbfd",
+      "bytes": 2788
+    },
+    "workflows/component-nominal-code.OFF.json": {
+      "sha256": "4c61f7440565a162eb87cd29852b1d9802e586428f9623e78efd1009368d52a6",
+      "bytes": 3203
+    },
+    "workflows/component-nominal-native.OFF.json": {
+      "sha256": "00307d2475defb3636f02aa6bd1fcac2a07b618797a554637edb07ae27c18d89",
+      "bytes": 3212
+    },
+    "workflows/component-kernel-code.OFF.json": {
+      "sha256": "5d8e6def276935d8fe10d84d66c0eb26a7de94c120cb92561f4596a6c29b42d9",
+      "bytes": 3865
+    },
+    "workflows/component-kernel-native.OFF.json": {
+      "sha256": "6303118ca6c6f1b0374b29e7d5f360a6e5cc3c7075a7062d52fbd9a7982e0809",
+      "bytes": 3874
+    },
+    "workflows/benchmark-code.OFF.json": {
+      "sha256": "b858b7a0ffc792e283b0e77ed42d2c47e5d6b18a3eda121d9125eb588f2b89bc",
+      "bytes": 1053205
+    },
+    "workflows/benchmark-native.OFF.json": {
+      "sha256": "b8f3b3e1a168a95fea510b0344f3385b6491a32436e7d5a20e50ac75849c9974",
+      "bytes": 1053205
+    }
+  },
+  "physical_binary_acceptance": false,
+  "native_plugin_acceptance": false,
+  "latency_acceptance": false,
+  "whole_agent_acceptance": false
+}

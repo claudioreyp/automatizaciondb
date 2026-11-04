@@ -1,3 +1,4 @@
 tools/qr-static-body-native-r01/package/index.cjs -text
 tools/qr-static-body-persistent-r01/*.py -text
 tools/qr-native-static-node-poc-r01/** -text
+tools/qr-native-static-node-poc-r02/** -text

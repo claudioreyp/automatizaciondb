@@ -1,0 +1,138 @@
+{
+  "id": "NativeStaticPocR01nominalnative",
+  "name": "NativeStaticPocR01nominalnative OFF",
+  "active": false,
+  "nodes": [
+    {
+      "id": "public-manual",
+      "name": "Run public isolated proof",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "public-source",
+      "name": "Static native nominal source",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [0,1].map(slot=>({json:{slot,payload:{deep:7}}}));"
+      },
+      "retryOnFail": false
+    },
+    {
+      "id": "public-loop",
+      "name": "One paired item per visit",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -350,
+        0
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "public-proof-0",
+      "name": "Pinned public nominal",
+      "type": "CUSTOM.escalarStaticBody",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return await require(\"@escalar/native-static-node-poc-fixtures-r01\")[\"body_b1921e75210e5e97f23879d8ed7fcc72592c78f3fb3a1bccb838aaf4bdc6c001\"].call(this,{reads:{\"$input\":()=>$input},types:{},lookups:[()=>($('Static native nominal source').item),()=>($('Static native nominal source').first()),()=>($('Static native nominal source').all())]},[],[]);"
+      },
+      "retryOnFail": false
+    },
+    {
+      "id": "public-final",
+      "name": "Public paired result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        500,
+        -180
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all();"
+      },
+      "retryOnFail": false
+    }
+  ],
+  "connections": {
+    "Run public isolated proof": {
+      "main": [
+        [
+          {
+            "node": "Static native nominal source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Static native nominal source": {
+      "main": [
+        [
+          {
+            "node": "One paired item per visit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One paired item per visit": {
+      "main": [
+        [
+          {
+            "node": "Public paired result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Pinned public nominal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pinned public nominal": {
+      "main": [
+        [
+          {
+            "node": "One paired item per visit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 180,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {},
+  "staticData": {}
+}

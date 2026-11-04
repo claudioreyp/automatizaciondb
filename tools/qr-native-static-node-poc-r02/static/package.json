@@ -1,0 +1,7 @@
+{
+  "name": "@escalar/static-code-body-poc-r01",
+  "version": "0.0.0-poc-r01",
+  "private": true,
+  "type": "commonjs",
+  "main": "index.cjs"
+}

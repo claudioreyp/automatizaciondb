@@ -1,0 +1,80 @@
+{
+  "id": "NativeStaticPocR01kernelcode",
+  "name": "NativeStaticPocR01kernelcode OFF",
+  "active": false,
+  "nodes": [
+    {
+      "id": "public-manual",
+      "name": "Run public isolated proof",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "public-source",
+      "name": "Static native nominal source",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{json:{case_name:\"kernel\",text:\"Synthetic á / 2 items\",payload:{deep:7}}}];"
+      },
+      "retryOnFail": false
+    },
+    {
+      "id": "public-proof-0",
+      "name": "Pinned public kernel",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return await require(\"@escalar/static-code-body-poc-r01\")[\"body_e0ca9f2880ca128f1ae1d25811b531739be911517c8393db528e9663dc7da179\"].call(this,{reads:{\"$execution\":()=>$execution,\"$input\":()=>$input,\"$workflow\":()=>$workflow,\"AbortSignal\":()=>AbortSignal,\"Array\":()=>Array,\"Boolean\":()=>Boolean,\"Buffer\":()=>Buffer,\"DataView\":()=>DataView,\"Date\":()=>Date,\"Error\":()=>Error,\"Infinity\":()=>Infinity,\"Intl\":()=>Intl,\"JSON\":()=>JSON,\"Map\":()=>Map,\"Math\":()=>Math,\"Number\":()=>Number,\"Object\":()=>Object,\"Promise\":()=>Promise,\"Reflect\":()=>Reflect,\"RegExp\":()=>RegExp,\"Set\":()=>Set,\"String\":()=>String,\"TypeError\":()=>TypeError,\"URL\":()=>URL,\"Uint32Array\":()=>Uint32Array,\"Uint8Array\":()=>Uint8Array,\"clearTimeout\":()=>clearTimeout,\"decodeURIComponent\":()=>decodeURIComponent,\"encodeURIComponent\":()=>encodeURIComponent,\"fetch\":()=>fetch,\"parseInt\":()=>parseInt,\"require\":()=>require,\"setTimeout\":()=>setTimeout,\"undefined\":()=>undefined},types:{\"AbortSignal\":()=>typeof AbortSignal,\"Array\":()=>typeof Array,\"Boolean\":()=>typeof Boolean,\"DataView\":()=>typeof DataView,\"Date\":()=>typeof Date,\"Error\":()=>typeof Error,\"Infinity\":()=>typeof Infinity,\"Intl\":()=>typeof Intl,\"JSON\":()=>typeof JSON,\"Map\":()=>typeof Map,\"Math\":()=>typeof Math,\"Number\":()=>typeof Number,\"Object\":()=>typeof Object,\"Promise\":()=>typeof Promise,\"Reflect\":()=>typeof Reflect,\"RegExp\":()=>typeof RegExp,\"Set\":()=>typeof Set,\"String\":()=>typeof String,\"TypeError\":()=>typeof TypeError,\"URL\":()=>typeof URL,\"Uint32Array\":()=>typeof Uint32Array,\"Uint8Array\":()=>typeof Uint8Array,\"clearTimeout\":()=>typeof clearTimeout,\"decodeURIComponent\":()=>typeof decodeURIComponent,\"encodeURIComponent\":()=>typeof encodeURIComponent,\"fetch\":()=>typeof fetch,\"parseInt\":()=>typeof parseInt,\"setTimeout\":()=>typeof setTimeout,\"undefined\":()=>typeof undefined},lookups:[]},[()=>({\"enabled\":false})],[\"__escalar_ctx_31aee64cf9fcbee3db39\",\"31aee64cf9fcbee3db396112f0bb028068cfe5c7fdd89d5b6affd93b846d57d3\",\"d0b3a0eea19fcd120e0255b617abd49dccca122cdaf831eddfc7a198a7b5b542\"]);"
+      },
+      "retryOnFail": false
+    }
+  ],
+  "connections": {
+    "Run public isolated proof": {
+      "main": [
+        [
+          {
+            "node": "Static native nominal source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Static native nominal source": {
+      "main": [
+        [
+          {
+            "node": "Pinned public kernel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 180,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {},
+  "staticData": {}
+}
