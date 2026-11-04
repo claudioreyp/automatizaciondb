@@ -68,17 +68,23 @@ def forward(method, target, headers, body, connection_factory=http.client.HTTPCo
     validate_request(method, target, headers, body)
     connection = connection_factory(BACKEND_HOST, BACKEND_PORT, timeout=CONNECT_TIMEOUT)
     connection.response_class = BoundedResponse
-    timer = None
+    timer, deadline_socket = None, None
+    expired = threading.Event()
     def expire():
+        expired.set()
         try:
-            if connection.sock:
-                connection.sock.shutdown(socket.SHUT_RDWR)
+            # HTTPConnection may clear .sock after HTTP/1.0 headers while the
+            # response still owns its file. The duplicate controls that same
+            # connection until its bounded body read has finished.
+            if deadline_socket:
+                deadline_socket.shutdown(socket.SHUT_RDWR)
         except OSError:
             pass
         connection.close()
     try:
         connection.connect()
         connection.sock.settimeout(READ_TIMEOUT)
+        deadline_socket = connection.sock.dup()
         # A total exchange deadline also caps slow-drip headers/body, beyond
         # socket inactivity timeouts. Only the fixed backend socket is closed.
         timer = threading.Timer(READ_TIMEOUT, expire)
@@ -94,6 +100,8 @@ def forward(method, target, headers, body, connection_factory=http.client.HTTPCo
         if length is not None and (not length.isdigit() or int(length) > MAX_RESPONSE_BODY):
             raise ProxyFailure(502, "RESPONSE_LIMIT")
         data = response.read(MAX_RESPONSE_BODY + 1)
+        if expired.is_set():
+            raise ProxyFailure(504, "BACKEND_TIMEOUT")
         if len(data) > MAX_RESPONSE_BODY:
             raise ProxyFailure(502, "RESPONSE_LIMIT")
         if method != "HEAD" and length is not None and len(data) != int(length):
@@ -104,11 +112,15 @@ def forward(method, target, headers, body, connection_factory=http.client.HTTPCo
     except (TimeoutError, socket.timeout):
         raise ProxyFailure(504, "BACKEND_TIMEOUT") from None
     except Exception:
+        if expired.is_set():
+            raise ProxyFailure(504, "BACKEND_TIMEOUT") from None
         raise ProxyFailure(502, "BACKEND_UNAVAILABLE") from None
     finally:
         if timer:
             timer.cancel()
         connection.close()
+        if deadline_socket:
+            deadline_socket.close()
 
 
 class Handler(BaseHTTPRequestHandler):
