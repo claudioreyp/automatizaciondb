@@ -1,0 +1,114 @@
+{
+  "schema": "escalarai.native-static-node-two-library-public-pack.v1",
+  "state": "PREPARED_NATIVE_UNRUN",
+  "expected_image_id": "sha256:4f448824ec99e1160e49eeb1c5bf2130a5d244fe9029e871a9f4d9f126dbfc98",
+  "workflow_package_version": "2.14.1",
+  "source_poc_result_sha256": "13afa996d1b56f0ab3492d5e93fa7d34e4cb1120bd2a71ed0b1058f57ed00d42",
+  "source_runtime_sha256": "1569d5ed7c5821c3b406f43f32d5006f35341fcb6248efd26a29e5ab8899ad11",
+  "runtime_sha256": "c95877b63cbc6a4dec66d51afd6536f2941ee1ed2b355e1d3c56a16ae0703b52",
+  "runtime_changes": [
+    [
+      "const LIBRARIES=new Set([PACKAGE,R03,FIXTURES]);",
+      "const LIBRARIES=new Set([PACKAGE,R03]);"
+    ],
+    [
+      "need(Array.isArray(libraries)&&libraries.length===3,'NATIVE_THREE_LIBRARY_PINS');",
+      "need(Array.isArray(libraries)&&libraries.length===2,'NATIVE_TWO_LIBRARY_PINS');"
+    ],
+    [
+      "need(new Set(libraries.map(lib=>lib.name)).size===3,'NATIVE_DUPLICATE_LIBRARY_PIN');",
+      "need(new Set(libraries.map(lib=>lib.name)).size===2,'NATIVE_DUPLICATE_LIBRARY_PIN');"
+    ]
+  ],
+  "exact_runtime_inverse": true,
+  "operational_libraries": 2,
+  "operational_wrapper_bindings": 102,
+  "public_disabled_kernel_bindings": 2,
+  "task_timeout_seconds": 300,
+  "components": [
+    {
+      "case_name": "kernel",
+      "variant": "code",
+      "workflow_id": "NativeStaticPocR01kernelcode",
+      "file": "workflows/component-kernel-code.OFF.json",
+      "expected": "PASS",
+      "proof_node_name": "Pinned public kernel"
+    },
+    {
+      "case_name": "kernel",
+      "variant": "native",
+      "workflow_id": "NativeStaticPocR01kernelnative",
+      "file": "workflows/component-kernel-native.OFF.json",
+      "expected": "PASS",
+      "proof_node_name": "Pinned public kernel"
+    }
+  ],
+  "benchmark_runs": [],
+  "execution_order": [
+    "workflows/component-kernel-code.OFF.json",
+    "workflows/component-kernel-native.OFF.json"
+  ],
+  "total_workflow_executions": 2,
+  "total_wall_deadline_seconds": 180,
+  "workflow_timeout_ceiling_seconds": 60,
+  "mounts": {
+    "node": "@escalar/native-static-node-operational-r01",
+    "static": "@escalar/static-code-body-poc-r01",
+    "r03": "@escalar/qr-native-r03"
+  },
+  "baseline_external_allow": [
+    "@escalar/qr-native-r03",
+    "@escalar/static-code-body-poc-r01"
+  ],
+  "native_custom_extensions": "/usr/local/lib/node_modules/n8n/node_modules/@escalar/native-static-node-operational-r01",
+  "files": {
+    "node/EscalarStaticBody.node.js": {
+      "sha256": "197b97e7be40883d97b3780f086d81ad3268cc25aeb03b4895eac7432a3dc0ed",
+      "bytes": 2186
+    },
+    "node/code-output.cjs": {
+      "sha256": "9fbea889c1639748c6b2e4dc1df13862cbf11f94a615444f971d7e4080d2715b",
+      "bytes": 12450
+    },
+    "node/trusted-runtime.cjs": {
+      "sha256": "c95877b63cbc6a4dec66d51afd6536f2941ee1ed2b355e1d3c56a16ae0703b52",
+      "bytes": 9195
+    },
+    "node/package.json": {
+      "sha256": "02f85a9671a93e24063f23d7d653a54759674644331144aded7ee0a9c1ae10ed",
+      "bytes": 144
+    },
+    "node/registry.json": {
+      "sha256": "8aff12288529821d91acaa0674a12bf1603b52ec86c969c48f015e4ce45cb20f",
+      "bytes": 39688
+    },
+    "static/index.cjs": {
+      "sha256": "1bb60b6fd4b06d781a69029bfaf6c51d73e3f3287a65564b8eb971e7c5e86c25",
+      "bytes": 8322620
+    },
+    "static/package.json": {
+      "sha256": "9cd6c0419caf525325314a42013f858057f4f6898ec5bc2532ba449a2f1aa2a5",
+      "bytes": 144
+    },
+    "r03/index.cjs": {
+      "sha256": "cc64011e21b074ae1fcad83909294fb8e200ab70712d872a898404a5fbf6ec92",
+      "bytes": 731506
+    },
+    "r03/package.json": {
+      "sha256": "7c3bc2f85ae6fe16a20eefa74569cdbdaf3eb319c8056ecf0b04b3e8607d5ea9",
+      "bytes": 133
+    },
+    "workflows/component-kernel-code.OFF.json": {
+      "sha256": "f0bff3b15997e3b2b6db2dda15d8a35c351f4e039b51a6d9559e7ab3b8f9a08a",
+      "bytes": 3864
+    },
+    "workflows/component-kernel-native.OFF.json": {
+      "sha256": "3c22322c7463f9f05e17b2fb3914089e32ee4601b17337c460d1359baeb57d0e",
+      "bytes": 3873
+    }
+  },
+  "financial_authority": false,
+  "models": 0,
+  "production_changes": 0,
+  "whole_agent_acceptance": false
+}

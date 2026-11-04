@@ -1,0 +1,62 @@
+{
+  "schema": "escalarai.native-static-node-vps-pack.v1",
+  "state": "PREPARED_NOT_EXECUTED",
+  "payload_manifest_sha256": "2af131367430e540d9401f5e7c115307a242347e8039aa1294a6a920048d819f",
+  "source_poc_result_sha256": "13afa996d1b56f0ab3492d5e93fa7d34e4cb1120bd2a71ed0b1058f57ed00d42",
+  "models": 0,
+  "production_changes": 0,
+  "files": {
+    "node/EscalarStaticBody.node.js": {
+      "sha256": "197b97e7be40883d97b3780f086d81ad3268cc25aeb03b4895eac7432a3dc0ed",
+      "bytes": 2186
+    },
+    "node/code-output.cjs": {
+      "sha256": "9fbea889c1639748c6b2e4dc1df13862cbf11f94a615444f971d7e4080d2715b",
+      "bytes": 12450
+    },
+    "node/trusted-runtime.cjs": {
+      "sha256": "c95877b63cbc6a4dec66d51afd6536f2941ee1ed2b355e1d3c56a16ae0703b52",
+      "bytes": 9195
+    },
+    "node/package.json": {
+      "sha256": "02f85a9671a93e24063f23d7d653a54759674644331144aded7ee0a9c1ae10ed",
+      "bytes": 144
+    },
+    "node/registry.json": {
+      "sha256": "8aff12288529821d91acaa0674a12bf1603b52ec86c969c48f015e4ce45cb20f",
+      "bytes": 39688
+    },
+    "static/index.cjs": {
+      "sha256": "1bb60b6fd4b06d781a69029bfaf6c51d73e3f3287a65564b8eb971e7c5e86c25",
+      "bytes": 8322620
+    },
+    "static/package.json": {
+      "sha256": "9cd6c0419caf525325314a42013f858057f4f6898ec5bc2532ba449a2f1aa2a5",
+      "bytes": 144
+    },
+    "r03/index.cjs": {
+      "sha256": "cc64011e21b074ae1fcad83909294fb8e200ab70712d872a898404a5fbf6ec92",
+      "bytes": 731506
+    },
+    "r03/package.json": {
+      "sha256": "7c3bc2f85ae6fe16a20eefa74569cdbdaf3eb319c8056ecf0b04b3e8607d5ea9",
+      "bytes": 133
+    },
+    "workflows/component-kernel-code.OFF.json": {
+      "sha256": "f0bff3b15997e3b2b6db2dda15d8a35c351f4e039b51a6d9559e7ab3b8f9a08a",
+      "bytes": 3864
+    },
+    "workflows/component-kernel-native.OFF.json": {
+      "sha256": "3c22322c7463f9f05e17b2fb3914089e32ee4601b17337c460d1359baeb57d0e",
+      "bytes": 3873
+    },
+    "payload-manifest.json": {
+      "sha256": "2af131367430e540d9401f5e7c115307a242347e8039aa1294a6a920048d819f",
+      "bytes": 4144
+    },
+    "run-proof.py": {
+      "sha256": "34a1b676a0e8cc97578bf10a9b5c546d92f26304ca41b18048165808adb0d0db",
+      "bytes": 23063
+    }
+  }
+}

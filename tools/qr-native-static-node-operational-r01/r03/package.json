@@ -1,0 +1,7 @@
+{
+  "name": "@escalar/qr-native-r03",
+  "version": "0.0.0-poc-r03",
+  "private": true,
+  "type": "commonjs",
+  "main": "index.cjs"
+}
