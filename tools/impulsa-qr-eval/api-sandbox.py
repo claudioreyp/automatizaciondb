@@ -242,7 +242,7 @@ def main():
     binding={"schema":"escalarai.qr-api-sandbox-binding.v1","synthetic_only":True,
         "base_url":f"http://{args.advertise_host}:{server.server_port}","api_base_path":"/api/v1",
         "control_token":sandbox["control"],"agent_tokens":{str(k):v for k,v in sandbox["tokens"].items()},
-        "api_source":str(sandbox["api_root"]),"api_version":"1.1.0","database":"sqlite_memory",
+        "api_source":str(sandbox["api_root"]),"api_version":"1.1.1","database":"sqlite_memory",
         "container_isolation":args.container_isolation,
         "real_whatsapp":False,"physical_printing":False}
     args.binding_file.parent.mkdir(parents=True,exist_ok=True)

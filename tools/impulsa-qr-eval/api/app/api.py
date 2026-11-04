@@ -1220,9 +1220,9 @@ def serialize_payment(payment: Payment, *, cash_register_name: str | None = None
 def health(db: Session = Depends(get_db)):
     db.execute(select(1))
     import os
-    return {"status": "ok", "service": "impulsa-pos-api", "version": "1.1.0",
-        "api_contract_version": "1.1.0", "build_revision": os.getenv("RENDER_GIT_COMMIT"),
-        "capabilities": ["typed_agent_context", "selection_requirements", "validate_selection", "turn_context", "durable_conversations"]}
+    return {"status": "ok", "service": "impulsa-pos-api", "version": "1.1.1",
+        "api_contract_version": "1.1.1", "build_revision": os.getenv("RENDER_GIT_COMMIT"),
+        "capabilities": ["typed_agent_context", "selection_requirements", "validate_selection", "turn_context", "durable_conversations", "native_queue_readiness"]}
 
 
 @api.get("/me", tags=["auth"])
