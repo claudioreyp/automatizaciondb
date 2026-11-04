@@ -1,5 +1,6 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
+COPY package.json ./
 COPY build-tooling/package.json build-tooling/package-lock.json /tooling/
 RUN npm ci --prefix /tooling --ignore-scripts && ln -s /tooling/node_modules /app/node_modules
 COPY qr-direct-runtime/package.json qr-direct-runtime/package-lock.json ./qr-direct-runtime/

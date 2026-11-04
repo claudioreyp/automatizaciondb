@@ -234,8 +234,8 @@
     },
     {
       "path": "Dockerfile",
-      "bytes": 1087,
-      "sha256": "e6e2dd0aef8b40ddf39dcc779f1b582f61406740d988270bc8ff223984614223"
+      "bytes": 1108,
+      "sha256": "c80395214c879d889ce938f41e2511f1eb6450d1e20f780a424f3f3f36a48d60"
     },
     {
       "path": ".dockerignore",
