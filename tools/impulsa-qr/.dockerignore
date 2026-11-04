@@ -1,0 +1,11 @@
+.env
+.env.*
+**/node_modules
+**/sessions
+**/secrets
+**/*.log
+.test-results
+dist
+tests
+README.md
+Start-QR-Preview.ps1

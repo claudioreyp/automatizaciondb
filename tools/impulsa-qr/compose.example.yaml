@@ -1,0 +1,21 @@
+services:
+  impulsa-qr:
+    build: .
+    init: true
+    restart: unless-stopped
+    networks:
+      - n8n
+    environment:
+      IMPULSA_NATIVE_ACTIVE: "false"
+      IMPULSA_NATIVE_PROFILE: /var/lib/impulsa/session/native-profile.json
+    # Local interface only. Use an authenticated SSH tunnel to view the QR remotely.
+    ports:
+      - "127.0.0.1:3008:3008"
+    volumes:
+      - ./private/session:/var/lib/impulsa/session
+      - ./private/native-profile.json:/var/lib/impulsa/session/native-profile.json:ro
+      - ./private/gateway-credential.json:/var/lib/impulsa/gateway-credential.json:ro
+networks:
+  n8n:
+    external: true
+    name: ${IMPULSA_N8N_NETWORK:-n8n_default}

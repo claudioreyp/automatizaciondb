@@ -1,0 +1,38 @@
+{
+  "name": "impulsa-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "WhatsApp gateway tipo BuilderBot para Impulsa con bridge a n8n",
+  "scripts": {
+    "dev": "powershell.exe -NoProfile -NonInteractive -File ./Start-QR-Preview.ps1",
+    "build": "node scripts/build.mjs",
+    "start": "powershell.exe -NoProfile -NonInteractive -File ./Start-QR-Preview.ps1",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test tests/*.test.ts tests/*.test.mjs",
+    "test:qr": "tsx --test tests/*.test.ts tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@builderbot/bot": "1.3.15",
+    "@builderbot/manager": "1.3.15",
+    "@builderbot/provider-wppconnect": "1.3.15",
+    "@wppconnect-team/wppconnect": "2.2.6",
+    "@wppconnect/wa-js": "4.5.0",
+    "dotenv": "^16.6.1",
+    "polka": "^0.5.2",
+    "qr-image": "^3.2.0",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.2",
+    "@types/polka": "^0.5.7",
+    "@types/qr-image": "^3.2.9",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "@builderbot/provider-wppconnect": {
+      "@wppconnect-team/wppconnect": "2.2.6"
+    }
+  }
+}
