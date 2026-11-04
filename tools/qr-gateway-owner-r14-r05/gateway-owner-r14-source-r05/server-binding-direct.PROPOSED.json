@@ -1,0 +1,8 @@
+{
+  "schema": "escalarai.gateway-owner-r14-direct-binding.v1",
+  "state": "UNRELEASED_NEEDS_ACTUAL_PROFILE_HASH_AND_REVIEW",
+  "image_id": "sha256:5b3fccf054cefcfb10d984554ac82424f5a41e2a91dcd21ccaf67bc9c2e868f6",
+  "container_id": "36253d0d4c36003f59382b81cc7db4049e397a408d7ea1089a9dc982ceb27f84",
+  "profile_sha256": null,
+  "transport_manifest_sha256": null
+}

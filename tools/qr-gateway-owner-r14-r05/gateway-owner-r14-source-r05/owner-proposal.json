@@ -1,0 +1,132 @@
+{
+  "schema": "escalarai.r14-owner-ack-source-proposal.v1",
+  "state": "SOURCE_ONLY_UNINSTALLED",
+  "generator_sha256": "06ca7dfcdc1a04c2d7395353756bdf813f2c21d5307c05cd5d4a87f2177e2ae8",
+  "input_pins": {
+    "owner-drain.mjs": "fa6738aa91648e1a23d3189cb69f92d56682a2330ebe00fd59fd4ca1a1a8dd35",
+    "patch.mjs": "28cd8e8de4e5ac73f5d23731bab707bb0e2583a3c9c4287bf28e228563094a59",
+    "owner-drain.test.mjs": "2bc2a1f136904ba19962769f1d5b7a221f34476bdf0b947509f0be8cdce2ad92",
+    "local-test-r01.txt": "4d9db630adb490b7f0091af407a4ad25a89beac4048d30d849094cf4d597840d",
+    "../ack-target-r14/target.mjs": "e2817da8d31c77e2ca6a766d1d8b36b0db2ec654a0fd44d3521106470a82fbb8",
+    "../ack-target-r14/patch.mjs": "27099ab8de9ff48b68d19572be1b250b7ba4719614f00e571b0069437139520e",
+    "../ack-target-r14/gateway-patch.mjs": "b92cc21dda477bfbff695ce0585af9eaa006d30f5cfca4a493033a964e226470",
+    "../ack-target-r14/client-reference.mjs": "b6058f8afdd978e50422bf3ea445e923688020a1b89fb71805a1d9704bacd3d3",
+    "../ack-target-r14/target.test.mjs": "f4fc5ad1e5a392df88c371cfbff76ab3885e7d6e2c3453b4e2d4ce039ea28551",
+    "../ack-target-r14/local-test-r04.txt": "0943c27e8ed910bbb5ee3589853a22f63476465b5c255a01fb989bd0c76b198a"
+  },
+  "files": [
+    {
+      "file": "ack-target-tools.mjs",
+      "bytes": 9823,
+      "sha256": "e2817da8d31c77e2ca6a766d1d8b36b0db2ec654a0fd44d3521106470a82fbb8",
+      "source_before_sha256": null
+    },
+    {
+      "file": "direct-native-transport.ts",
+      "bytes": 15509,
+      "sha256": "70ec3f361e3165e32c9e3c6ff4c6c2ed3d32eb14db53bbe7be66a5eccc9ac41c",
+      "source_before_sha256": "d5056e3e862e60033107875b536448d7a0f3a657cdd03a08a5c00711c5b2b734"
+    },
+    {
+      "file": "native-ack-owner.d.mts",
+      "bytes": 474,
+      "sha256": "d313a0e42139906319e26b46c54c3ac299f5a48cba8786c59d4fbf8cea417dcf",
+      "source_before_sha256": null
+    },
+    {
+      "file": "native-ack-owner.mjs",
+      "bytes": 4145,
+      "sha256": "d85903c411e0fd1f82477766b19e67cae2719b4503bf31d04670eb54682f00df",
+      "source_before_sha256": null
+    },
+    {
+      "file": "native-ack-quiet.mjs",
+      "bytes": 2473,
+      "sha256": "21d7b765ef6dbba645e465359d429c8a580305b52ed6d7b46fff7f8df320b6b6",
+      "source_before_sha256": null
+    },
+    {
+      "file": "native-ack-reference.d.mts",
+      "bytes": 175,
+      "sha256": "366c98a0bb5b7b42bb4cb7caefae4c9fc0726815831f0992e3debffcce54b564",
+      "source_before_sha256": null
+    },
+    {
+      "file": "native-ack-reference.mjs",
+      "bytes": 872,
+      "sha256": "0c8a476dff7979c540f90cb633f713daa76a95c89fb5b7f919dd4dec640eafbe",
+      "source_before_sha256": null
+    },
+    {
+      "file": "native-owned-connection.d.mts",
+      "bytes": 912,
+      "sha256": "14c77ca9463c00bfe2533dc29f72786d3581b10200b2d9ba579949760fdfa37f",
+      "source_before_sha256": "ac5815533f4369a8cb6462c162f5e49343186fb7d4694d9a000c2f776a1801f0"
+    },
+    {
+      "file": "native-owned-connection.mjs",
+      "bytes": 203316,
+      "sha256": "0d61b49df5f2e417b779378da440b6fe47145f5ec54eeda6eb26323eab2343cd",
+      "source_before_sha256": "ab6a9cff13ae240b66fbf21c9d0851f8dc2f8d48eeb03b3a1883edc5f3c218ea"
+    },
+    {
+      "file": "native-profile-bootstrap.ts",
+      "bytes": 4674,
+      "sha256": "ebcb709d0bf34cd8ae4814e8661c09ec27a2895299659e6068a1c741e89b3015",
+      "source_before_sha256": "c13f42dc25922c620831a79cfe993d8386f11f3fa0afb9e291cf55c1b6740c3f"
+    },
+    {
+      "file": "native-profile-connection.ts",
+      "bytes": 6958,
+      "sha256": "0d2c6ec3c1b7ebef99b49ac10a5da33b1cf72928b687e68bd82b3c27cec3622c",
+      "source_before_sha256": "6dbb294aaf014ebed93deeb185617218569769aef0d5f0bfd53e39df97deced7"
+    },
+    {
+      "file": "native-profile-fetch.mjs",
+      "bytes": 3534,
+      "sha256": "b7e735f4c2ea215767b322144889a0deb084be28c965976912acee6ff5bc2e64",
+      "source_before_sha256": "75597aefa80208cdc1e79d75fb1d1e407c3584fffd6a5e39d83bc3bcd90cbe7a"
+    },
+    {
+      "file": "native-profile-requests.d.mts",
+      "bytes": 730,
+      "sha256": "fcee5229b61161503bcf027646ad8726ad2e875e3e41eeab40a27b35d8f26cbd",
+      "source_before_sha256": "766ee0ee28f6b149b4f7c2d2fc3be4cdbba95a1d04ef1ace4eabb2b75fd1bab4"
+    },
+    {
+      "file": "native-profile-requests.mjs",
+      "bytes": 11419,
+      "sha256": "386b71b09aee9d023fd2b683c0d2a77848cbe8993ebea2271225bbe298217ec3",
+      "source_before_sha256": "9bdf26b822c8993bab072f08d5575d530b55c26c040a670b3e5a4f66b91d4386"
+    }
+  ],
+  "validation": {
+    "owner_local_checks": 11,
+    "core_local_checks": 14,
+    "strict_qr_typescript_no_emit": true,
+    "private_capture_bytes_in_payload": false,
+    "native_acceptance": false,
+    "latency_acceptance": false
+  },
+  "preserved": {
+    "joint_manifest": "858e8914c935ae96fd26f70ed73725f5ef233ec9909738da54d90b3cb587b951",
+    "main_registry": "152ad9c508bf880cc08c514322162f7dde7727d1224df2f133c705e6ff89d2fb",
+    "quiet_ms": 15000,
+    "caller_ack_ticks": 3,
+    "request_timeout_ms": 30000,
+    "owner_limit_ms": 600000,
+    "driver_model_calls": 0,
+    "driver_provider_sends": 0,
+    "schedule_fallback": true,
+    "financial_config_or_history_changes": 0
+  },
+  "wiring": {
+    "enabled_by": "existing private production bootstrap",
+    "harness_auto_drain": false,
+    "route": "existing validated mailbox prefix + /ack-once",
+    "auth": "existing private gateway header callback",
+    "serialization": "one active drain per owner; next mailbox pull awaits completion",
+    "invalidation": "owner generation AbortSignal cancels HTTP/wait; no stale continuation",
+    "timing_scope": "owner ACK drain begins after durable transport acknowledgement; does not measure full consumer latency"
+  }
+}

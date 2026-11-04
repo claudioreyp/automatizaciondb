@@ -1,0 +1,12 @@
+{
+  "name": "impulsa-qr-direct-connector",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Builderbot QR direct socket transport for Impulsa, without a browser",
+  "dependencies": {
+    "@builderbot/bot": "1.4.4",
+    "@builderbot/provider-baileys": "1.4.4",
+    "qr-image": "3.2.0",
+    "undici": "7.30.1"
+  }
+}

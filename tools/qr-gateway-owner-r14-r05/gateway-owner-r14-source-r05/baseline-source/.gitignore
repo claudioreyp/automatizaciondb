@@ -1,0 +1,9 @@
+node_modules/
+qr-direct-runtime/node_modules/
+dist/
+.test-results/
+private/
+sessions/
+.env
+.env.*
+*.log
