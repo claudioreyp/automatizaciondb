@@ -1,0 +1,18 @@
+{
+  "schema": "escalarai.static-body-r11-installer-source.v1",
+  "state": "SOURCE_ONLY_NOT_EXECUTED",
+  "files": {
+    "prepare_persistent_static_body_r11.py": "17b5ffebd0d49bd99e4c6a03204b70348ae46c769ecbf009b5158c5dc9ece9d0",
+    "apply_persistent_static_body_r11.py": "afa56099d1473a29d7bec118517ad34172ce5554bdc0644a723c39e6bafcbd33"
+  },
+  "native_pack_manifest_sha256": "b182497a1555a22fcde030d51d6ddfc919f00c4eca575b6459ceee3067f8aca1",
+  "module_sha256": "1bb60b6fd4b06d781a69029bfaf6c51d73e3f3287a65564b8eb971e7c5e86c25",
+  "compose_before_sha256": "6de30e441dd41e1ab53aac39c8d7f809bfd20b51d41ec28edcc6569aeed9122e",
+  "changes": [
+    "append exact module to existing external allowlist",
+    "add one read-only immutable module mount"
+  ],
+  "models": 0,
+  "workflow_activation": 0,
+  "ledger_writes": 0
+}
