@@ -13,5 +13,5 @@ COPY api/app /sandbox/api/app
 COPY api-sandbox.py /sandbox/api-sandbox.py
 USER 10001:10001
 EXPOSE 8769
-HEALTHCHECK --interval=15s --timeout=5s --retries=3 CMD python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8769/health',timeout=3); assert r.status==200"
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 CMD python -c "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8769/api/v1/health',timeout=3); assert r.status==200"
 ENTRYPOINT ["python", "/sandbox/api-sandbox.py", "--serve", "--listen-host", "0.0.0.0", "--container-isolation", "--advertise-host", "impulsa-qr-api-eval", "--port", "8769", "--binding-file", "/run/eval/binding.json"]
