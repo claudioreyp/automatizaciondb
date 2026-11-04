@@ -1,0 +1,12 @@
+{
+  "state": "PUBLIC_COMPONENT_PROOF_ONLY",
+  "files": {
+    ".gitattributes": "a79691a93b46e49ce460c26ef22afcc03d6eca1e63bf2edbc20e96159510f6c9",
+    "install.py": "76c9e8a6b9631bc3a89bcb58476171c4aaedb4dae28110bd51a2d598b30e6662",
+    "package/index.cjs": "935793891656e1d2c6b8afa0a73b7b3e7170cbed6bd79e2ccd32fd72b4954d00",
+    "package/package.json": "d16331b8c9cc60e8c0b7cd9335635270fbf43ac0fff5929b2c8458270f20d3b0"
+  },
+  "models": 0,
+  "network": 0,
+  "production_activation": false
+}
