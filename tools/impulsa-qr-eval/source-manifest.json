@@ -1,0 +1,446 @@
+{
+  "schema": "escalarai.qr-api-docker-fixture.v1",
+  "state": "PREPARED_NOT_BUILT_NOT_STARTED",
+  "api_version": "1.1.0",
+  "api_revision": "42513adfb22f18e09f3c3513e3009971c4610210",
+  "source_root": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools",
+  "api_source_exact": true,
+  "files": [
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\__init__.py",
+      "file": "api/app/__init__.py",
+      "sha256": "011e1eaf5d331624ac713fe8126af51604d3accc9318d9b4bd5bfbf164979ad4",
+      "bytes": 45
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_attention.py",
+      "file": "api/app/agent_attention.py",
+      "sha256": "42e2e8040004a31a01a9d75f38dc2b13fa889c2b4cd11887583c729995cf584e",
+      "bytes": 17367
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_blocking_io.py",
+      "file": "api/app/agent_blocking_io.py",
+      "sha256": "f45b144ec11795e4951e8a5a768d780167e9ed7f5b34f967e6bbb028f2eca4a1",
+      "bytes": 788
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_catalog.py",
+      "file": "api/app/agent_catalog.py",
+      "sha256": "a5eec3cfa512e8fa71c7e6058b0208354e14c9345212e9c0e8ea7451ce3fcbdf",
+      "bytes": 6431
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_checkout.py",
+      "file": "api/app/agent_checkout.py",
+      "sha256": "69d4d2968ad55b3ea2f726ac5a9d7fd4733da3b07701bb02c79e97875e42cf07",
+      "bytes": 19759
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_checkout_api.py",
+      "file": "api/app/agent_checkout_api.py",
+      "sha256": "0a54f874020866edc891521fe4e61c4770ba75b042397175f2a3689203524edb",
+      "bytes": 52913
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_context.py",
+      "file": "api/app/agent_context.py",
+      "sha256": "2e17e813530cdbe5a5c4818bc0d3b6f584b081a643b4f39d40bae7843818410f",
+      "bytes": 10575
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_contracts.py",
+      "file": "api/app/agent_contracts.py",
+      "sha256": "a56e4343345bae402c0a71f04b9c54c8771ee2d7c2533904d4928112d1120e15",
+      "bytes": 15318
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_delivery.py",
+      "file": "api/app/agent_delivery.py",
+      "sha256": "d0e331221a1b216742a5ad86236aa585a3df30efda2cc37364a12dbb88940eb3",
+      "bytes": 6110
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_event_outbox.py",
+      "file": "api/app/agent_event_outbox.py",
+      "sha256": "693026612376d5b0ee3a0e40353183d807fb00f9b928404dd3072d7e6193b547",
+      "bytes": 24294
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_http_contracts.py",
+      "file": "api/app/agent_http_contracts.py",
+      "sha256": "c78c15b340abb95accd7f373e51379699cfd7c4d534307f227b0b70da08968e7",
+      "bytes": 7643
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_input_media.py",
+      "file": "api/app/agent_input_media.py",
+      "sha256": "c533683cfda88e5c010c4028367d732452f605c191e6295b41b2f0ef55b7260f",
+      "bytes": 26689
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_media.py",
+      "file": "api/app/agent_media.py",
+      "sha256": "64afcd56b88d3ca9e7497704a241c92c0d9bd706cd19960688590fc213340e26",
+      "bytes": 3131
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_message_batching.py",
+      "file": "api/app/agent_message_batching.py",
+      "sha256": "4bb3b7802dd43d0100e6b18c6495c9f07ded1cbdee2d5eb7ca2519ef3bc9a43c",
+      "bytes": 5779
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_order_changes.py",
+      "file": "api/app/agent_order_changes.py",
+      "sha256": "13e5faa26b09c8df99e26f206b5a10d4d3dda2360c8c36404f7c394cb5b19a6e",
+      "bytes": 5812
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_order_reference.py",
+      "file": "api/app/agent_order_reference.py",
+      "sha256": "9b0f0bf3239af9258af43fc596bb6d801be9d1f1aafb2b60e416a7c464f688d4",
+      "bytes": 2504
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_original_items.py",
+      "file": "api/app/agent_original_items.py",
+      "sha256": "dc046c81dc7ca55f6e2df1a25d62edf6976edf3f5a75e371724e0c0623cc8a71",
+      "bytes": 10679
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_original_payment.py",
+      "file": "api/app/agent_original_payment.py",
+      "sha256": "cea29a4076a55e727bea87a1eef7cdc50ad957eab095b8dbf97dd85d630f052a",
+      "bytes": 14710
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_original_policy.py",
+      "file": "api/app/agent_original_policy.py",
+      "sha256": "a35256065b7de0f68d9d945fde17340aa9214abf4d533f5a2ef069e80c9afe91",
+      "bytes": 4955
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_public_context.py",
+      "file": "api/app/agent_public_context.py",
+      "sha256": "34eed660029f828df914de67376e2534916cac9a102c47d847d59d3ffc6f8268",
+      "bytes": 2015
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_runtime_api.py",
+      "file": "api/app/agent_runtime_api.py",
+      "sha256": "2a6702e6f54c65d724d7eb9dbe3bfbad01a5057fe67e3804fc33c7de45ec8ea4",
+      "bytes": 90813
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_selection.py",
+      "file": "api/app/agent_selection.py",
+      "sha256": "0b09a6ec55ead45cb4a360deb0421aecd89ec713e92e6549a23766bec11b89e0",
+      "bytes": 7454
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_selection_schemas.py",
+      "file": "api/app/agent_selection_schemas.py",
+      "sha256": "0f63aa6977ff16aa56b18b19e2433092ac371ad1ca09bc14aa68091040742798",
+      "bytes": 2106
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_service.py",
+      "file": "api/app/agent_service.py",
+      "sha256": "16fd460a5607e1c5862bf0b8a4ce79354d81bf528384e11267e66efd80c3b753",
+      "bytes": 3100
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_settings.py",
+      "file": "api/app/agent_settings.py",
+      "sha256": "72f83e89c986d612aa2c29b0fcfc21ff88e1fe82fb92050282c8864c1515d908",
+      "bytes": 11339
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_tools.py",
+      "file": "api/app/agent_tools.py",
+      "sha256": "0b4be2219db1d6ec414508733e88bcd29f0d400b71917704e7717414f7363343",
+      "bytes": 23416
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_turn_context.py",
+      "file": "api/app/agent_turn_context.py",
+      "sha256": "49d66c06e05dc2b5b54dbf92ae53a38522160126dac7b3c028d0f893116f5383",
+      "bytes": 4007
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_unsupported_input.py",
+      "file": "api/app/agent_unsupported_input.py",
+      "sha256": "a3ec682f460d5277419f9f114072bb8c01168dfd083d2efff09dd43ae93a3061",
+      "bytes": 1613
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\agent_usage.py",
+      "file": "api/app/agent_usage.py",
+      "sha256": "497b89c33fb6151320fa8dca282cc0094e187c452e9d5ee58d79c8621899b7af",
+      "bytes": 14734
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\api.py",
+      "file": "api/app/api.py",
+      "sha256": "f3d0ada15b82506de847a8850171c77a752123df780dcdf4aaecd6cd1eb30660",
+      "bytes": 357410
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\auth.py",
+      "file": "api/app/auth.py",
+      "sha256": "5bb8fd6a44d7dd16db3b8da2e1c5384f0b007f7ba17314fce01d6f66a5e10b37",
+      "bytes": 15345
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\auth_sessions.py",
+      "file": "api/app/auth_sessions.py",
+      "sha256": "d79f610a572b24c331f014479d89551aa3a1a82ee3e0a8b3f05856db3c61daa4",
+      "bytes": 4493
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\cash_service.py",
+      "file": "api/app/cash_service.py",
+      "sha256": "f396bfa864f9e26587f30c1b8fa60a8da316092443b8569e6874819de17ed272",
+      "bytes": 35790
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\catalog_availability.py",
+      "file": "api/app/catalog_availability.py",
+      "sha256": "2263cdabe4236f23c3cc69f8ca12e8aaf46cecd174e0e2f484b28dcb91ab829f",
+      "bytes": 2279
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\command_revisions.py",
+      "file": "api/app/command_revisions.py",
+      "sha256": "fe6a1489fa63fa508c695ebfa7df32898266c289e34ce6ef3c1d0b7cd9e018e9",
+      "bytes": 2465
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\config.py",
+      "file": "api/app/config.py",
+      "sha256": "0db35076a797624beb4c354df571a0fc88463b6689c0136d4d21d9e71c64320f",
+      "bytes": 4848
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\credential_operations.py",
+      "file": "api/app/credential_operations.py",
+      "sha256": "a6c7cd4b01f3385b879ed8df995c4691c2ae46f687898b4fa554203bdda64883",
+      "bytes": 1137
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\dashboard_report.py",
+      "file": "api/app/dashboard_report.py",
+      "sha256": "74f94296a4587b81c6d9c061ea7adf50155938c9f282bd01e8c89a6be3f5c68e",
+      "bytes": 6743
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\database.py",
+      "file": "api/app/database.py",
+      "sha256": "75926a98e861bd367c7f7346be9ae26852788e01cb889ca8c0f28e2751e649ce",
+      "bytes": 851
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\device_api.py",
+      "file": "api/app/device_api.py",
+      "sha256": "45ef9f5bf8bed2dafdc4660a2ce862c2b0c49ef6e776bc5bdee40acd4ff8eb2a",
+      "bytes": 14841
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\device_auth.py",
+      "file": "api/app/device_auth.py",
+      "sha256": "8128bff5e100550cded4dea0af15da5c66acc0bbaed93ae3dc594ee6fbfce4d4",
+      "bytes": 5584
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\errors.py",
+      "file": "api/app/errors.py",
+      "sha256": "5fcd14f0f7779bde66728e2dcb19426bef881d5ad7d08afb74b6d5a9004cb6fd",
+      "bytes": 233
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\integration_order_validation.py",
+      "file": "api/app/integration_order_validation.py",
+      "sha256": "c12f2da56ece3b0e5ee1c636138da74e7a199da470f18b7bd6247d9f8e4dc0bf",
+      "bytes": 1932
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\integration_package.py",
+      "file": "api/app/integration_package.py",
+      "sha256": "4798f80c2e0b95d6089186252b125d553f00c1ac8a914f2c53016f9ec1468751",
+      "bytes": 4990
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\log_redaction.py",
+      "file": "api/app/log_redaction.py",
+      "sha256": "395754443a908aa8ecec57027362823ec1ceeb9bc7afa9c2df6e8131cf530c02",
+      "bytes": 567
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\main.py",
+      "file": "api/app/main.py",
+      "sha256": "116d3ea049cc3687e97e07ced9210ed62dc3d90c26fdea05d5640fc2139b96a3",
+      "bytes": 8268
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\models.py",
+      "file": "api/app/models.py",
+      "sha256": "f6082492449bf6584eadceeabde07f58c246ab102d393d2187e2fdaa3745470f",
+      "bytes": 67385
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\order_editing.py",
+      "file": "api/app/order_editing.py",
+      "sha256": "b2d154a7d8edd3106dd4a2aef872e5bfeb9007f4de7aebef219a7d87d07fb5d5",
+      "bytes": 6370
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\order_folios.py",
+      "file": "api/app/order_folios.py",
+      "sha256": "08c72ee58ef1d20e674f06588452db3142c4f70e1837e1df313eb2651aa33064",
+      "bytes": 936
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\password_resets.py",
+      "file": "api/app/password_resets.py",
+      "sha256": "57f3403fae161e045dc551cc8222ced9471043548d374b14ac54a39b2b8825f7",
+      "bytes": 9859
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\pos_printing.py",
+      "file": "api/app/pos_printing.py",
+      "sha256": "87dfea5bf11c3736f8972facfef583522bb0172a3318efd887c7cf7a28922d8c",
+      "bytes": 28292
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\pos_printing_api.py",
+      "file": "api/app/pos_printing_api.py",
+      "sha256": "92a0e87d139ad425966b46df4a1fe0e74b28dcc4e4f7fe3730360c00a22089c2",
+      "bytes": 16212
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\printing_settings.py",
+      "file": "api/app/printing_settings.py",
+      "sha256": "c23810f08c8784b8a707e3c135e1ca581eb716149511fbb2bd9774ae9e4e4431",
+      "bytes": 1376
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\product_access.py",
+      "file": "api/app/product_access.py",
+      "sha256": "898e0cf213339d12c856bf707bffda4413ac33667f6046d18ad15a5c4cd44478",
+      "bytes": 291
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\qz_activation.py",
+      "file": "api/app/qz_activation.py",
+      "sha256": "2b43a7929534e4bd25137d7445f23c9b60301b052871c7b5205b44f94c91df6f",
+      "bytes": 4117
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\qz_signing.py",
+      "file": "api/app/qz_signing.py",
+      "sha256": "d4d86eb091bc091bd6561230d7bfc688d63112804f543d1c3447456a81e76f8b",
+      "bytes": 8159
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\realtime.py",
+      "file": "api/app/realtime.py",
+      "sha256": "6639e3a85a5be69c0b5a7b094b06f32fb5174d27792a11b81daad46fd137b7d4",
+      "bytes": 2345
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\resources\\qz\\activate-unix.sh",
+      "file": "api/app/resources/qz/activate-unix.sh",
+      "sha256": "f04ee04a3086194b63a7357167b478f8abe17a9ad972db0b8a8381182c73cb94",
+      "bytes": 3030
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\resources\\qz\\activate-windows.ps1",
+      "file": "api/app/resources/qz/activate-windows.ps1",
+      "sha256": "b298e57f1d372dd126b4c4e0b275d1435e59b7aec51676aea5e6c176fa1a4a0a",
+      "bytes": 7432
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\resources\\qz\\qz-root.pem",
+      "file": "api/app/resources/qz/qz-root.pem",
+      "sha256": "ed4aff0d6308eb3777a8fd9fbedf9a8649eced44fdb7723b63787c2dc19c9c3a",
+      "bytes": 1538
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\resources\\qz\\README.md",
+      "file": "api/app/resources/qz/README.md",
+      "sha256": "f35b06ff11a1dc6c213cad517b83414ead154d5793ea0a6bd9b6c376e69dbaaa",
+      "bytes": 686
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\schemas.py",
+      "file": "api/app/schemas.py",
+      "sha256": "d7db1d51137fe9b57760a25884a85f92adf568a71204ff2c14b1e2bc2e05f898",
+      "bytes": 43269
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\security_audit.py",
+      "file": "api/app/security_audit.py",
+      "sha256": "8369aae8a40522b4e9a70072bec678023e13b172afb37c9efc340134b0d5c130",
+      "bytes": 26102
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\selection_rules.py",
+      "file": "api/app/selection_rules.py",
+      "sha256": "4041788620091d56f493f04b2156af94c3e005ead2025f16c77616b595126a63",
+      "bytes": 1130
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\services.py",
+      "file": "api/app/services.py",
+      "sha256": "a6174fa82c57a1af290558907dec837cf1a895d3cdc919b57573c186a72e9230",
+      "bytes": 88046
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\settings_api.py",
+      "file": "api/app/settings_api.py",
+      "sha256": "af2c87d03fb3d8093e98c12ebf01e4dcea9f70ddbdc456eeae4bb5879bb358cc",
+      "bytes": 83166
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\settings_service.py",
+      "file": "api/app/settings_service.py",
+      "sha256": "08d722276af65a99e95a07e82e85a6c7e22767c8b5fc310ad93550e6dbd35838",
+      "bytes": 48690
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\storage.py",
+      "file": "api/app/storage.py",
+      "sha256": "be05c2404f1ac8694f4061fd0f4903f2e22f653febdddefd8763324b92c39e6f",
+      "bytes": 5888
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\app\\table_lifecycle.py",
+      "file": "api/app/table_lifecycle.py",
+      "sha256": "fb2742d7685f71c24c2092ea00e3fffa19b44ba97a684cee4fabce7c38eaa7f6",
+      "bytes": 3043
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\.worktrees\\api-tools\\requirements.txt",
+      "file": "requirements.txt",
+      "sha256": "042e4e9ddb27b0805f3c5f1f00986cea7fc1e0769f61e9af257a95c2880650ca",
+      "bytes": 354
+    },
+    {
+      "source": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\api-sandbox.py",
+      "file": "api-sandbox.py",
+      "sha256": "626bfcd676888ab117ceb6f7daad0ec46236453ce06821a53b637e622385a4ef",
+      "bytes": 14989
+    }
+  ],
+  "internal_service": "http://impulsa-qr-api-eval:8769",
+  "network": "impulsa-qr-eval-internal",
+  "database": "sqlite_memory",
+  "host_ports": [],
+  "physical_printers": false,
+  "external_credentials": false,
+  "models": 0,
+  "docker_builds": 0,
+  "docker_starts": 0,
+  "services_started": 0
+}

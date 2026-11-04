@@ -1,0 +1,26 @@
+services:
+  api-eval:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: impulsa-qr-api-eval:20261104
+    container_name: impulsa-qr-api-eval
+    hostname: impulsa-qr-api-eval
+    init: true
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 64
+    mem_limit: 512m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+      - /run/eval:rw,noexec,nosuid,size=1m,mode=0700,uid=10001,gid=10001
+    expose: ["8769"]
+    # Deliberately no host ports, production volumes, env_file or DB URL.
+    networks:
+      eval-internal:
+        aliases: [impulsa-qr-api-eval]
+networks:
+  eval-internal:
+    name: impulsa-qr-eval-internal
+    internal: true

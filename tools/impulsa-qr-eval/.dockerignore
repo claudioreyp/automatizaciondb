@@ -1,0 +1,13 @@
+*
+!Dockerfile
+!requirements.txt
+!api-sandbox.py
+!api/
+!api/app/
+!api/app/**
+**/__pycache__
+**/*.pyc
+**/.env*
+**/*.db
+**/*.sqlite*
+**/node_modules
