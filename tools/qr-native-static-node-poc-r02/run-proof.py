@@ -86,7 +86,7 @@ def component(result, spec):
     if kind in ('text', 'ambient'):
         require(len(data) == 1 and data[0]['case_name'] == kind, 'CALLBACK_CASE')
         row = data[0]
-        require(row['result']['text'] == 'Synthetic Ã¡ / 2 items' and row['result']['workflow_id'] == spec['workflow_id'], 'CALLBACK_TEXT_OR_WORKFLOW')
+        require(row['result']['text'] == 'Synthetic á / 2 items' and row['result']['workflow_id'] == spec['workflow_id'], 'CALLBACK_TEXT_OR_WORKFLOW')
         require(re.fullmatch(r'[1-9][0-9]*', row['result']['execution_id']) is not None, 'ACTUAL_EXECUTION_ID')
         require(row['types'] == {'URL': 'undefined', 'fetch': 'undefined', 'AbortSignal': 'undefined'}, 'AMBIENT_ABSENCE')
         require(set(row['reads']) == {'URL', 'fetch', 'AbortSignal'}, 'AMBIENT_READ_NAMES')
