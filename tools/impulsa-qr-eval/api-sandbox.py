@@ -19,6 +19,28 @@ from urllib.parse import parse_qs, urlsplit
 
 HERE=Path(__file__).resolve().parent
 
+def classify_engine(engine):
+    # Never return a URL, path, host, user, password or database name.
+    database=engine.url.database
+    database_class="memory" if database==":memory:" else "unset" if database in (None,"") else "file_or_named_database"
+    return {"backend":engine.url.get_backend_name(),"driver":engine.url.get_driver_name(),
+        "database_class":database_class,"exact_memory_url":str(engine.url)=="sqlite+pysqlite:///:memory:"}
+
+def assert_private_memory_engine(engine):
+    # Validate URL fields before connecting. A file, host or URI query is never
+    # admitted even when a newer SQLAlchemy release changes URL rendering.
+    from sqlalchemy.pool import StaticPool
+    url=engine.url
+    assert url.drivername=="sqlite+pysqlite" and url.database==":memory:"
+    assert url.username is None and url.password is None and url.host is None and url.port is None
+    assert not url.query and isinstance(engine.pool,StaticPool)
+    assert engine.dialect.name=="sqlite" and engine.dialect.driver=="pysqlite"
+    with engine.connect() as connection:
+        databases=connection.exec_driver_sql("PRAGMA database_list").all()
+    assert [(row[1],row[2]) for row in databases]==[("main","")]
+    return {"structural_memory":True,"main_filename_empty":True,"attached_databases":0}
+
+
 def resolve_api_root():
     # The packaged image uses /sandbox, whose parent chain is shorter than the
     # Windows workspace. Honor its explicit API root before traversing parents.
@@ -54,7 +76,8 @@ def create_sandbox():
         IntegrationCredential,Order,Payment,KitchenTicket,PrintJob,AgentConversation,AgentMessageDelivery,
         AgentAttentionRequest,OrderPaymentRequest,PaymentEvidence,DeliveryAssignment,AgentModelUsage)
     from app.schemas import RESTAURANT_AGENT_SCOPES
-    assert str(engine.url)=="sqlite+pysqlite:///:memory:"
+    print(json.dumps({"sandbox_engine_diagnostic":classify_engine(engine)}),file=sys.stderr,flush=True)
+    assert_private_memory_engine(engine)
     # Integration authentication selects the credential by the part before '.';
     # the per-run secret remains random and is never printed.
     tokens={identifier:f"smoke-{identifier}."+secrets.token_urlsafe(40) for identifier in (2,3)}
@@ -63,7 +86,7 @@ def create_sandbox():
 
     def seed(case_id):
         # Destruction is limited to this process's private in-memory engine.
-        assert str(engine.url)=="sqlite+pysqlite:///:memory:"
+        assert_private_memory_engine(engine)
         Base.metadata.drop_all(engine);Base.metadata.create_all(engine)
         with SessionLocal.begin() as db:
             for identifier in (2,3):
