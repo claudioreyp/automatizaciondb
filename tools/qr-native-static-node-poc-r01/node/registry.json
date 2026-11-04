@@ -1,0 +1,989 @@
+{
+  "schema": "escalarai.native-static-node-registry.v1",
+  "task_timeout_ms": 60000,
+  "timeout_scope": "ISOLATED_PROOF_ONLY; operational timeout requires independent readback before registration",
+  "entries": [
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-entry-qr",
+      "wrapper_sha256": "606e3c5c91d234790aa601a5a208d61b407fe28b3c5b9876ee4cc62b41f3ac56",
+      "body_key": "body_03e2374f96253bd99b2318c5c9e597430d083894d91867ed67ac5504bad02498",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-entry-tick",
+      "wrapper_sha256": "47e9d515ce4940184e989dc40db65d5346dca70e09b6759a301ad5b25f44f8cb",
+      "body_key": "body_4e9bd46ff606c2ae88f51fb2a8a4f41be7d9d24af72f1979c42018b5aba24957",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-admission-plan",
+      "wrapper_sha256": "f7556c8b16ad2ea251b834c41d83941f2f5e3cd13d46d1c96980e0c9bf379a5f",
+      "body_key": "body_d886d429e9c8ccf87c6d87a762669e757406f7a5b90fa88e6bb9f5321ef17c0b",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-admission-verify",
+      "wrapper_sha256": "0f6dd492092e1641c3dbf96c1c948bfef59acbfd523fb6a9149debd1096392f6",
+      "body_key": "body_29a1e040a9e95a832548ff854230469d1d9bdf3874a24c24180b93ef198caa46",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-kernel",
+      "wrapper_sha256": "d20b72460238c9d4d4f9d0bb549eecaa95a4acdb404cf9442491b26e9555e324",
+      "body_key": "body_e0ca9f2880ca128f1ae1d25811b531739be911517c8393db528e9663dc7da179",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-kernel-verify",
+      "wrapper_sha256": "a437c37642c68a58c215296cdba47b882c0bdb5b79e384ec155f2bbfa45563eb",
+      "body_key": "body_e3ddf4de8c24cef2264a8f6f974f7a414180bcf7f1aabff78e8f298ac301ac5f",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-fence-plan",
+      "wrapper_sha256": "04747f134a80e54ad5351e14817388fdd5e6bde4819f5fc39a36589b85d199a5",
+      "body_key": "body_e3de4367dc46008c0174bf8fd4afca1b9f4e473c8818cf54603c5e739d7c9a01",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-fence-accept",
+      "wrapper_sha256": "9204c243a50cb502f92c119d1f16723b7beca801f4ac43f94f0b591f8eac8fc0",
+      "body_key": "body_ddb4636496f1f9a0a397553b675d8fd6501be8bee4d17b0bd4b204ecffc7e848",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-dispatch-plan",
+      "wrapper_sha256": "e41de51288cacf5f5c4f6fd0571e10d39383d458c66780ca6d668903ad1188c1",
+      "body_key": "body_76b0d9751198e3abee614a62850c6527883663c1f87d8b9b88155503bcc6244e",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-dispatch-verify",
+      "wrapper_sha256": "e6decf837684c8e91603a6c20b0a8e87f414f7a3ce960491d40b6acfbd27206a",
+      "body_key": "body_2e4383cb5beb0b3927ff2af83134255dd361d2ce5059a0e20f226996e98a78fd",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-result-plan",
+      "wrapper_sha256": "7b2c6f890822ecd343e3dfdeb58100731a5fc35e5d0f90f28f7adb2eff9385c6",
+      "body_key": "body_60900932d2ea1c3b905d8caee5e64e364e3553ea606ac78f88f192adc72959b1",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-continue",
+      "wrapper_sha256": "02270fa9e7187ca48434fa211a30029d630b39dda302866fa367d8928a92286c",
+      "body_key": "body_cef81cc9c24e7fb6940b3f3f96cd697262b91eb5ff38d735f70932962e7ae3ff",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-terminal",
+      "wrapper_sha256": "e1cc9570b987f3ebf9f2ffca6cd2f03e5973e74f956c1039c8b68b1098d84a27",
+      "body_key": "body_4689eaaf05faa744f30cee6e937ef43a2529eec6408eb2cbe5806a1bef2c21d1",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-disabled",
+      "wrapper_sha256": "52d666285ed39d814db34cbdcf8ad12346df2c13d1d92c2375546c4e747591c3",
+      "body_key": "body_7f011cbc2dccab40c3cb7922f265eff04f92342f8761b5ac85685e84bebe716b",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-live-stop",
+      "wrapper_sha256": "9d0f1627e23915135aa963a243c14ee5f3e2f9ebfa19137f9172d982ba5257a8",
+      "body_key": "body_85e03a4953bdf5dcff81595bac106734be65b6e32ebd4596fa7d9c1955cc4003",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-media-input-plan",
+      "wrapper_sha256": "e2af8027f95ebefeaef628500e91e8d927016d4932958a4c57a850a6cece23aa",
+      "body_key": "body_9c5ea55d5c77f3b8562c5ac636315b93eb7d3788ba67aa7aef9f46f3ca7022cf",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-media-input-prepare",
+      "wrapper_sha256": "ee920f2d4b0da1f7096fdc4ad58f35ea179c12656174d078774841ba530fec9d",
+      "body_key": "body_257ddf358d5331a8381f5628da7504bb58e3c66bf59fa12171dd98024d925f45",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-media-input-accept",
+      "wrapper_sha256": "3a527501418f84b6a5c7777047909fa8258c9e56dfb75969869db2037f32ee80",
+      "body_key": "body_04039b2ea87124a54289ebda380f1f597f1d5bc1aadc98e39f567819f789e9bc",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-media-input-ready",
+      "wrapper_sha256": "0e43983a8530a371c17b603240163a9432e006fd1a04c3fe0f12f46311f9ce44",
+      "body_key": "body_9566023e979317abbf3701554e3a95501d2c8167183bade95904f0fb3c625254",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-media-effect-hydrate",
+      "wrapper_sha256": "b8caea9baa16f7b49ea79b41380d4157ed4be8aff531ac4c0b8d1313ca725278",
+      "body_key": "body_dacaca3b5abb10ef823031eccb866ed944482c8ba1e697a532c70898a5ab3d4f",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-media-result-decode",
+      "wrapper_sha256": "ed0eb6561f2744a2becc12527610b90f72552f70a51edbf3d4f28710015c01e6",
+      "body_key": "body_dd8b39ef35a5c9df10729e3d9355fb278a00d50405694bac893adfb10667f21c",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-media-result-projection",
+      "wrapper_sha256": "934539328fde0bc04744c1f0912c29c5b5b9096c0a9e2585a29bc62f03f79ea7",
+      "body_key": "body_f4bb48d27f07799e44f286995f1df4652f00d2460038b6adb52b1b7184ceb66b",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-media-result-prepare",
+      "wrapper_sha256": "ff67abdc53e832bb032a2cf6d392983d6a4e0efdcef51d4554c1bea0427f5bd1",
+      "body_key": "body_0883222084b964092c8ec518f00705693f4f932eb7813f7da79fd78cda3141df",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-media-result-accept",
+      "wrapper_sha256": "801b5e5e3d87b4f1bb1bc9d118f43d0add5ca3ecf92379e88f1d6a84c31f737f",
+      "body_key": "body_d589565ad47da6d10919489e732b428fc72bfbf902d63b92fc983c23eed8a5cf",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-media-reserve-entry",
+      "wrapper_sha256": "b28fc6b952d14f08efea7f0228a0b2069bc0fad3c9fe91effa990d7c29d8ead5",
+      "body_key": "body_46bbe2f31a64d55d85dd4fd2b3c0d0efca382b82c1f04296452ab4a8861e61c0",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-global-inspect",
+      "wrapper_sha256": "f879198746a4f7e5a92735390f36031b356977b6bb7395711bde3aeb59d0741d",
+      "body_key": "body_8d6fa49898af1bd24b6d8a6ac61c8d06ce2f736334eaeee40a3ee879f10fcc93",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-global-debit-plan",
+      "wrapper_sha256": "78ba44395d73c443192a37c29362a30b12c50ae2b3ba864082152218d556bb4c",
+      "body_key": "body_0364e7d0aec1cda0e0f1160df50be26c849b8af25e424b7fa7818a416aea9e66",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-global-debit-verify",
+      "wrapper_sha256": "9d55ade81417c0afeb1d44b54027afbaf60de3466d1e14f1ad4b82b0bf4f4fb7",
+      "body_key": "body_b99750957f16b45b55ff3e73b7e576d081c057643018f5a79df5856341d5bf47",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-global-grant",
+      "wrapper_sha256": "41668529df81778aa510a3d92aff417a48339ae1370ba2d5073fac139cf0fb21",
+      "body_key": "body_5ed41741da3cd5785513200e1f4165547a246ad7e4041c2e596b21f717f8b572",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-global-http-ready",
+      "wrapper_sha256": "c827ef52f8b5d7f134ec331764f293662de40285802f0114b81cd841bf86f0f5",
+      "body_key": "body_e2f87535fd24af2355e48fd3052c3405d8fcd6de4da8004a703c94f9699a3e4f",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-global-settle-plan",
+      "wrapper_sha256": "21a4a5babf3d6bd1a1be0bfbb46fb19888bdae28fc059cefc62bfbf9f2be1091",
+      "body_key": "body_4f6847e75cc0e32f13c355256a5e8bcc98db1a4745dc4c7527664d0d56c572f4",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "native-global-settle-verify",
+      "wrapper_sha256": "b3e5f62269fdeeeca9160ffc6a276dbb1c1c7975e71e84345fbef9e40c178419",
+      "body_key": "body_5ed18da35afd3142c513b333cec386a9e60cb6e51c4c497a8c29240228a738a7",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "mbx-source-insert-plan",
+      "wrapper_sha256": "9d0f1627e23915135aa963a243c14ee5f3e2f9ebfa19137f9172d982ba5257a8",
+      "body_key": "body_85e03a4953bdf5dcff81595bac106734be65b6e32ebd4596fa7d9c1955cc4003",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "mbx-source-awaiting",
+      "wrapper_sha256": "c2ffb1800aa0faea5aca06588f74552f8a240129bf562cd3437e3995770c24b3",
+      "body_key": "body_e4d2f719f1f9c73c190e298ad2c90934506cd151b18d0be75342ce78361ad829",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "c450-private-text-entry",
+      "wrapper_sha256": "64ac063d925d13016cef9fa74847d059bbfb33289802fdad5fa5ecb3c2bb0522",
+      "body_key": "body_5af9d9cd7b208e117b6dba91aeec8dd3465a58cbe169525e71e8695e5af97db4",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "c450-private-text-lookup-plan",
+      "wrapper_sha256": "5ec18ddf4992122d76d431fbc9d87c273d5bcf99d798a367fb855b41ade6affd",
+      "body_key": "body_29ea4e39b7583c6e9381959f1e578ba68dc1534c69f49959bf246f1bcbfb1494",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "c450-private-text-receipt",
+      "wrapper_sha256": "944a54cf984a6877d0bf7bd017a44f02fd0bcd92cf94cbbe5086cf87b0afbae5",
+      "body_key": "body_4a42d248dd71479bb3fffbb22a619ef44bc97fbf616877fa7694c9c4972be7cc",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "c500-r02-physical-route",
+      "wrapper_sha256": "0c2b360f2240022a5f7679e5cf4babbf331e54cccfe8c1b9971ed0f7b91c420e",
+      "body_key": "body_1e4c7b1038cf599e5e85ff42c005b0808214594dec20a70280651fb2ccd37320",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "c508-final-pos-plan",
+      "wrapper_sha256": "464fb09781b525dc2fb8c414e72ecec3f1e195a05195134d6971b24d9daae70c",
+      "body_key": "body_a2380ec898cd3f394141922d287653aaa4512cfcd4011b08bb93b5990be9ce65",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "c630-first-mailbox-plan",
+      "wrapper_sha256": "85bac91886001f644637afa0071315f1b467262fef480352ebc21f0577b8ca92",
+      "body_key": "body_543b52c5f4047c76bebcba1ab1aeb57984d9873200723f4c37672255de15c7f4",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "c630-recheck-mailbox-plan",
+      "wrapper_sha256": "615fdd54ff0da7dcf64e496c934271e9a92bd81ff33bc9d977e7bcc5da55ab00",
+      "body_key": "body_ba571b1fd653ff02d7b03f973a054c9f83926b377ea4678da73201c600283784",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "qr-unsupported-prepare",
+      "wrapper_sha256": "2a6e9bc8e00f8213868126173ad81d98e5603bf44b737dfdc103a7bfc18e02da",
+      "body_key": "body_d78e46ac17628fdc71648cd477c289d1ca7bf09fbc4515c524f037e17eb11ef7",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "qr-unsupported-decide admission",
+      "wrapper_sha256": "bab72c97321bc3e391f870d5346a8293726b60fa81d47877140e5256962a55a2",
+      "body_key": "body_c03468349f741bfdd1090d879e08ccfcd60c9037f0a8520deda653e4d305b2b4",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "qr-unsupported-complete plan",
+      "wrapper_sha256": "7c1e64d24718405d3ff219fdb5f35640c3053b950378d656bce2e70d4ed82db1",
+      "body_key": "body_9dcba3348cd374b5d2fedb8b3b02888760d5a88a94acfe2490dee606fb77bd57",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "qr-unsupported-verified backend receipt",
+      "wrapper_sha256": "610ea4206e492d9b2a3e8d25e95d937fbea5c98064060d106e7ce2e5012e32e8",
+      "body_key": "body_6eeeea113696c34826cfbce3e2caaec24c0e82be64f0439c0c1b6056aaf3b09a",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "qr-reserve-quota-before_plan-accept",
+      "wrapper_sha256": "bd16cfbc508d70172579607881418a977925cb92d520875083d748420940d69b",
+      "body_key": "body_c62ab3e7e406a2aacf019af412e034905ecb35a1abb6da0c0c61a0705d9f147f",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "qr-reserve-quota-before_verify-accept",
+      "wrapper_sha256": "d4fe6ea834be0b2f3f63ac164fe0f0298c87145bfc00e8e7c77b4f77335751c1",
+      "body_key": "body_b7c6d796da4d5314ad641ce2eb4ff43a9b2eb921097fb3d8e5950199cb1058c6",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "qr-physical-replay-input",
+      "wrapper_sha256": "7e7779531056d1cc9d8821e999dc106d730d7b403567f154ea5f74218065484b",
+      "body_key": "body_8a50c84f83af7fbdbd542631e4d992f37a7d7eccb65791fb28504a3612753963",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "qr-physical-effect-input",
+      "wrapper_sha256": "5213064b5d0f7376406e6ecd2dca893476d452d9505b15c726f862b8552bf0a5",
+      "body_key": "body_2074644945082337d8e23f12f9ddd44a831b08e7e53bac84cb520488f39fbeee",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "idle-readiness-prepare",
+      "wrapper_sha256": "1deb64070caf5e00a82355856d396eee1cd58a1071f194b5bf5d53a7063a0c33",
+      "body_key": "body_834f50679de8cca9fb06065206f8628b5504483166382f79b0b1aa8b02898111",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "yQYG1gk4GkYDrkBp",
+      "node_id": "idle-readiness-decide",
+      "wrapper_sha256": "d789da47b871f11595a4abeb854bf27ba69810a1f679164352733cf87ca5424f",
+      "body_key": "body_816040ba62b3e02f62ea0153798f266478c8c67b3d09d7952b51bf00b0e6e10e",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-entry-qr",
+      "wrapper_sha256": "75e511b73efbce635c96f5b95a54215af21175ee9e92bf9f343334820eaec651",
+      "body_key": "body_4ee88a337d49a4a19b7823b9c563b754c05003ae51632fee58ccc5e28452cce2",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-entry-tick",
+      "wrapper_sha256": "d289f559ce185a4d4c733ab1c83efa04560578492c74ea056f6479fba265536b",
+      "body_key": "body_f8fd96eee6ae451dad2bbd24adc5ccc08ccbdf216bde91132b019e05f40dcb30",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-admission-plan",
+      "wrapper_sha256": "f371f9258fe7d09a052d1ca76330d9aa6a37676e5ceac6ab9853d80ec59e5d81",
+      "body_key": "body_68554453efc6704dbe0ca7f2eda1e318748ca2f101ac063e9c6bb8a52157631c",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-admission-verify",
+      "wrapper_sha256": "af5a5bfece89d5740010d032becda9c0c3a1b045004e2f21d97d45813289fdf7",
+      "body_key": "body_a87e59d49e4146dc8ace00fa7e1b93854dc5babc16ffb52cbe3e498e5be4c90d",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-kernel",
+      "wrapper_sha256": "df289293db0fcc0ceb4ee6abc2707ae4b58e4a7b7f36f83a1a2d46b9560703fc",
+      "body_key": "body_ba82c4080d78ff5b4937c734c09981c52b84eed54398f5fa3d85e1bd55f987d2",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-kernel-verify",
+      "wrapper_sha256": "e457007224a4dc3168f892ca465b7b9b7895f699e6cff1b2fd1a5b603c454160",
+      "body_key": "body_fb46202a3d2de55192ccdde036e8be23b2a7fb74417677cad7012ca4506da03b",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-fence-plan",
+      "wrapper_sha256": "0a0862e2853514d5950df75d8936c4c473fd188e15abb2712258da8fcf50a510",
+      "body_key": "body_4be3caa03060236cf05ab49727c112cc0a915113f4a13c5f9bb3858df3a01564",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-fence-accept",
+      "wrapper_sha256": "7e306ee427723ca9edfc65544830d78ee9af99dc08f4bed988fc6d9e0f683e74",
+      "body_key": "body_9a74c3235b9e7b71da216511d66e7796753dce8957ead153e9e20bacd872c69f",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-dispatch-plan",
+      "wrapper_sha256": "8169cf7c62142ce043b937bdc2ebddbc35276d31f2f0df7c16897ffdf536b2df",
+      "body_key": "body_c6cdb604976824615f7b40c62d73f5c0fdbf3e7d69768a583db15f56433ff3fe",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-dispatch-verify",
+      "wrapper_sha256": "ad47509f12e54ff409bcd7c5ea76028a3128fc05e0ca981d94d4d006bf7c4b1a",
+      "body_key": "body_2ad447326dc292c08e17c15fe9adba3a1102fdfaa290c3fd41a61c4d3f3b621c",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-result-plan",
+      "wrapper_sha256": "37a4fa2bd13e6431b334e8cd35117a4793931d4677a60238715032a39588ee57",
+      "body_key": "body_436883f39f354225fc201b43b609685d0df2be3f62a950bd396960ad54ecb469",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-continue",
+      "wrapper_sha256": "31a83fb209ad101fcefd3c86a4415f1f6b29cb483a5fa5b23c7f2cb57a9ba057",
+      "body_key": "body_5757af4d67b6ce6221f9274021565a51e35ac23fb4334d70d72990b661d35b49",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-terminal",
+      "wrapper_sha256": "c6cebe3223a01dd64dee3f0d279758f08a4e9bbef11683a227f4797ebabb8625",
+      "body_key": "body_98fd03c342ac8f7d2f9cf0475872a318447c5d9311e4d330c14578e3d4d29deb",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-disabled",
+      "wrapper_sha256": "f323cec2ff3759827a946a63cd43d453402bf3046cc54cc4ef373a6b335c9f58",
+      "body_key": "body_f54244c8d4f7b61390c3f84a8f7fed70260a423b31bcbeff05bce0e2425c770c",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-live-stop",
+      "wrapper_sha256": "9d0f1627e23915135aa963a243c14ee5f3e2f9ebfa19137f9172d982ba5257a8",
+      "body_key": "body_85e03a4953bdf5dcff81595bac106734be65b6e32ebd4596fa7d9c1955cc4003",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-media-input-plan",
+      "wrapper_sha256": "0dd2e87a48815adeae3cc0cad2bf5db4968df11b1edb832d7b70c9411c23f52e",
+      "body_key": "body_a7da0b385e4700db9dab3a67010aeca79b4e91d33517bbaa5c2a08b4e852a79c",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-media-input-prepare",
+      "wrapper_sha256": "ffb257fd0d70b96bb03906fda76e67fc2a5df4c5de142c9cadef25c1337c452f",
+      "body_key": "body_be650e253aa5c08667306814c0bab6f78dcfd66cde5a80a9e5f59e42be1b35e7",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-media-input-accept",
+      "wrapper_sha256": "8ea9a3be743015598fe0ed96c72c0718ff43d75559eb9320b4025d225b2b5ad5",
+      "body_key": "body_c150d5baf1329cbb55eb250b19ce8421086564cd584dd8966846a011507de5e9",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-media-input-ready",
+      "wrapper_sha256": "41edde34673d01228b118ac20110edaca1acaa886d67ff1ad5ae33a4aa770a12",
+      "body_key": "body_53b4ef010aaea5eee4a55d61dde424f6bf42aea8ec2b817feaffda7f606e0edb",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-media-effect-hydrate",
+      "wrapper_sha256": "cb035aeaa2b83862f686c44fca02091d00cde28ea0e6742f2f92209af0dbfdb1",
+      "body_key": "body_63b04fd8986a0a51ea20ab0f97cccd22046f3b04ddacba11e324d32d69ffd778",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-media-result-decode",
+      "wrapper_sha256": "1c2b1b2cb9eabba992a0835f173be88289d39128a5a04c46ed079b61dcad652a",
+      "body_key": "body_667744d2cb17aa0d07dcb09822392423750e5c899ce9ddaa98fa77acac63886e",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-media-result-projection",
+      "wrapper_sha256": "fcaa639c0566f931c0486ba2f8ec24f18eeb8bacfcbfc132902039e5da683fdc",
+      "body_key": "body_2b26e4942841b0ab71d0003cd9ddb9e9b357fd1e76698368d0df08ddb0b1e0bd",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-media-result-prepare",
+      "wrapper_sha256": "4ca1859647dabd247c7df9230b0729a2d9b2d759491d0d2ffef84bf07b441d10",
+      "body_key": "body_c65739ba46f58e007d958008d9392fba4e2e68f0efed674ae35df9c647b186c3",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-media-result-accept",
+      "wrapper_sha256": "17995b3f63f52a4c87debee8d3454381f29fc9db9e76128891b8005912f4c5f2",
+      "body_key": "body_6f519a39371327505031cfb9cd988ec1a24b84ba63c5b6eb1900c26236b4d4d8",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-media-reserve-entry",
+      "wrapper_sha256": "92ae4a9a2ab534d8a65b90861d0d8e511441db527f6c029bcdb8dfad29b791c6",
+      "body_key": "body_36765447ff4828bc225825a797256663d83df3d1efde528850b778329be537d5",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-global-inspect",
+      "wrapper_sha256": "e70a4afbce785b4ebce783da62a21c1115ac9f0a11271e7fc59ff68d3d615dc3",
+      "body_key": "body_2b56356e1e7d9ea2a7719e7f04ce270da41cefbd68f59a4e400d520f03ac4c9d",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-global-debit-plan",
+      "wrapper_sha256": "b6a0a951ff3d0dd1ea2e2aab4f83286cdb8ce6bd4e51448edc15e72d09b19afa",
+      "body_key": "body_2a45b9d86af67885e5214e2199d8bda02d897e5e33192a99633c1a1b83ca6e02",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-global-debit-verify",
+      "wrapper_sha256": "90fac3ff1613da37b08ee2f81d4f4f64839870969daeddba01df134bfc0d5162",
+      "body_key": "body_13ba052ab40aba2eb85b47bc276741ac3d73d2246051827573c60aceb328a75b",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-global-grant",
+      "wrapper_sha256": "c7712157ab6b249d0630b9079f4465ac3b977eccfad5695e2c757f6ae4bfa05f",
+      "body_key": "body_739b3c2525e974c4d4ba11763bdaac02d3e8bcf04de203eb4ff44379bff204a4",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-global-http-ready",
+      "wrapper_sha256": "83db5dc73d86d9f5eb3726e804bae03f5f423ab202adde630a00ef554807f33f",
+      "body_key": "body_4f608eb54bbc47a8b3baf2a749b37d40b63b00c8859bd7de65269c9b4d86598c",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-global-settle-plan",
+      "wrapper_sha256": "b6f5b599e7f4559d374e63b14a10309c05f6a8ee306c194fb8a929a700ffc689",
+      "body_key": "body_878a072a53b0716b35e7e17ed2bd951a46a819d597ca244a71d5811067d4cc1e",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "native-global-settle-verify",
+      "wrapper_sha256": "825c333ba1ec330f31d83df42108d55d850a57ab171e75965210efa9b49f49ce",
+      "body_key": "body_041283764ac2062cf018a2d7cfd5f77e00d93e11c5ee00cfd30cdad95dd111ff",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "mbx-source-insert-plan",
+      "wrapper_sha256": "9d0f1627e23915135aa963a243c14ee5f3e2f9ebfa19137f9172d982ba5257a8",
+      "body_key": "body_85e03a4953bdf5dcff81595bac106734be65b6e32ebd4596fa7d9c1955cc4003",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "mbx-source-awaiting",
+      "wrapper_sha256": "f2a129a96d5e96079dcc0686cec2e4e396300c7ffeb6a73220fdab79ea9e3dc7",
+      "body_key": "body_82bf6b1e62be3c389a04003303d06af9010cb9280aba51ad78f962b95f750563",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "c450-private-text-entry",
+      "wrapper_sha256": "029c62407ef48065b25218477ab870cb8d08ec97375e667b9c7ea644c73bbde3",
+      "body_key": "body_628637779421890f64c7a4ceb90467ffc26f27aeb217befd25652841b1784d4b",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "c450-private-text-lookup-plan",
+      "wrapper_sha256": "1d40c9f6792e543a1de2bdedd425f0766e4ace9af8c3fd1cc03d28b9ea1c979f",
+      "body_key": "body_09010480251c847092f77ddb1683c254039db3101a29563dece43b68ccee5183",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "c450-private-text-receipt",
+      "wrapper_sha256": "998d0033bffd501dad4840b3981998a212975aadd88ab841ddf8ddc441a42a25",
+      "body_key": "body_45aca5002edb07d2353f5f65d5d6b47dc2ca25befa1797221d42e1efbc35eca5",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "c500-r02-physical-route",
+      "wrapper_sha256": "c2acf000025e7b92307601b6376aa939de2d914babee8f78cda1be5b1fcb1164",
+      "body_key": "body_a762903577be8fb7cc725d8af377aa833f093c5da9844b46ff5d12fada30c528",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "c508-final-pos-plan",
+      "wrapper_sha256": "22125b0cb70e554c5f1df58e123639729e7efa9f34daa44460e57d4dd5c577f4",
+      "body_key": "body_b4dba4db54db7e58328fd7396c32f6561c59dcf80172e617318e10c6c8247f58",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "c630-first-mailbox-plan",
+      "wrapper_sha256": "1b33c386c086910cf68ecc1e3cd075d39784c1df9165c374cd267b54baa3b840",
+      "body_key": "body_010adda106e6944f4b206db0236327dd0da88492b930dad3b79723acdaac87cb",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "c630-recheck-mailbox-plan",
+      "wrapper_sha256": "6c7d058eb188dbdc2f66c586f6135112a25ae17185f0223614e5604854c63a83",
+      "body_key": "body_a03144dcf5afaf5acdf915677e430d42d02eaad14ff96c682d61c4ddada47268",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "qr-unsupported-prepare",
+      "wrapper_sha256": "9b06321963ce7f69f9c8a6637f065f56a80be5b426422d49b0f5669e6f3aa7ac",
+      "body_key": "body_d78e46ac17628fdc71648cd477c289d1ca7bf09fbc4515c524f037e17eb11ef7",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "qr-unsupported-decide admission",
+      "wrapper_sha256": "1be5075936c524a7a245c965cf0a37a5e8b4626a5783332d2e8f6585548f4f8b",
+      "body_key": "body_c03468349f741bfdd1090d879e08ccfcd60c9037f0a8520deda653e4d305b2b4",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "qr-unsupported-complete plan",
+      "wrapper_sha256": "83d24c4298a0a4e9d1621d632668cfb62639e2139613eb6f830c185aa56abb72",
+      "body_key": "body_9dcba3348cd374b5d2fedb8b3b02888760d5a88a94acfe2490dee606fb77bd57",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "qr-unsupported-verified backend receipt",
+      "wrapper_sha256": "4c9f59c52e01930b730bdbd38f2503503168eec379dbd99674ad47faa38e7046",
+      "body_key": "body_6eeeea113696c34826cfbce3e2caaec24c0e82be64f0439c0c1b6056aaf3b09a",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "qr-reserve-quota-before_plan-accept",
+      "wrapper_sha256": "bd16cfbc508d70172579607881418a977925cb92d520875083d748420940d69b",
+      "body_key": "body_c62ab3e7e406a2aacf019af412e034905ecb35a1abb6da0c0c61a0705d9f147f",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "qr-reserve-quota-before_verify-accept",
+      "wrapper_sha256": "d4fe6ea834be0b2f3f63ac164fe0f0298c87145bfc00e8e7c77b4f77335751c1",
+      "body_key": "body_b7c6d796da4d5314ad641ce2eb4ff43a9b2eb921097fb3d8e5950199cb1058c6",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "qr-physical-replay-input",
+      "wrapper_sha256": "c5b040a56180ebcc14a4a93c42c1612eee44707a7cfb4701d4a24569b7234b9e",
+      "body_key": "body_e4ce4c715f56d9302ddfbefb21f6f57fcf4e599c0346ddcfaa1c33d8bcc53348",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "qr-physical-effect-input",
+      "wrapper_sha256": "9724a46cbe736a9e397cbf10f444380195a4f2a95d29c54a6736d9e3127b1a72",
+      "body_key": "body_6bcd9f996d0730658598f1e0796a7110af216d5d62d8c0ae04ec587de4afa5e6",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "idle-readiness-prepare",
+      "wrapper_sha256": "bc69339c6fbf6f18d038901a6aecc107508f9d8214ce5b85ae2c86e9169df2f1",
+      "body_key": "body_834f50679de8cca9fb06065206f8628b5504483166382f79b0b1aa8b02898111",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "0cqeI78HXXsW2Dqj",
+      "node_id": "idle-readiness-decide",
+      "wrapper_sha256": "d789da47b871f11595a4abeb854bf27ba69810a1f679164352733cf87ca5424f",
+      "body_key": "body_816040ba62b3e02f62ea0153798f266478c8c67b3d09d7952b51bf00b0e6e10e",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01textcode",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "6e1eba9e16851059fb5c0b4cfba86517813bd369e123f10412b08cbb4c6806fe",
+      "body_key": "body_ecc99cc78ad5af018717cda2153926d37a5a12b8d4ca5e388b9f93642a5905aa",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01textnative",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "6e1eba9e16851059fb5c0b4cfba86517813bd369e123f10412b08cbb4c6806fe",
+      "body_key": "body_ecc99cc78ad5af018717cda2153926d37a5a12b8d4ca5e388b9f93642a5905aa",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01ambientcode",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "6e1eba9e16851059fb5c0b4cfba86517813bd369e123f10412b08cbb4c6806fe",
+      "body_key": "body_ecc99cc78ad5af018717cda2153926d37a5a12b8d4ca5e388b9f93642a5905aa",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01ambientnative",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "6e1eba9e16851059fb5c0b4cfba86517813bd369e123f10412b08cbb4c6806fe",
+      "body_key": "body_ecc99cc78ad5af018717cda2153926d37a5a12b8d4ca5e388b9f93642a5905aa",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01isolationcode",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "6e1eba9e16851059fb5c0b4cfba86517813bd369e123f10412b08cbb4c6806fe",
+      "body_key": "body_ecc99cc78ad5af018717cda2153926d37a5a12b8d4ca5e388b9f93642a5905aa",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01isolationnative",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "6e1eba9e16851059fb5c0b4cfba86517813bd369e123f10412b08cbb4c6806fe",
+      "body_key": "body_ecc99cc78ad5af018717cda2153926d37a5a12b8d4ca5e388b9f93642a5905aa",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01nullcode",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "6e1eba9e16851059fb5c0b4cfba86517813bd369e123f10412b08cbb4c6806fe",
+      "body_key": "body_ecc99cc78ad5af018717cda2153926d37a5a12b8d4ca5e388b9f93642a5905aa",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01nullnative",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "6e1eba9e16851059fb5c0b4cfba86517813bd369e123f10412b08cbb4c6806fe",
+      "body_key": "body_ecc99cc78ad5af018717cda2153926d37a5a12b8d4ca5e388b9f93642a5905aa",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01malformedcode",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "6e1eba9e16851059fb5c0b4cfba86517813bd369e123f10412b08cbb4c6806fe",
+      "body_key": "body_ecc99cc78ad5af018717cda2153926d37a5a12b8d4ca5e388b9f93642a5905aa",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01malformednative",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "6e1eba9e16851059fb5c0b4cfba86517813bd369e123f10412b08cbb4c6806fe",
+      "body_key": "body_ecc99cc78ad5af018717cda2153926d37a5a12b8d4ca5e388b9f93642a5905aa",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01pngcode",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "b46b5c98cdb290bbbef3630d7b38776c4f8826748743d3fc3d68c050dc251490",
+      "body_key": "body_7bc1108c934b5c81dc6e3cde459312e567aa917ee9fd698f5b4607e7d62d3470",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01pngcode",
+      "node_id": "public-proof-1",
+      "wrapper_sha256": "87a84c40d167a359f66943e06a020852f0255b1e3a50f65279ac17d2e4c6270b",
+      "body_key": "body_3682e61578c18c275e67b8c6b715d5f4091af932761cfc9957f62cd9f1a1accd",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01pngnative",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "b46b5c98cdb290bbbef3630d7b38776c4f8826748743d3fc3d68c050dc251490",
+      "body_key": "body_7bc1108c934b5c81dc6e3cde459312e567aa917ee9fd698f5b4607e7d62d3470",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01pngnative",
+      "node_id": "public-proof-1",
+      "wrapper_sha256": "87a84c40d167a359f66943e06a020852f0255b1e3a50f65279ac17d2e4c6270b",
+      "body_key": "body_3682e61578c18c275e67b8c6b715d5f4091af932761cfc9957f62cd9f1a1accd",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01nominalcode",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "c57284d3f8260d0176b47452d6b0885db9184d0582f235972e2ae3a797c929ba",
+      "body_key": "body_b1921e75210e5e97f23879d8ed7fcc72592c78f3fb3a1bccb838aaf4bdc6c001",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01nominalnative",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "c57284d3f8260d0176b47452d6b0885db9184d0582f235972e2ae3a797c929ba",
+      "body_key": "body_b1921e75210e5e97f23879d8ed7fcc72592c78f3fb3a1bccb838aaf4bdc6c001",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01kernelcode",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "170dafe325b4bffcb5494a9f048beec61b7a69a4131b3732da37fcfb1a6f362f",
+      "body_key": "body_e0ca9f2880ca128f1ae1d25811b531739be911517c8393db528e9663dc7da179",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01kernelnative",
+      "node_id": "public-proof-0",
+      "wrapper_sha256": "170dafe325b4bffcb5494a9f048beec61b7a69a4131b3732da37fcfb1a6f362f",
+      "body_key": "body_e0ca9f2880ca128f1ae1d25811b531739be911517c8393db528e9663dc7da179",
+      "package_name": "@escalar/static-code-body-poc-r01",
+      "mode": "runOnceForAllItems"
+    },
+    {
+      "workflow_id": "NativeStaticPocR01Bench",
+      "node_id": "public-metadata-7",
+      "wrapper_sha256": "5c5f3d222e4eec4cf8368bad8ac48596100a0125b20547f7735e737705c4fa9c",
+      "body_key": "body_2ca161777ef07b2e08bddbddfe7ec46ad70083d68e59b8fc516dade98545d8a9",
+      "package_name": "@escalar/native-static-node-poc-fixtures-r01",
+      "mode": "runOnceForAllItems"
+    }
+  ],
+  "libraries": [
+    {
+      "name": "@escalar/static-code-body-poc-r01",
+      "sha256": "1bb60b6fd4b06d781a69029bfaf6c51d73e3f3287a65564b8eb971e7c5e86c25"
+    },
+    {
+      "name": "@escalar/qr-native-r03",
+      "sha256": "cc64011e21b074ae1fcad83909294fb8e200ab70712d872a898404a5fbf6ec92"
+    },
+    {
+      "name": "@escalar/native-static-node-poc-fixtures-r01",
+      "sha256": "4b328c3a93b46b11ccb305f22313caabdca5dceabacb660cde20b918afcaac98"
+    }
+  ]
+}

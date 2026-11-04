@@ -1,0 +1,80 @@
+{
+  "id": "NativeStaticPocR01textnative",
+  "name": "NativeStaticPocR01textnative OFF",
+  "active": false,
+  "nodes": [
+    {
+      "id": "public-manual",
+      "name": "Run public isolated proof",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "public-source",
+      "name": "Static native nominal source",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -600,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{json:{case_name:\"text\",text:\"Synthetic á / 2 items\",payload:{deep:7}}}];"
+      },
+      "retryOnFail": false
+    },
+    {
+      "id": "public-proof-0",
+      "name": "Pinned public contract",
+      "type": "CUSTOM.escalarStaticBody",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return await require(\"@escalar/native-static-node-poc-fixtures-r01\")[\"body_ecc99cc78ad5af018717cda2153926d37a5a12b8d4ca5e388b9f93642a5905aa\"].call(this,{reads:{\"$execution\":()=>$execution,\"$input\":()=>$input,\"$workflow\":()=>$workflow,\"AbortSignal\":()=>AbortSignal,\"Promise\":()=>Promise,\"String\":()=>String,\"URL\":()=>URL,\"fetch\":()=>fetch},types:{\"AbortSignal\":()=>typeof AbortSignal,\"URL\":()=>typeof URL,\"fetch\":()=>typeof fetch},lookups:[()=>($('Static native nominal source').all())]},[],[]);"
+      },
+      "retryOnFail": false
+    }
+  ],
+  "connections": {
+    "Run public isolated proof": {
+      "main": [
+        [
+          {
+            "node": "Static native nominal source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Static native nominal source": {
+      "main": [
+        [
+          {
+            "node": "Pinned public contract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 180,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {},
+  "staticData": {}
+}

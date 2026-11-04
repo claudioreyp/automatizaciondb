@@ -1,0 +1,6 @@
+{
+  "name": "@escalar/native-static-node-poc-fixtures-r01",
+  "version": "0.0.0-poc-r01",
+  "private": true,
+  "main": "index.cjs"
+}
