@@ -39,7 +39,7 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="1.1.1",
+    version="1.1.2",
     description=(
         "API multiempresa para operaciones POS gastronómicas de Escalar AI. "
         "Incluye aislamiento por negocio y sucursal, idempotencia y compatibilidad legacy controlada."
