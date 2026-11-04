@@ -1,0 +1,15 @@
+{
+  "state": "COMPONENT_FIXTURE_NOT_AGENT_DEPLOYMENT",
+  "files": {
+    ".gitattributes": "a79691a93b46e49ce460c26ef22afcc03d6eca1e63bf2edbc20e96159510f6c9",
+    "run-probe.py": "d3bb8d23e26edaaf45d041e697fc4c4be54257d273071beeb18b2621aef5836c",
+    "package/index.cjs": "cc64011e21b074ae1fcad83909294fb8e200ab70712d872a898404a5fbf6ec92",
+    "package/package.json": "7c3bc2f85ae6fe16a20eefa74569cdbdaf3eb319c8056ecf0b04b3e8607d5ea9",
+    "probe/manifest.json": "060729f33a46adb546ad6a7d80f31320849b263426b2ac55788105b9fd223815",
+    "probe/workflow.OFF.json": "9fe540d773ff159562639fa13fbbd83ca56abb8252dd9285376f19a281ee739f"
+  },
+  "module_package": "@escalar/qr-native-r03",
+  "models": 0,
+  "production_changes": 0,
+  "network": "none"
+}

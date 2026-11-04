@@ -1,0 +1,78 @@
+{
+  "schema": "escalarai.shared-cjs-cli-preparation.v1",
+  "state": "PREPARED_NOT_EXECUTED",
+  "module_package": "@escalar/qr-native-r03",
+  "module_sha256": "cc64011e21b074ae1fcad83909294fb8e200ab70712d872a898404a5fbf6ec92",
+  "workflow_id_binding": "QrCjsR03Cli20261104",
+  "cases": [
+    {
+      "variant": "original",
+      "case_name": "text"
+    },
+    {
+      "variant": "module",
+      "case_name": "text"
+    },
+    {
+      "variant": "original",
+      "case_name": "png"
+    },
+    {
+      "variant": "module",
+      "case_name": "png"
+    },
+    {
+      "variant": "compare",
+      "case_name": "component"
+    }
+  ],
+  "models": 0,
+  "real_pos_requests": 0,
+  "data_table_requests": 0,
+  "network": 0,
+  "physical_storage_acceptance": false,
+  "current_cap5500_guard": "INLINE_UNCHANGED",
+  "source_manifest_sha256": "3ce2a13e7e6769d5928252e23f5b9a0e29350b4c3e7c2b9df23e511466eb00d3",
+  "nodes": 13,
+  "case_limit": 5,
+  "execution_timeout_seconds": 180,
+  "requires_real_binary_storage": "filesystem-v2",
+  "execution_order": "SERIAL_SPLIT_IN_BATCHES_V3",
+  "credentials": 0,
+  "external_node_types": 0,
+  "component_checks": 17,
+  "source_restore_bindings_only": [
+    "CFG.workflow_id",
+    "CFG.private_binary_workflow_id"
+  ],
+  "native_execution_performed": false,
+  "ambient_boundary_tests": 8,
+  "ambient_readers_only": true,
+  "diagnostic_difference_acceptance": "A present-but-undefined ambient call keeps TypeError class/no IO; the V8 expression message differs after AST rewrite. No message normalization is performed.",
+  "files": [
+    {
+      "file": "workflow.OFF.json",
+      "bytes": 1752023,
+      "sha256": "9fe540d773ff159562639fa13fbbd83ca56abb8252dd9285376f19a281ee739f"
+    },
+    {
+      "file": "package/index.cjs",
+      "bytes": 731506,
+      "sha256": "cc64011e21b074ae1fcad83909294fb8e200ab70712d872a898404a5fbf6ec92"
+    },
+    {
+      "file": "package/package.json",
+      "bytes": 133,
+      "sha256": "7c3bc2f85ae6fe16a20eefa74569cdbdaf3eb319c8056ecf0b04b3e8607d5ea9"
+    }
+  ],
+  "launch_constraints": [
+    "same immutable n8n2.14.2 image ID, no pull",
+    "--network none --read-only; fresh SQLite/binary tmpfs only; no production mounts",
+    "two immutable package files mounted read-only",
+    "NODE_FUNCTION_ALLOW_EXTERNAL=@escalar/qr-native-r03, N8N_DEFAULT_BINARY_DATA_MODE=filesystem and N8N_RUNNERS_ENABLED=true only inside disposable container",
+    "import:workflow --input=/probe/workflow.OFF.json then execute --id QrCjsR03Cli20261104 --rawOutput; --file is rejected by n8n2.14.2",
+    "one native workflow execution, no retry; capture raw stdout/stderr before JSON parse; container removed on exit"
+  ],
+  "native_proof_pending": true
+}
