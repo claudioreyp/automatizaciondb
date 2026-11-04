@@ -1,0 +1,1034 @@
+{
+  "id": "QrStaticBodyNativeR0120261104",
+  "name": "Escalar static Code body isolated native R01 OFF",
+  "active": false,
+  "nodes": [
+    {
+      "id": "static-manual",
+      "name": "Run isolated static body components",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "static-cases",
+      "name": "Ten fixed public cases",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -680,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{\"json\":{\"case_id\":\"text:original\",\"case_name\":\"text\",\"variant\":\"original\",\"source\":\"static-body-probe\",\"text\":\"Synthetic callback text: á / PNG / 2 items\"}},{\"json\":{\"case_id\":\"text:module\",\"case_name\":\"text\",\"variant\":\"module\",\"source\":\"static-body-probe\",\"text\":\"Synthetic callback text: á / PNG / 2 items\"}},{\"json\":{\"case_id\":\"png:original\",\"case_name\":\"png\",\"variant\":\"original\",\"source\":\"static-body-probe\",\"text\":\"Synthetic callback text: á / PNG / 2 items\"}},{\"json\":{\"case_id\":\"png:module\",\"case_name\":\"png\",\"variant\":\"module\",\"source\":\"static-body-probe\",\"text\":\"Synthetic callback text: á / PNG / 2 items\"}},{\"json\":{\"case_id\":\"ambient:original\",\"case_name\":\"ambient\",\"variant\":\"original\",\"source\":\"static-body-probe\",\"text\":\"Synthetic callback text: á / PNG / 2 items\"}},{\"json\":{\"case_id\":\"ambient:module\",\"case_name\":\"ambient\",\"variant\":\"module\",\"source\":\"static-body-probe\",\"text\":\"Synthetic callback text: á / PNG / 2 items\"}},{\"json\":{\"case_id\":\"nominal:original\",\"case_name\":\"nominal\",\"variant\":\"original\",\"source\":\"static-body-probe\",\"text\":\"Synthetic callback text: á / PNG / 2 items\"}},{\"json\":{\"case_id\":\"nominal:module\",\"case_name\":\"nominal\",\"variant\":\"module\",\"source\":\"static-body-probe\",\"text\":\"Synthetic callback text: á / PNG / 2 items\"}},{\"json\":{\"case_id\":\"kernel:original\",\"case_name\":\"kernel\",\"variant\":\"original\",\"source\":\"static-body-probe\",\"text\":\"Synthetic callback text: á / PNG / 2 items\"}},{\"json\":{\"case_id\":\"kernel:module\",\"case_name\":\"kernel\",\"variant\":\"module\",\"source\":\"static-body-probe\",\"text\":\"Synthetic callback text: á / PNG / 2 items\"}}];"
+      }
+    },
+    {
+      "id": "static-loop",
+      "name": "One fixed case at a time",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -460,
+        0
+      ],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      }
+    },
+    {
+      "id": "static-verify",
+      "name": "Verify one native case",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const need=(ok,code)=>{if(!ok)throw Error(code);};\nconst items=$input.all(),rows=items.map(item=>item.json);need(rows.length>=1&&rows.length<=2,'PROBE_CASE_ROW_BOUND');\nconst first=rows[0],kind=first.case_name,variant=first.variant;\nneed([\"text:original\",\"text:module\",\"png:original\",\"png:module\",\"ambient:original\",\"ambient:module\",\"nominal:original\",\"nominal:module\",\"kernel:original\",\"kernel:module\"].includes(first.case_id)&&first.case_id===kind+':'+variant,'PROBE_FIXED_CASE');\nneed(rows.every(row=>row.case_id===first.case_id&&row.case_name===kind&&row.variant===variant),'PROBE_CASE_CROSS_BINDING');\nif(kind==='text')need(rows.length===1&&first.result.text===\"Synthetic callback text: á / PNG / 2 items\"&&first.result.workflow_id===String($workflow.id)&&first.result.execution_id===String($execution.id)&&first.result.helper_type==='function','PROBE_TEXT_CALLBACK');\nelse if(kind==='png')need(rows.length===1&&first.result.prepared_with_actual_helper===true&&first.result.read_with_actual_helper===true&&first.result.physical_storage===true&&first.result.storage_kind==='filesystem-v2'&&first.result.bytes===70&&first.result.base64===\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==\"&&first.result.mime_type==='image/png'&&first.result.file_name==='synthetic-static-body.png','PROBE_REAL_FILESYSTEM_BINARY');\nelse if(kind==='ambient')need(rows.length===1&&Object.values(first.result.types).every(value=>value==='undefined')&&Object.keys(first.result.reads).length===3,'PROBE_AMBIENT_ABSENCE');\nelse if(kind==='nominal'){\n  need(rows.length===2&&rows.every((row,index)=>row.result.slot===index&&row.result.linked_slot===index&&row.result.first_slot===0&&JSON.stringify(row.result.all_slots)==='[0,1]'),'PROBE_NATIVE_NOMINAL_PAIRING');\n  need(items.every((item,index)=>JSON.stringify(item.pairedItem)===JSON.stringify({item:index})),'PROBE_NATIVE_ITEM_METADATA');\n}else if(kind==='kernel')need(rows.length===1&&first.result.status==='DISABLED_UNBOUND_NO_EFFECTS'&&first.result.native_enabled===false&&first.result.http_status===503&&first.result.provider_calls===0&&first.result.pos_writes===0&&first.result.public_reply.accepted===false&&first.result.public_reply.queued===false&&first.result.public_reply.actions.length===0,'PROBE_CURRENT_KERNEL_DISABLED');\nelse throw Error('PROBE_UNKNOWN_CASE');\nreturn [{json:{case_id:first.case_id,case_name:kind,variant,status:'PASS',result:rows.map(row=>row.result),\n...(kind==='nominal'?{paired_items:items.map(item=>item.pairedItem)}:{}),...(kind==='png'?{binary_descriptor:first.binary_descriptor}:{})}}];"
+      }
+    },
+    {
+      "id": "static-result",
+      "name": "Static body native result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -180,
+        -600
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const need=(ok,code)=>{if(!ok)throw Error(code);},rows=$input.all().map(item=>item.json),expected=[\"text:original\",\"text:module\",\"png:original\",\"png:module\",\"ambient:original\",\"ambient:module\",\"nominal:original\",\"nominal:module\",\"kernel:original\",\"kernel:module\"];\nneed(rows.length===expected.length&&expected.every(id=>rows.filter(row=>row.case_id===id&&row.status==='PASS').length===1),'PROBE_TEN_EXACT_CASES');\nfor(const kind of [\"text\",\"png\",\"ambient\",\"nominal\",\"kernel\"]){const original=rows.find(row=>row.case_id===kind+':original'),module=rows.find(row=>row.case_id===kind+':module');\nneed(JSON.stringify(original.result)===JSON.stringify(module.result),'PROBE_ORIGINAL_MODULE_DIFFERENCE:'+kind);\nif(kind==='nominal')need(JSON.stringify(original.paired_items)===JSON.stringify(module.paired_items),'PROBE_PAIRING_DIFFERENCE');}\nreturn [{json:{schema:'escalarai.static-body-native-result.v1',status:'PASS',workflow_id:String($workflow.id),execution_id:String($execution.id),expected_cases:expected.length,case_ids:rows.map(row=>row.case_id),cases:rows,\nphysical_storage_acceptance:true,nominal_pairing_acceptance:true,ambient_absence_acceptance:true,kernel_disabled_acceptance:true,\nreal_model_calls:0,real_pos_requests:0,data_table_requests:0,external_requests:0,production_changes:0,module_package:\"@escalar/static-code-body-poc-r01\",\nacceptance_scope:'ISOLATED_COMPONENTS_ONLY',agent_latency_acceptance:false,whole_agent_acceptance:false}}];"
+      }
+    },
+    {
+      "id": "static-unknown",
+      "name": "Reject unknown fixed case",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        850
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "throw Error('PROBE_UNKNOWN_FIXED_CASE');"
+      }
+    },
+    {
+      "id": "static-kind-text",
+      "name": "Is fixed text case",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -180,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "static-kind-text-condition",
+              "leftValue": "={{ $json.case_name }}",
+              "rightValue": "text",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "static-kind-png",
+      "name": "Is fixed png case",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -180,
+        180
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "static-kind-png-condition",
+              "leftValue": "={{ $json.case_name }}",
+              "rightValue": "png",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "static-kind-ambient",
+      "name": "Is fixed ambient case",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -180,
+        360
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "static-kind-ambient-condition",
+              "leftValue": "={{ $json.case_name }}",
+              "rightValue": "ambient",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "static-kind-nominal",
+      "name": "Is fixed nominal case",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -180,
+        540
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "static-kind-nominal-condition",
+              "leftValue": "={{ $json.case_name }}",
+              "rightValue": "nominal",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "static-kind-kernel",
+      "name": "Is fixed kernel case",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -180,
+        720
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "static-kind-kernel-condition",
+              "leftValue": "={{ $json.case_name }}",
+              "rightValue": "kernel",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "static-variant-text",
+      "name": "Is original text case",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        80,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "static-variant-text-condition",
+              "leftValue": "={{ $json.variant }}",
+              "rightValue": "original",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "static-text-original",
+      "name": "text original",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const input=$input.first().json;\nconst callback=()=>({text:$input.first().json.text,workflow_id:String($workflow.id),execution_id:String($execution.id),helper_type:typeof this.helpers.prepareBinaryData});\nreturn [{json:{case_id:input.case_id,case_name:input.case_name,variant:input.variant,result:await Promise.resolve().then(callback)}}];"
+      }
+    },
+    {
+      "id": "static-text-module",
+      "name": "text module",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        70
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return await require(\"@escalar/static-code-body-poc-r01\")[\"body_552eef3b6f48b61fd6ac19078254eef3531f4759d3c3265d0dd8f156ea1eee76\"].call(this,{reads:{\"$execution\":()=>$execution,\"$input\":()=>$input,\"$workflow\":()=>$workflow,\"Promise\":()=>Promise,\"String\":()=>String},types:{},lookups:[]},[],[]);"
+      }
+    },
+    {
+      "id": "static-variant-png",
+      "name": "Is original png case",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        80,
+        180
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "static-variant-png-condition",
+              "leftValue": "={{ $json.variant }}",
+              "rightValue": "original",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "static-png-original",
+      "name": "png original",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        180
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const input=$input.first().json;\nconst bytes=Buffer.from(\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==\",'base64');\nif(bytes.length!==70)throw Error('PROBE_PNG_BYTES');\nconst descriptor=await this.helpers.prepareBinaryData(bytes,'synthetic-static-body.png','image/png');\nreturn [{json:{...input,prepared_with_actual_helper:true},binary:{image:descriptor}}];"
+      }
+    },
+    {
+      "id": "static-png-read-original",
+      "name": "Read physical PNG original",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        180
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const input=$input.first().json,descriptor=$input.first().binary.image;\nconst bytes=await this.helpers.getBinaryDataBuffer(0,'image');\nconst match=/^filesystem-v2:workflows\\/([A-Za-z0-9]{1,128})\\/executions\\/([1-9][0-9]*)\\/binary_data\\/([a-f0-9-]{36})$/.exec(descriptor.id||'');\nconst physical=descriptor.data==='filesystem-v2'&&match!==null&&match[1]===String($workflow.id)&&match[2]===String($execution.id);\nreturn [{json:{case_id:input.case_id,case_name:input.case_name,variant:input.variant,binary_descriptor:descriptor,\nresult:{prepared_with_actual_helper:input.prepared_with_actual_helper===true,read_with_actual_helper:true,physical_storage:physical,storage_kind:physical?'filesystem-v2':'UNACCEPTED',\nbytes:bytes.length,base64:bytes.toString('base64'),mime_type:descriptor.mimeType,file_name:descriptor.fileName}}}];"
+      }
+    },
+    {
+      "id": "static-png-module",
+      "name": "png module",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        250
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return await require(\"@escalar/static-code-body-poc-r01\")[\"body_02b3f3b2283d987c8d78b59a7b89eb26f1403516a5b1c8fe41c21a023e416afa\"].call(this,{reads:{\"$input\":()=>$input,\"Buffer\":()=>Buffer,\"Error\":()=>Error},types:{},lookups:[]},[],[]);"
+      }
+    },
+    {
+      "id": "static-png-read-module",
+      "name": "Read physical PNG module",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        250
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return await require(\"@escalar/static-code-body-poc-r01\")[\"body_5e3a8badf793fe2ba488d9a0d5c0dc1640d577448953c20842f7842ebf627712\"].call(this,{reads:{\"$execution\":()=>$execution,\"$input\":()=>$input,\"$workflow\":()=>$workflow,\"String\":()=>String},types:{},lookups:[]},[],[]);"
+      }
+    },
+    {
+      "id": "static-variant-ambient",
+      "name": "Is original ambient case",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        80,
+        360
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "static-variant-ambient-condition",
+              "leftValue": "={{ $json.variant }}",
+              "rightValue": "original",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "static-ambient-original",
+      "name": "ambient original",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        360
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const input=$input.first().json;\nconst outcome=fn=>{try{const value=fn();return {kind:'return',type:typeof value};}catch(error){return {kind:'throw',name:error.name,message:error.message};}};\nreturn [{json:{case_id:input.case_id,case_name:input.case_name,variant:input.variant,result:{\ntypes:{URL:typeof URL,fetch:typeof fetch,AbortSignal:typeof AbortSignal},\nreads:{URL:outcome(()=>URL),fetch:outcome(()=>fetch),AbortSignal:outcome(()=>AbortSignal)}}}}];"
+      }
+    },
+    {
+      "id": "static-ambient-module",
+      "name": "ambient module",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        430
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return await require(\"@escalar/static-code-body-poc-r01\")[\"body_94c3ff3dd5f62389f73deb6b6ebc7a4d62aabd675c7fc06a456b2d7e25230385\"].call(this,{reads:{\"$input\":()=>$input,\"AbortSignal\":()=>AbortSignal,\"URL\":()=>URL,\"fetch\":()=>fetch},types:{\"AbortSignal\":()=>typeof AbortSignal,\"URL\":()=>typeof URL,\"fetch\":()=>typeof fetch},lookups:[]},[],[]);"
+      }
+    },
+    {
+      "id": "static-variant-nominal",
+      "name": "Is original nominal case",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        80,
+        540
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "static-variant-nominal-condition",
+              "leftValue": "={{ $json.variant }}",
+              "rightValue": "original",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "static-nominal-source",
+      "name": "Static native nominal source",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        40,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const input=$input.first().json;return [0,1].map(slot=>({json:{...input,slot},pairedItem:{item:0}}));"
+      }
+    },
+    {
+      "id": "static-nominal-original",
+      "name": "nominal original",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        540
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const current=$input.item,linked=$('Static native nominal source').item,first=$('Static native nominal source').first(),all=$('Static native nominal source').all();\nreturn {json:{case_id:current.json.case_id,case_name:current.json.case_name,variant:current.json.variant,\nresult:{slot:current.json.slot,linked_slot:linked.json.slot,first_slot:first.json.slot,all_slots:all.map(item=>item.json.slot)}},pairedItem:{item:current.json.slot}};"
+      }
+    },
+    {
+      "id": "static-nominal-module",
+      "name": "nominal module",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        610
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "return await require(\"@escalar/static-code-body-poc-r01\")[\"body_c438d1f1e60a9ae85f806ab38b1d5f315e771a3087e809a19a5e8d344d1d069f\"].call(this,{reads:{\"$input\":()=>$input},types:{},lookups:[()=>($('Static native nominal source').item),()=>($('Static native nominal source').first()),()=>($('Static native nominal source').all())]},[],[]);"
+      }
+    },
+    {
+      "id": "static-variant-kernel",
+      "name": "Is original kernel case",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        80,
+        720
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "static-variant-kernel-condition",
+              "leftValue": "={{ $json.variant }}",
+              "rightValue": "original",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "static-kernel-original",
+      "name": "kernel original",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        720
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const CFG={\"enabled\":false};\n/* Immutable R03 exact CURRENT declaration/closure match; historical unused exports stay unbound. */\nconst {classifyNativeEffect,classifyPosOperation,createEffectReplayEngine,createNativeMediaBoundary,createNativeMediaReplay,createNativeSinkAdapter,createPrivateBinaryLens,createTrustedAuthorityResolver,createUnsupportedConversationPolicy,nativeLiveAdapters,nativeLiveHandlerFactory,nativeOpenAiCodec,nativePrimitives,nativeRuntimeFactory,validateNativeBinaryDescriptor}=require(\"@escalar/qr-native-r03\").makeScope({\"Array\":typeof Array==='undefined'?undefined:Array,\"Boolean\":typeof Boolean==='undefined'?undefined:Boolean,\"DataView\":typeof DataView==='undefined'?undefined:DataView,\"Date\":typeof Date==='undefined'?undefined:Date,\"Error\":typeof Error==='undefined'?undefined:Error,\"Infinity\":typeof Infinity==='undefined'?undefined:Infinity,\"Intl\":typeof Intl==='undefined'?undefined:Intl,\"JSON\":typeof JSON==='undefined'?undefined:JSON,\"Map\":typeof Map==='undefined'?undefined:Map,\"Math\":typeof Math==='undefined'?undefined:Math,\"Number\":typeof Number==='undefined'?undefined:Number,\"Object\":typeof Object==='undefined'?undefined:Object,\"Promise\":typeof Promise==='undefined'?undefined:Promise,\"Reflect\":typeof Reflect==='undefined'?undefined:Reflect,\"RegExp\":typeof RegExp==='undefined'?undefined:RegExp,\"Set\":typeof Set==='undefined'?undefined:Set,\"String\":typeof String==='undefined'?undefined:String,\"TypeError\":typeof TypeError==='undefined'?undefined:TypeError,\"Uint32Array\":typeof Uint32Array==='undefined'?undefined:Uint32Array,\"Uint8Array\":typeof Uint8Array==='undefined'?undefined:Uint8Array,\"decodeURIComponent\":typeof decodeURIComponent==='undefined'?undefined:decodeURIComponent,\"encodeURIComponent\":typeof encodeURIComponent==='undefined'?undefined:encodeURIComponent,\"parseInt\":typeof parseInt==='undefined'?undefined:parseInt,\"undefined\":typeof undefined==='undefined'?undefined:undefined,__ambientReaders:{\"AbortSignal\":{read:()=>AbortSignal,type:()=>typeof AbortSignal},\"URL\":{read:()=>URL,type:()=>typeof URL},\"clearTimeout\":{read:()=>clearTimeout,type:()=>typeof clearTimeout},\"fetch\":{read:()=>fetch,type:()=>typeof fetch},\"setTimeout\":{read:()=>setTimeout,type:()=>typeof setTimeout}}},\"r03_5a0b592263622139d473146b8fe2822e0eea1decf007ce22eb1e96c9cfd80db8\");\n\n;\n\nif(CFG.enabled!==true||CFG.global_budget_configured!==true||CFG.global_model_budget.handoff_accredited!==true||String($workflow.id)!==CFG.workflow_id||[CFG.workflow_id,CFG.table_id,CFG.qr_tenant_id,CFG.private_binary_workflow_id].some(v=>typeof v!=='string'||v.includes('__UNBOUND')))return [{json:{source:$input.first()?.json?.source||'schedule',native_enabled:false,status:'DISABLED_UNBOUND_NO_EFFECTS',public_reply:{actions:[],queued:false,accepted:false,turn:{outcome:'none'}},http_status:503,provider_calls:0,pos_writes:0}}];\n;\n\n\n;\n\n\n/* Prototype only. No I/O is executed here. Persist each returned checkpoint in a\n * trusted, exclusive store before dispatching a native n8n HTTP/model/sink node. */\n\n;\n\n\n// Pure protocol. Storage, entropy and native HTTP nodes are supplied by the\n// trusted workflow, never by inbound WhatsApp/model data. No IO or Node globals.\n// A hash binds bytes; it does not authenticate a journal or its privileged editor.\nconst kinds = ['pos_selection_validate','pos_turn_context_read','pos_context_read','pos_catalog_read','pos_yape_qr_read','pos_menu_card_read','pos_order_customer_read','pos_conversation_claim','pos_conversation_enqueue','pos_media_stage','pos_media_reserve','pos_media_complete','pos_work_claim','pos_outbox_claim','pos_conversation_commit','pos_conversation_renew','pos_conversation_freshness','pos_conversation_defer','pos_conversation_next','pos_media_read','pos_usage_reserve','pos_usage_settle','pos_outbox_freshness','pos_outbox_ack','pos_preview','pos_draft','pos_fulfillment_preview','pos_fulfillment_change','pos_payment_method_preview','pos_payment_method_change','pos_delivery_payment_change','pos_original_items_preview','pos_original_items_change','pos_original_cancel','pos_evidence','pos_evidence_reconcile','pos_cash_confirm','pos_addition','pos_attention','model_call','builderbot_send'];\n;\n\nconst forbidden = new Set(['__proto__', 'prototype', 'constructor', 'toJSON']);\n;\n\nconst digestPattern = /^[a-f0-9]{64}$/;\n;\n\nconst idPattern = /^[A-Za-z0-9._:-]{1,240}$/;\n;\n\nconst noncePattern = /^(?:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/;\n;\n\nconst fail = code => { throw new Error(code); };\n;\n\n\n// Inspect own data descriptors BEFORE reading values: no getter, constructor,\n// toJSON or prototype reflection. Input is JSON data, not arbitrary Proxy code.\nfunction canonicalOwnData(value) {\n  const active = new Set();\n  const visit = (item, depth) => {\n    if (depth > 32) fail('json_depth');\n    if (item === null || typeof item === 'boolean' || typeof item === 'string') return item;\n    if (typeof item === 'number') {\n      if (!Number.isFinite(item)) fail('json_number');\n      return item;\n    }\n    if (typeof item !== 'object' || active.has(item)) fail('json_value');\n    if (Object.getOwnPropertySymbols(item).length) fail('json_symbols');\n    active.add(item);\n    const descriptors = Object.getOwnPropertyDescriptors(item);\n    const names = Object.keys(descriptors);\n    for (const name of names) {\n      const descriptor = descriptors[name];\n      if (forbidden.has(name) || !Object.hasOwn(descriptor, 'value')) fail('json_own_data_only');\n      if (!descriptor.enumerable && !(Array.isArray(item) && name === 'length')) fail('json_hidden_property');\n    }\n    let result;\n    if (Array.isArray(item)) {\n      const length = descriptors.length?.value;\n      if (!Number.isSafeInteger(length) || length < 0 || length > 10000 || names.length !== length + 1) fail('json_array');\n      result = [];\n      for (let index = 0; index < length; index++) {\n        if (!Object.hasOwn(descriptors, String(index))) fail('json_array');\n        result.push(visit(descriptors[String(index)].value, depth + 1));\n      }\n    } else {\n      result = Object.fromEntries(names.sort().map(name => [name, visit(descriptors[name].value, depth + 1)]));\n    }\n    active.delete(item);\n    return result;\n  };\n  const data = visit(value, 0);\n  return { data, canonical: JSON.stringify(data) };\n}\n;\n\n\nconst copy = value => canonicalOwnData(value).data;\n;\n\nconst equal = (left, right) => canonicalOwnData(left).canonical === canonicalOwnData(right).canonical;\n;\n\nconst exact = (value, fields, code) => {\n  if (!value || Array.isArray(value) || Object.keys(value).sort().join('|') !== [...fields].sort().join('|')) fail(code);\n};\n;\n\nconst validId = value => typeof value === 'string' && idPattern.test(value);\n;\n\nconst validHash = value => typeof value === 'string' && digestPattern.test(value);\n;\n\nconst validHead = value => Number.isSafeInteger(value) && value >= 0 && value < Number.MAX_SAFE_INTEGER;\n;\n\n\nfunction bindingOf(raw) {\n  const value = copy(raw);\n  exact(value, ['business_id', 'branch_id', 'conversation_id', 'message_id'], 'binding_shape');\n  if (![value.business_id, value.branch_id].every(id => Number.isSafeInteger(id) && id > 0)\n    || !validId(value.conversation_id) || !validId(value.message_id)) fail('binding_value');\n  return value;\n}\n;\n\n\nfunction operationOf(raw, trustedBinding) {\n  const value = copy(raw);\n  exact(value, ['version', 'kind', 'binding', 'request_ref', 'request_hash'], 'operation_shape');\n  if (value.version !== 1 || !kinds.includes(value.kind) || !validId(value.request_ref)\n    || !validHash(value.request_hash) || !equal(bindingOf(value.binding), bindingOf(trustedBinding))) fail('operation_binding');\n  // No URL, method, headers, credential ID, bearer, executable code or arbitrary\n  // body is accepted here. A fixed native node resolves request_ref, verifies\n  // request_hash and applies its static route/credential and per-kind body schema.\n  return value;\n}\n;\n\n\nfunction dispatchRecord(raw, binding) {\n  const row = copy(raw);\n  exact(row, ['version', 'id', 'head', 'status', 'operation', 'dispatch', 'result'], 'record_shape');\n  if (row.version !== 1 || !validId(row.id) || !validHead(row.head)\n    || !['prepared', 'dispatch_started', 'succeeded', 'failed', 'unknown'].includes(row.status)) fail('record_value');\n  operationOf(row.operation, binding);\n  if (row.dispatch !== null) {\n    exact(row.dispatch, ['nonce', 'owner_execution_id'], 'dispatch_shape');\n    if (!noncePattern.test(row.dispatch.nonce) || !validId(row.dispatch.owner_execution_id)) fail('dispatch_value');\n  }\n  if (row.status === 'prepared' && (row.dispatch !== null || row.result !== null)) fail('prepared_record');\n  if (row.status !== 'prepared' && row.dispatch === null) fail('started_record');\n  return row;\n}\n;\n\n\nfunction casReply(raw) {\n  const reply = copy(raw);\n  // rows returned by non-PostgreSQL DataTable are deliberately not authority.\n  exact(reply, ['acknowledged', 'matched_count'], 'cas_reply_shape');\n  if (reply.acknowledged !== true || !(reply.matched_count === null\n    || Number.isSafeInteger(reply.matched_count) && [0, 1].includes(reply.matched_count))) fail('cas_reply_unknown');\n  return reply;\n}\n;\n\n\nconst stopped = reason => ({ granted: false, continuation_allowed: false, reason });\n;\n\nconst expectedStarted = (row, attempt) => row.status === 'dispatch_started' && row.result === null\n  && row.id === attempt.id && row.head === attempt.started_head\n  && equal(row.operation, attempt.operation) && equal(row.dispatch, attempt.dispatch);\n;\n\n\n// Store interface: read(id), compareAndUpdate({where, set}). The latter MUST be\n// one atomic UPDATE with every where predicate ANDed, never read+write/upsert.\n// Existing unique row IDs are provisioned elsewhere. No logical-key insert lock.\n// createNonce is trusted internal entropy (UUIDv4 or 32 random bytes as hex),\n// invoked once per attempt, not a replayed clock/UUID or a user-supplied nonce.\nfunction planDispatchAttempt({ record, id, expectedHead, binding, ownerExecutionId, createNonce }) {\n  binding = bindingOf(binding);\n  if (!validId(id) || !validHead(expectedHead) || !validId(ownerExecutionId)\n    || typeof createNonce !== 'function') fail('attempt_configuration');\n  const nonce = createNonce();\n  if (typeof nonce !== 'string' || !noncePattern.test(nonce)) fail('attempt_entropy');\n  let row;\n  try { row = dispatchRecord(record, binding); }\n  catch { return stopped('record_unavailable_or_invalid'); }\n  if (row.id !== id || row.head !== expectedHead) return stopped('head_changed');\n  if (row.status !== 'prepared' || row.dispatch !== null || row.result !== null) return stopped('already_started_or_finished');\n  const attempt = { id, started_head: expectedHead + 1, operation: row.operation,\n    dispatch: { nonce, owner_execution_id: ownerExecutionId } };\n  return { attempt: copy(attempt), cas: {\n      where: { id, head: expectedHead, status: 'prepared' },\n      set: { head: attempt.started_head, status: 'dispatch_started', dispatch: attempt.dispatch },\n  } };\n}\n;\n\n\nfunction verifyDispatchReadback({ attempt: rawAttempt, binding, casResult, record }) {\n  const attempt = copy(rawAttempt);\n  binding = bindingOf(binding);\n  exact(attempt, ['id', 'started_head', 'operation', 'dispatch'], 'attempt_shape');\n  operationOf(attempt.operation, binding);\n  if (!validId(attempt.id) || !validHead(attempt.started_head)) fail('attempt_value');\n  exact(attempt.dispatch, ['nonce', 'owner_execution_id'], 'dispatch_shape');\n  if (!noncePattern.test(attempt.dispatch.nonce) || !validId(attempt.dispatch.owner_execution_id)) fail('dispatch_value');\n  let reply;\n  try { reply = casReply(casResult); }\n  catch { return stopped('claim_unknown_no_dispatch'); }\n  // An explicit zero can never be overridden by a matching readback.\n  if (reply.matched_count === 0) return stopped('claim_zero');\n  let current;\n  try { current = dispatchRecord(record, binding); }\n  catch { return stopped('claim_readback_unknown_no_dispatch'); }\n  if (!expectedStarted(current, attempt)) return stopped('claim_readback_mismatch');\n  return { granted: true, continuation_allowed: false, attempt: copy(attempt) };\n}\n;\n\n\nfunction ackRecoveryPlan(raw) {\n  const value = copy(raw);\n  exact(value, ['version', 'id', 'status', 'delivery_id', 'binding', 'body_ref', 'body_hash',\n    'idempotency_key', 'transport_result_ref', 'transport_result_hash'], 'ack_shape');\n  if (value.version !== 1 || !['ack_pending', 'ack_started', 'ack_confirmed'].includes(value.status)\n    || !validId(value.id) || !validId(value.delivery_id) || !validId(value.body_ref)\n    || !validHash(value.body_hash) || !validId(value.idempotency_key)\n    || !validId(value.transport_result_ref) || !validHash(value.transport_result_hash)) fail('ack_value');\n  bindingOf(value.binding);\n  if (value.status === 'ack_confirmed') return { action: 'done' };\n  return { action: 'retry_ack_only', operation: { version: 1, kind: 'pos_outbox_ack',\n    binding: value.binding, delivery_id: value.delivery_id, request_ref: value.body_ref,\n    request_hash: value.body_hash, idempotency_key: value.idempotency_key } };\n}\n;\n\n\nconst protocolContract = {\n  version: 1, operation_kinds: [...kinds], ack_kind: 'pos_outbox_ack',\n  authority: 'trusted_workflow_and_datastore_not_hash_authentication',\n  storage: 'existing_unique_id_atomic_update_with_original_predicates',\n  unknown: 'stop_no_redispatch', recovery: 'durable_exact_ack_only',\n};\n;\n\n\n// Original OpenAI codec4.10; source SHA256 d0d797ea633373fdb0596d76465707c0561121ca57cb50ff262cf9ff523d210e\n\n;\n\n\n// Pure plans only. policy and authority are bound by the reviewed workflow;\n// neither can come from WhatsApp input, a model output or an imported checkpoint.\n// No secret, HTTP client, host lookup, DB access, timer or persistent worker here.\n\n;\n\n\n\n;\n\n\n\n;\n\n\n// Computation only. Hints are evidence for the trusted journal coordinator,\n// never authorization to dispatch or substitutes for live server freshness.\n\n;\n\n\n// This resolver accepts only a checkpoint already verified from the private\n// DataTable by the coordinator. Payloads and model output cannot call it as an API.\n\n;\n\n\n\n// Pure Code -> DataTable plans. Table/configuration/clock/classifier/authorizer\n// come from the trusted fixed workflow, NEVER an incoming item or model output.\nfunction createLiveJournalCoordinator({ sha256, tableId, workflowId,\n  codeManifestHash, scope: rawScope, readRealClock, classifyEffect, validateLiveGate,\n  maxElapsedMs = 300000, maxGateAgeMs = 5000, maxAckRetries = 3, replayLimits = {}, validatePrivateBinaryReference = null }) {\n  const fail = code => { const error = new Error(code); error.code = code; throw error; };\n  const own = value => canonicalOwnData(value).data;\n  const text = value => canonicalOwnData(value).canonical;\n  const equal = (a, b) => text(a) === text(b);\n  const hash = value => { const result = sha256(typeof value === 'string' ? value : text(value)); if (!/^[a-f0-9]{64}$/.test(result)) fail('HASH_ADAPTER'); return result; };\n  const id = value => typeof value === 'string' && /^[A-Za-z0-9._:-]{1,160}$/.test(value);\n  const integer = value => Number.isSafeInteger(value) && value >= 0;\n  const exact = (value, keys) => { if (!value || Array.isArray(value) || Object.keys(value).sort().join('|') !== [...keys].sort().join('|')) fail('SHAPE'); };\n  const scope = own(rawScope);\n  exact(scope, ['business_id', 'branch_id']);\n  if (!id(tableId) || !id(workflowId) || !/^[a-f0-9]{64}$/.test(codeManifestHash)\n    || ![scope.business_id, scope.branch_id].every(value => integer(value) && value > 0)\n    || !integer(maxElapsedMs) || maxElapsedMs < 1 || maxElapsedMs > 300000\n    || !integer(maxGateAgeMs) || maxGateAgeMs < 1 || maxGateAgeMs > 5000\n    || !integer(maxAckRetries) || maxAckRetries < 1 || maxAckRetries > 10\n    || [sha256, readRealClock, classifyEffect, validateLiveGate].some(value => typeof value !== 'function')) fail('FIXED_CONFIGURATION');\n  const engine = createEffectReplayEngine({ sha256 });\n  const bodyKeys = ['version', 'workflow_id', 'run_id', 'code_manifest_sha256', 'scope',\n    'admitted_at_ms', 'deadline_at_ms', 'checkpoint', 'terminal', 'ack_retries'];\n  const fields = ['run_id', 'workflow_id', 'code_manifest_sha256', 'business_id', 'branch_id',\n    'head', 'state', 'owner_execution', 'nonce', 'body_json', 'body_hash'];\n  const states = ['admitted', 'effect_prepared', 'dispatch_started', 'result_ready', 'complete', 'failed', 'interrupted', 'unknown', 'mailbox_admission_consumed'];\n  const now = () => { const value = readRealClock(); if (!integer(value)) fail('REAL_CLOCK'); return value; };\n  const stopped = reason => ({ status: 'stopped', granted: false, reason });\n  function rowId(value) {\n    if (integer(value) && value > 0) return value;\n    if (id(value)) return value;\n    fail('ROW_ID');\n  }\n  function bodyOf(raw) {\n    const body = own(raw); exact(body, bodyKeys);\n    const inspectStorage = value => {\n      if (!value || typeof value !== 'object') return;\n      if (Object.keys(value).some(key => ['Authorization', 'authorization', 'Cookie', 'cookie', 'api_key', 'apiKey'].includes(key))) fail('CREDENTIAL_IN_JOURNAL');\n      if (Object.hasOwn(value, '__native_binary_ref')) {\n        if (typeof validatePrivateBinaryReference !== 'function') fail('BINARY_REFERENCE_REQUIRED');\n        validatePrivateBinaryReference(value);\n        return;\n      }\n      if ((value.__native_type === 'form' && Array.isArray(value.fields) && value.fields.some(field => typeof field.data === 'string'))\n        || (typeof value.data === 'string' && ['image/png', 'image/jpeg', 'image/webp'].includes(value.mime_type || value.mimeType))) fail('BINARY_REFERENCE_REQUIRED');\n      for (const child of Object.values(value)) inspectStorage(child);\n    };\n    inspectStorage(body);\n    if (body.version !== 1 || body.workflow_id !== workflowId || body.code_manifest_sha256 !== codeManifestHash\n      || !id(body.run_id) || !equal(body.scope, scope) || !integer(body.admitted_at_ms)\n      || !integer(body.deadline_at_ms) || body.deadline_at_ms - body.admitted_at_ms !== maxElapsedMs\n      || !integer(body.ack_retries) || body.ack_retries > maxAckRetries) fail('RUN_BINDING');\n    const binding = body.checkpoint?.binding;\n    if (!binding || binding.run_id !== body.run_id || binding.bundle_sha256 !== codeManifestHash\n      || binding.created_at_ms !== body.admitted_at_ms || binding.limits?.maxElapsedMs !== maxElapsedMs) fail('CHECKPOINT_BINDING');\n    // The engine validates the entire chain when runStep/claim/settle is used.\n    // Here verify its top-level seal too, including admission/recovery reads.\n    const sealed = own(body.checkpoint), checksum = sealed.checkpoint_hash; delete sealed.checkpoint_hash;\n    if (hash(sealed) !== checksum) fail('CHECKPOINT_HASH');\n    return body;\n  }\n  function readRow(raw, runId, expectedHead) {\n    const row = own(raw), projection = { id: rowId(row.id) };\n    for (const name of fields) {\n      if (!Object.hasOwn(row, name)) fail('ROW_COLUMNS');\n      projection[name] = row[name];\n    }\n    if (!integer(projection.head) || projection.head >= Number.MAX_SAFE_INTEGER - 2 || !states.includes(projection.state)\n      || typeof projection.body_json !== 'string' || hash(projection.body_json) !== projection.body_hash\n      || typeof projection.owner_execution !== 'string' || typeof projection.nonce !== 'string') fail('ROW_STATE');\n    let body; try { body = bodyOf(JSON.parse(projection.body_json)); } catch (error) { fail(error.code || 'BODY_JSON'); }\n    if (text(body) !== projection.body_json || body.run_id !== runId) fail('ROW_RUN');\n    if (projection.run_id !== body.run_id || projection.workflow_id !== workflowId\n      || projection.code_manifest_sha256 !== codeManifestHash || projection.business_id !== scope.business_id\n      || projection.branch_id !== scope.branch_id) fail('ROW_INDEX_BINDING');\n    if (expectedHead !== undefined && projection.head !== expectedHead) fail('HEAD_CHANGED');\n    if (['effect_prepared', 'dispatch_started', 'unknown', 'mailbox_admission_consumed'].includes(projection.state)) {\n      const pending = body.checkpoint.pending;\n      const expected = projection.state === 'effect_prepared' ? 'prepared' : 'dispatched';\n      if (!pending || pending.dispatch_status !== expected) fail('PENDING_STATE');\n    }\n    return { row: projection, body };\n  }\n  function values(body, state, head, owner = '', nonce = '') {\n    const body_json = text(bodyOf(body));\n    return { run_id: body.run_id, workflow_id: workflowId, code_manifest_sha256: codeManifestHash,\n      ...scope, head, state, owner_execution: owner, nonce, body_json, body_hash: hash(body_json) };\n  }\n  function updatePlan(current, next, purpose, extra = {}) {\n    const conditions = [ ['id', current.id], ['head', current.head], ['state', current.state], ['body_hash', current.body_hash] ]\n      .map(([keyName, keyValue]) => ({ keyName, condition: 'eq', keyValue }));\n    return { status: 'plan', purpose, operation: 'update', table_id: tableId,\n      filters: { conditions, matchType: 'allConditions' }, values: own(next),\n      expected_row: { id: current.id, ...own(next) }, ...extra };\n  }\n  function inTime(body, observed = now()) {\n    if (observed < body.admitted_at_ms || observed >= body.deadline_at_ms) fail('REAL_DEADLINE_EXCEEDED');\n    return observed;\n  }\n  function classified(pending) {\n    const kind = classifyEffect(pending.kind, own(pending.request));\n    if (!protocolContract.operation_kinds.includes(kind)) fail('CLOSED_EFFECT_KIND');\n    return kind;\n  }\n  // This guard binding identifies a coordinator run/effect, NOT POS lease\n  // headers. The real API conversation/sender/lease stay in the private request.\n  const guardBinding = (body, pending) => ({ ...scope, conversation_id: 'run-' + body.run_id, message_id: pending.effect_id });\n  function protocolRow(row, body) {\n    const pending = body.checkpoint.pending;\n    return { version: 1, id: String(row.id), head: row.head,\n      status: row.state === 'effect_prepared' ? 'prepared' : 'dispatch_started',\n      operation: { version: 1, kind: classified(pending), binding: guardBinding(body, pending),\n        request_ref: pending.effect_id, request_hash: pending.request_hash },\n      dispatch: row.state === 'effect_prepared' ? null : { nonce: row.nonce, owner_execution_id: row.owner_execution }, result: null };\n  }\n  function admissionPlan({ runId, input }) {\n    if (!id(runId)) fail('RUN_ID');\n    const admitted = now();\n    const checkpoint = engine.createCheckpoint({ runId, input: own(input), bundleHash: codeManifestHash,\n      createdAtMs: admitted, limits: { ...own(replayLimits), maxElapsedMs } });\n    const body = { version: 1, workflow_id: workflowId, run_id: runId, code_manifest_sha256: codeManifestHash,\n      scope, admitted_at_ms: admitted, deadline_at_ms: admitted + maxElapsedMs,\n      checkpoint, terminal: null, ack_retries: 0 };\n    const next = values(body, 'admitted', 0);\n    return { status: 'plan', purpose: 'admission', operation: 'insert', table_id: tableId,\n      values: next, expected_row: own(next) };\n  }\n  function verifyRow({ plan: rawPlan, rows: rawRows, casResult = null }) {\n    const plan = own(rawPlan), rows = own(rawRows);\n    if (plan.table_id !== tableId || !['insert', 'update'].includes(plan.operation)) fail('PLAN_TABLE');\n    if (plan.operation === 'update') {\n      if (casResult?.acknowledged !== true || casResult.matched_count === 0\n        || !(casResult.matched_count === null || casResult.matched_count === 1)) return stopped('CAS_ZERO_OR_UNKNOWN');\n    }\n    if (!Array.isArray(rows) || rows.length !== 1) return stopped('READBACK_NOT_UNIQUE');\n    const expected = plan.expected_row;\n    const body = bodyOf(JSON.parse(expected.body_json));\n    const checked = readRow(rows[0], body.run_id);\n    const comparable = { ...checked.row }; if (plan.operation === 'insert') delete comparable.id;\n    if (!equal(comparable, expected)) return stopped('READBACK_MISMATCH');\n    return { status: 'verified', record: checked.row, run_id: body.run_id };\n  }\n  function recoverAdmission({ rows: rawRows, runId }) {\n    const rows = own(rawRows);\n    if (!Array.isArray(rows) || rows.length !== 1) return stopped('ADMISSION_UNKNOWN_DO_NOT_INSERT');\n    const checked = readRow(rows[0], runId);\n    return { status: 'recovered_read_only', record: checked.row };\n  }\n  function recoveryLookupPlan({ runId }) {\n    if (!id(runId)) fail('RUN_ID');\n    return { status: 'plan', purpose: 'recover_admission_read_only', operation: 'get', table_id: tableId,\n      filters: { conditions: [ ['run_id', runId], ['workflow_id', workflowId],\n        ['business_id', scope.business_id], ['branch_id', scope.branch_id] ]\n        .map(([keyName, keyValue]) => ({ keyName, condition: 'eq', keyValue })), matchType: 'allConditions' }, limit: 2 };\n  }\n  async function kernelPreparedPlan({ record, expectedHead, runId, handler, observeUuid }) {\n    const { row, body } = readRow(record, runId, expectedHead);\n    if (['dispatch_started', 'unknown', 'mailbox_admission_consumed'].includes(row.state)) return stopped('DISPATCH_OUTCOME_UNKNOWN');\n    if (['complete', 'failed', 'interrupted'].includes(row.state)) return stopped('RUN_TERMINAL');\n    inTime(body);\n    const step = await engine.runStep({ checkpoint: body.checkpoint, expectedCheckpointHash: body.checkpoint.checkpoint_hash,\n      handler, observeClock: now, observeUuid });\n    inTime(body); // Live elapsed time is checked even if replay observed no clock.\n    if (step.status === 'invalid') return stopped(step.error.code);\n    if (step.status === 'awaiting_result') return stopped('DISPATCH_OUTCOME_UNKNOWN');\n    let state;\n    if (step.status === 'effect') { classified(step.effect); state = 'effect_prepared'; }\n    else if (['complete', 'failed', 'interrupted'].includes(step.status)) state = step.status;\n    else return stopped('KERNEL_STATUS');\n    const nextBody = { ...body, checkpoint: step.checkpoint,\n      terminal: state === 'complete' ? { status: state, value: own(step.value) }\n        : state === 'failed' ? { status: state, error: own(step.error) }\n          : state === 'interrupted' ? { status: state, reason: step.reason } : null };\n    return updatePlan(row, values(nextBody, state, row.head + 1), 'kernel_checkpoint');\n  }\n  function dispatchPlan({ record, expectedHead, runId, ownerExecutionId, createNonce, freshGate }) {\n    const { row, body } = readRow(record, runId, expectedHead), at = inTime(body);\n    if (row.state !== 'effect_prepared') return stopped('NOT_PREPARED_NO_REDISPATCH');\n    const pending = body.checkpoint.pending, kind = classified(pending);\n    const gate = own(freshGate);\n    if (!integer(gate.observed_at_ms) || gate.observed_at_ms > at || at - gate.observed_at_ms > maxGateAgeMs\n      || gate.effect_id !== pending.effect_id || gate.request_hash !== pending.request_hash\n      || validateLiveGate({ kind, effect: own(pending), scope: own(scope), runId, realNowMs: at, gate }) !== true) fail('LIVE_GATE_REQUIRED');\n    const binding = guardBinding(body, pending);\n    const guard = planDispatchAttempt({ record: protocolRow(row, body), id: String(row.id), expectedHead: row.head,\n      binding, ownerExecutionId, createNonce });\n    if (!guard.attempt) return stopped(guard.reason);\n    const checkpoint = engine.claimEffect(body.checkpoint, { effectId: pending.effect_id,\n      expectedCheckpointHash: body.checkpoint.checkpoint_hash });\n    const nextBody = { ...body, checkpoint };\n    return updatePlan(row, values(nextBody, 'dispatch_started', row.head + 1,\n      guard.attempt.dispatch.owner_execution_id, guard.attempt.dispatch.nonce), 'dispatch_intent', { guard_attempt: guard.attempt });\n  }\n  function verifyDispatch({ plan, rows, casResult }) {\n    const readback = verifyRow({ plan, rows, casResult });\n    if (readback.status !== 'verified') return readback;\n    const { row, body } = readRow(readback.record, readback.run_id);\n    inTime(body);\n    const checked = verifyDispatchReadback({ attempt: plan.guard_attempt,\n      binding: guardBinding(body, body.checkpoint.pending), casResult, record: protocolRow(row, body) });\n    if (!checked.granted) return stopped(checked.reason);\n    return { status: 'dispatch_granted', granted: true, effect: own(body.checkpoint.pending), record: row };\n  }\n  function resultPlan({ record, expectedHead, runId, outcome }) {\n    const { row, body } = readRow(record, runId, expectedHead);\n    if (row.state !== 'dispatch_started') return stopped('RESULT_NOT_AWAITED');\n    // Late real outcomes are saved; expiry still forbids kernel continuation.\n    const checkpoint = engine.settleEffect(body.checkpoint, { effectId: body.checkpoint.pending.effect_id,\n      expectedCheckpointHash: body.checkpoint.checkpoint_hash, outcome: own(outcome) });\n    return updatePlan(row, values({ ...body, checkpoint }, 'result_ready', row.head + 1), 'durable_result');\n  }\n  function unknownPlan({ record, expectedHead, runId }) {\n    const { row, body } = readRow(record, runId, expectedHead);\n    if (row.state !== 'dispatch_started') return stopped('UNKNOWN_NOT_AWAITED');\n    return updatePlan(row, values(body, 'unknown', row.head + 1, row.owner_execution, row.nonce), 'unknown_stop');\n  }\n  function ackRecoveryPlan({ record, expectedHead, runId, ownerExecutionId, createNonce }) {\n    const { row, body } = readRow(record, runId, expectedHead);\n    if (!['dispatch_started', 'unknown'].includes(row.state) || classified(body.checkpoint.pending) !== 'pos_outbox_ack') return stopped('ACK_ONLY_RECOVERY');\n    const pending = body.checkpoint.pending, request = pending.request;\n    const ack = request.options;\n    const delivery = /^\\/integrations\\/conversations\\/outbox\\/([A-Za-z0-9._:-]+)\\/ack$/.exec(request.path)?.[1];\n    const sent = body.checkpoint.journal.filter(entry => entry.type === 'effect' && entry.kind === 'sink'\n      && (entry.request.envelope || entry.request).delivery_id === delivery && entry.outcome.ok === true\n      && entry.outcome.value?.transport_id === ack?.body?.receipt?.transport_id);\n    if (!delivery || request.method !== 'PATCH' || ack?.body?.status !== 'sent'\n      || typeof ack.idempotencyKey !== 'string' || !ack.idempotencyKey || sent.length !== 1\n      || body.ack_retries >= maxAckRetries) return stopped('ACK_RECEIPT_NOT_DURABLE_OR_LIMIT');\n    if (typeof createNonce !== 'function') fail('ACK_ATTEMPT');\n    const nonce = createNonce();\n    if (!id(ownerExecutionId) || !/^(?:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/.test(nonce)) fail('ACK_ATTEMPT');\n    return updatePlan(row, values({ ...body, ack_retries: body.ack_retries + 1 }, 'dispatch_started', row.head + 1,\n      ownerExecutionId, nonce), 'ack_retry_only', { ack_effect: own(pending) });\n  }\n  function verifyAckRecovery({ plan, rows, casResult }) {\n    const result = verifyRow({ plan, rows, casResult });\n    if (result.status !== 'verified' || plan.purpose !== 'ack_retry_only') return stopped('ACK_READBACK');\n    const { body } = readRow(result.record, result.run_id);\n    if (!equal(plan.ack_effect, body.checkpoint.pending) || classified(plan.ack_effect) !== 'pos_outbox_ack') return stopped('ACK_CHANGED');\n    return { status: 'ack_retry_only', effect: own(plan.ack_effect), record: result.record };\n  }\n  return { admissionPlan, verifyRow, recoverAdmission, recoveryLookupPlan, kernelPreparedPlan,\n    dispatchPlan, verifyDispatch, resultPlan, unknownPlan, ackRecoveryPlan, verifyAckRecovery,\n    completePlan: kernelPreparedPlan };\n}\n;\n\n\nconst primitives=nativePrimitives({Buffer});\n;\n\nconst adapter=nativeLiveAdapters({Buffer,sha256:primitives.sha256,modelCodec:nativeOpenAiCodec(),policy:{pos_base_url:CFG.pos_base_url,pos_credential:CFG.pos_credential,model_credential:CFG.model_credential,...CFG.scope,max_fence_age_ms:CFG.max_fence_age_ms}});\n;\n\nconst resolver=createTrustedAuthorityResolver({canonicalJSON:adapter.canonicalJSON,sha256:primitives.sha256,scope:CFG.scope,maxFenceAgeMs:CFG.max_fence_age_ms});\n;\n\nfunction validateBoundary({kind,effect,scope,runId,realNowMs,gate}){\n  if(gate.native_workflow_id!==CFG.workflow_id||gate.native_run_id!==runId||gate.native_kind!==kind||gate.execution_id!==String($execution.id)||gate.effect_id!==effect.effect_id||gate.request_hash!==effect.request_hash)return false;\n  if(kind==='pos_usage_reserve'){need(currentQuotaContext?.effect.effect_id===effect.effect_id,'native_global_private_preflight_context');quotaPreflight(currentQuotaContext);}\n  if(!resolver.requiresLiveFence(kind))return gate.native_boundary==='native_control';\n  if(gate.native_boundary!=='native_api_freshness')return false;\n  planNative(effect,{...gate.authority,now_ms:realNowMs});return true;\n}\n;\n\nconst coordinator=createLiveJournalCoordinator({sha256:primitives.sha256,tableId:CFG.table_id,workflowId:CFG.workflow_id,codeManifestHash:CFG.code_manifest_sha256,scope:CFG.scope,readRealClock:()=>Date.now(),classifyEffect:classifyNativeEffect,validateLiveGate:validateBoundary,validatePrivateBinaryReference:validateJournalBinaryReference,maxElapsedMs:CFG.max_elapsed_ms,maxGateAgeMs:CFG.max_fence_age_ms});\n;\n\nconst errorEngine=createEffectReplayEngine({sha256:primitives.sha256});\n;\n\nconst emit=json=>[{json,pairedItem:{item:0}}];\n;\n\nconst need=(condition,code)=>{if(!condition)throw Error(code);};\n;\n\nconst planNeed=plan=>{need(plan?.status==='plan','native_plan_stopped_'+(plan?.reason||'invalid'));return plan;};\n;\n\nconst checked=(result)=>{need(result?.status==='verified','native_readback_stopped_'+(result?.reason||'invalid'));return result;};\n;\n\nconst bodyOf=record=>JSON.parse(record.body_json);\n;\n\n// Pure adapter for the direct Baileys delivery HTTP contract (C447).\n// No HTTP, credential values, timers, provider, filesystem or Node imports.\n\n;\n\n\n\nconst sinkAdapter=CFG.sink_configured?createNativeSinkAdapter({Buffer,sha256:primitives.sha256,canonicalJSON:adapter.canonicalJSON,policy:{sink_base_url:CFG.sink_base_url,sink_credential:CFG.sink_credential,tenant:CFG.qr_tenant_id,...CFG.scope,max_fence_age_ms:CFG.max_fence_age_ms}}):null;\n;\n\n// A pure lens around the replay handler. The native workflow must create and\n// read durable n8n binary references with its supported binary-data helpers.\n// No file path, URL download, secret or image bytes are stored in journal JSON.\n// The only backend observed in the native VPS proof is filesystem-v2. This\n// checks its descriptor syntax; an ID/hash is not authentication or authority.\n\n;\n\n\n\n;\n\n\n\n// Local computation and injected native helpers only. A plan/checksum is NOT\n// authority. Callers supply verified private journal context, retain the sealed\n// projected request hash, and keep POS freshness, reservations and quota gates.\n// Hydrated values are transient boundary values, never journal JSON.\n\n;\n\n\n// Pure, import-free adapter for inline n8n Code. createLens is a configured,\n// zero-argument factory; mediaBoundary validates the entire private checkpoint.\n\n;\n\n\nconst mediaBoundary=CFG.private_media_configured?createNativeMediaBoundary({Buffer,sha256:primitives.sha256,canonicalJSON:adapter.canonicalJSON,scope:CFG.scope,privateChildWorkflowId:CFG.private_binary_workflow_id}):null;\n;\n\nconst mediaReplay=mediaBoundary?createNativeMediaReplay({Buffer,createLens:()=>createPrivateBinaryLens({Buffer,sha256:primitives.sha256}),mediaBoundary}):null;\n;\n\nconst mediaDigest=value=>primitives.sha256(adapter.canonicalJSON(value));\n;\n\nfunction validateJournalBinaryReference(reference){need(mediaBoundary,'native_journal_private_storage_unbound');const plan=mediaBoundary.planHydration({projected:reference,binding:{scope:CFG.scope,run_id:'journal-private-storage'},boundary:'replay',sealedProjectedHash:mediaDigest(reference)});need(plan.references.length===1,'native_journal_private_reference');}\n;\n\nasync function hydrateNativeMedia(args){if(Array.isArray(args.plan?.references)&&args.plan.references.length===0){const evidence=mediaBoundary.equivalenceEvidence({plan:args.plan,projected:args.projected,hydrated:args.projected});return {value:args.projected,evidence,journal_safe:false};}return mediaBoundary.hydrate(args);}\n;\n\nconst mediaBinding=(c,effect=null)=>({scope:CFG.scope,run_id:c.run_id||String($execution.id)+':entry',...(effect?{effect_id:effect.effect_id,request_hash:effect.request_hash}:{})});\n;\n\nfunction checkpointMediaPlan(c){const checkpoint=bodyOf(c.record).checkpoint;return mediaBoundary.planHydration({projected:checkpoint,binding:mediaBinding(c),boundary:'replay',sealedProjectedHash:mediaDigest(checkpoint)});}\n;\n\nlet currentMaterialization=null;\n;\n\n// Pure plans for ONE preprovisioned global row. No bootstrap, store, HTTP,\n// credential, provider, timer or authority issuer lives here. Configuration,\n// rows, CAS receipts and outcomes must come from fixed private workflow nodes.\n// A checksum is integrity evidence, never authentication. Unit fixtures do not\n// accredit the handoff, the DataTable's atomicity, concurrent VPS operation or\n// permission to call a provider. The native model gate remains closed.\nfunction createNativeGlobalModelBudget({sha256,canonicalJSON,readRealClock,\n  tableId,rowId,epochId,handoffSha256,anchor:rawAnchor,authorizedBlocks:rawBlocks,\n  config_handoff_accredited=false,operational_policy:rawOperationalPolicy=null,operating_block_history:rawOperatingHistory=[],post_cap_authorization:rawPostCapAuthorization=null}={}) {\n  const fail=code=>{throw Object.assign(Error(code),{code});};\n  const own=value=>JSON.parse(canonicalJSON(value)),same=(a,b)=>canonicalJSON(a)===canonicalJSON(b);\n  const hash=value=>{const h=sha256(typeof value==='string'?value:canonicalJSON(value));if(!/^[a-f0-9]{64}$/.test(h))fail('BUDGET_HASH');return h;};\n  const id=value=>typeof value==='string'&&/^[A-Za-z0-9._:-]{1,160}$/.test(value);\n  const digest=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);\n  const integer=value=>Number.isSafeInteger(value)&&value>=0;\n  const nonce=value=>typeof value==='string'&&/^(?:[a-f0-9]{64}|[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12})$/.test(value);\n  const exact=(value,keys,code)=>{if(!value||Array.isArray(value)||Object.keys(value).sort().join('|')!==[...keys].sort().join('|'))fail(code);};\n  const now=()=>{const at=readRealClock();if(!integer(at))fail('BUDGET_REAL_CLOCK');return at;};\n  const postCapAuthorization=rawPostCapAuthorization===null?null:own(rawPostCapAuthorization);\n  if(postCapAuthorization&&(hash(postCapAuthorization)!=='660aa7e13e3199e2d896721fb1d348d02a8e287a5f810c706723fb89c11c5051'||postCapAuthorization.schema_version!==1||postCapAuthorization.previous_cap_posts!==4400\n    ||postCapAuthorization.cap_posts!==5500||postCapAuthorization.cap_tokens!==88000000||postCapAuthorization.max_turn_calls!==3\n    ||postCapAuthorization.ledger_table_id!==tableId||postCapAuthorization.ledger_row_id!==rowId||postCapAuthorization.ledger_epoch!==epochId\n    ||postCapAuthorization.handoff_sha256!==handoffSha256||postCapAuthorization.anchor_sha256!==hash(rawAnchor)))fail('BUDGET_POST_CAP_AUTHORIZATION');\n  const capPosts=postCapAuthorization?5500:4400,capTokens=88000000,budgetId='GLOBAL_4400_POST_88000000_TOKENS';\n  const anchorKeys=['posts','tokens','historical_unknown_posts','historical_unknown_tokens','root_closure_sha256','ledger_sha256','source_budget_sha256','historical_unknown_inventory_sha256'];\n  if([sha256,canonicalJSON,readRealClock].some(x=>typeof x!=='function')||!id(tableId)\n    ||!(integer(rowId)&&rowId>0||id(rowId))||!id(epochId)||!digest(handoffSha256)\n    ||typeof config_handoff_accredited!=='boolean')fail('BUDGET_FIXED_CONFIGURATION');\n  const operationalPolicy=rawOperationalPolicy===null?null:own(rawOperationalPolicy);\n  if(operationalPolicy){\n    exact(operationalPolicy,['schema_version','mode','business_id','branch_id','baseline_head','baseline_posts','baseline_tokens','baseline_record_sha256','anchor_sha256','ledger_table_id','ledger_row_id','ledger_epoch','issued_at_ms','expires_at_ms','max_block_calls','max_turn_calls'],'BUDGET_OPERATIONAL_POLICY');\n    if(operationalPolicy.schema_version!==1||operationalPolicy.mode!=='production'||operationalPolicy.business_id!==2||operationalPolicy.branch_id!==2\n      ||operationalPolicy.baseline_head!==154||operationalPolicy.baseline_posts!==3913||operationalPolicy.baseline_tokens!==77353264\n      ||!digest(operationalPolicy.baseline_record_sha256)||!digest(operationalPolicy.anchor_sha256)||operationalPolicy.ledger_table_id!==tableId||tableId===['RKLoyD3W','s197C24O'].join('')\n      ||operationalPolicy.ledger_row_id!==rowId||operationalPolicy.ledger_epoch!==epochId||operationalPolicy.max_block_calls!==487||operationalPolicy.max_turn_calls!==3\n      ||!integer(operationalPolicy.issued_at_ms)||operationalPolicy.issued_at_ms<1||!integer(operationalPolicy.expires_at_ms)\n      ||operationalPolicy.expires_at_ms<=operationalPolicy.issued_at_ms||operationalPolicy.expires_at_ms-operationalPolicy.issued_at_ms>30*86400000)fail('BUDGET_OPERATIONAL_POLICY');\n  }\n  const operatingHistory=own(rawOperatingHistory);\n  if(!Array.isArray(operatingHistory)||operatingHistory.length>538||operatingHistory.length&&!operationalPolicy)fail('BUDGET_OPERATING_HISTORY');\n  let previousClosedPosts=operationalPolicy?.baseline_posts??0,previousClosedTokens=operationalPolicy?.baseline_tokens??0;\n  for(const closure of operatingHistory){\n    exact(closure,['block','state','coupons_sha256','coupon_count','totals','closed_record_head','closed_record_body_hash','closed_record_sha256'],'BUDGET_OPERATING_HISTORY');\n    exact(closure.state,['block_id','authorization_sha256','calls','status','stop_code'],'BUDGET_OPERATING_HISTORY');\n    exact(closure.totals,['posts','tokens'],'BUDGET_OPERATING_HISTORY');\n    if(closure.state.status!=='stopped'||!id(closure.state.stop_code)||closure.state.block_id!==closure.block?.block_id||closure.state.authorization_sha256!==closure.block?.authorization_sha256\n      ||!integer(closure.coupon_count)||closure.coupon_count!==closure.state.calls||!digest(closure.coupons_sha256)||!integer(closure.closed_record_head)\n      ||!digest(closure.closed_record_body_hash)||!digest(closure.closed_record_sha256)||!integer(closure.totals.posts)||!integer(closure.totals.tokens)\n      ||closure.totals.posts!==previousClosedPosts+closure.coupon_count||closure.totals.tokens<previousClosedTokens||closure.totals.posts>capPosts||closure.totals.tokens>capTokens)fail('BUDGET_OPERATING_HISTORY');\n    previousClosedPosts=closure.totals.posts;previousClosedTokens=closure.totals.tokens;\n  }\n  if(postCapAuthorization&&(!operationalPolicy||hash(operationalPolicy)!==postCapAuthorization.operational_policy_sha256))fail('BUDGET_POST_CAP_OPERATIONAL_ONLY');\n  const maxBlockCalls=operationalPolicy?(postCapAuthorization?capPosts-operationalPolicy.baseline_posts:operationalPolicy.max_block_calls):12;\n  const anchor=own(rawAnchor);exact(anchor,anchorKeys,'BUDGET_ANCHOR_SHAPE');\n  if(operationalPolicy?(hash(anchor)!==operationalPolicy.anchor_sha256||anchor.posts!==operationalPolicy.baseline_posts||anchor.tokens!==operationalPolicy.baseline_tokens||anchor.ledger_sha256!==operationalPolicy.baseline_record_sha256||!integer(anchor.historical_unknown_posts)||!integer(anchor.historical_unknown_tokens)||anchor.historical_unknown_posts<17||anchor.historical_unknown_tokens<1114332):\n    (anchor.posts!==3861||anchor.tokens!==76449786||anchor.historical_unknown_posts!==17||anchor.historical_unknown_tokens!==1114332\n    ||anchor.root_closure_sha256!=='e72dc6ad0beb35e40d4c29fb0dce0e0e36e174ac43c522df0149a89b03bac86c'\n    ||anchor.ledger_sha256!=='1cd0a4d0905f94323bde52c0a1d108af6546688223146b96dcb0b91506d4f020'\n    ||anchor.source_budget_sha256!=='94650ebc5ab61427bccbd9c35b4b41552faf48d7811775d5a7e167ca6b5d3b4e'\n    ||!digest(anchor.historical_unknown_inventory_sha256)))fail('BUDGET_CURRENT_ANCHOR_REQUIRED');\n  const blocks=own(rawBlocks);\n  if(!Array.isArray(blocks)||blocks.length<1||blocks.length>539)fail('BUDGET_EXPLICIT_BLOCK_AUTHORIZATION');\n  const capMigrationOnly=postCapAuthorization!==null&&hash(blocks)===postCapAuthorization.closed_block_authorizations_sha256;\n  const blockIds=new Set();\n  for(const block of blocks){\n    exact(block,['block_id','authorization_sha256','max_calls','expires_at_ms','workflows'],'BUDGET_BLOCK_SHAPE');\n    if(!id(block.block_id)||blockIds.has(block.block_id)||!digest(block.authorization_sha256)||!integer(block.max_calls)||block.max_calls<1||block.max_calls>maxBlockCalls\n      ||!integer(block.expires_at_ms)||!Array.isArray(block.workflows)||block.workflows.length<1||block.workflows.length>100)fail('BUDGET_EXPLICIT_BLOCK_AUTHORIZATION');\n    if(operationalPolicy){\n      const index=blocks.indexOf(block),prior=operatingHistory[index];\n      if(blocks.length!==operatingHistory.length+1||block.expires_at_ms!==operationalPolicy.expires_at_ms\n        ||(prior?!same(block,prior.block):block.max_calls!==(capMigrationOnly?(operatingHistory.length?4400-operatingHistory.at(-1).totals.posts:487):(operatingHistory.length?capPosts-operatingHistory.at(-1).totals.posts:maxBlockCalls))))fail('BUDGET_OPERATIONAL_BLOCK');\n    }\n    blockIds.add(block.block_id);const workflows=new Set();\n    for(const workflow of block.workflows){exact(workflow,['workflow_id','code_manifest_sha256'],'BUDGET_WORKFLOW_AUTHORIZATION');\n      if(!id(workflow.workflow_id)||!digest(workflow.code_manifest_sha256)||workflows.has(workflow.workflow_id))fail('BUDGET_WORKFLOW_AUTHORIZATION');workflows.add(workflow.workflow_id);}\n  }\n  const configBlock=blockId=>{const found=blocks.find(x=>x.block_id===blockId);if(!found)fail('BUDGET_BLOCK_NOT_AUTHORIZED');return found;};\n  const usageFields=['input_tokens','output_tokens','cache_creation_input_tokens','cache_read_input_tokens'];\n  // Mirrors global-model-budget-repaired usageTotal: input/output mandatory;\n  // cache counters optional and default to zero. Never infer usage from totals.\n  function normalizedUsage(raw){\n    if(!raw||!integer(raw.input_tokens)||!integer(raw.output_tokens)||!usageFields.every(k=>integer(raw[k]??0)))return null;\n    const value=Object.fromEntries(usageFields.map(k=>[k,raw[k]??0]));\n    return integer(usageFields.reduce((s,k)=>s+value[k],0))?value:null;\n  }\n  const usageTotal=value=>usageFields.reduce((s,k)=>s+value[k],0);\n  const bindingKeys=['block_id','workflow_id','code_manifest_sha256','business_id','branch_id','run_id','effect_id','effect_request_hash','request_hash','request_fingerprint','reserved_tokens','pos_reservation_id'];\n  function bindingOf(raw){\n    const b=own(raw);exact(b,bindingKeys,'BUDGET_MODEL_BINDING');const block=configBlock(b.block_id);\n    if(![b.workflow_id,b.run_id,b.pos_reservation_id].every(id)||![b.effect_id,b.effect_request_hash,b.request_hash,b.request_fingerprint,b.code_manifest_sha256].every(digest)\n      ||![b.business_id,b.branch_id].every(x=>integer(x)&&x>0)||!integer(b.reserved_tokens)||b.reserved_tokens<1||b.reserved_tokens>10000000\n      ||!block.workflows.some(x=>x.workflow_id===b.workflow_id&&x.code_manifest_sha256===b.code_manifest_sha256))fail('BUDGET_MODEL_BINDING');\n    if(operationalPolicy&&(b.business_id!==operationalPolicy.business_id||b.branch_id!==operationalPolicy.branch_id))fail('BUDGET_MODEL_BINDING');\n    return b;\n  }\n  // The origin index also rejects moving the SAME effect into another block.\n  // Execution IDs and attempt entropy are deliberately excluded from identity.\n  const originFor=b=>hash({epoch_id:epochId,workflow_id:b.workflow_id,run_id:b.run_id,effect_id:b.effect_id});\n  const couponFor=b=>hash({epoch_id:epochId,binding:b});\n  const rowFields=['id','head','state','owner_execution','nonce','body_json','body_hash'];\n  const bodyKeys=['version','budget_id','epoch_id','handoff_sha256','anchor','cap_posts','cap_tokens','totals','blocks','coupons','active_coupon_id','stop_code'];\n  const couponKeys=['coupon_id','origin_ref','binding','owner_execution','nonce','created_at_ms','state','charged_tokens','usage','provider_ok','error_code','result_hash','settled_at_ms'];\n  const knownStates=['SETTLED_KNOWN','ERROR_SETTLED_KNOWN'];\n  const unknownStates=['USAGE_UNKNOWN_RESERVATION_RETAINED','ERROR_UNKNOWN_RESERVATION_RETAINED'];\n  function readRecord(raw,expectedHead){\n    const source=own(raw),row={};if(Object.hasOwn(source,'error'))fail('BUDGET_ROW_UNAVAILABLE');for(const key of rowFields){if(!Object.hasOwn(source,key))fail('BUDGET_ROW_COLUMNS');row[key]=source[key];}\n    if(row.id!==rowId||!integer(row.head)||row.head>=Number.MAX_SAFE_INTEGER-2||expectedHead!==undefined&&row.head!==expectedHead\n      ||!['active','stopped'].includes(row.state)||typeof row.owner_execution!=='string'||typeof row.nonce!=='string'\n      ||typeof row.body_json!=='string'||hash(row.body_json)!==row.body_hash)fail('BUDGET_ROW_BINDING');\n    if(capMigrationOnly&&row.head===postCapAuthorization.source_record_head&&hash(row)===postCapAuthorization.source_record_sha256){\n      const sourceGuard=createNativeGlobalModelBudget({sha256,canonicalJSON,readRealClock,tableId,rowId,epochId,handoffSha256,anchor:rawAnchor,authorizedBlocks:rawBlocks,\n        config_handoff_accredited,operational_policy:rawOperationalPolicy,operating_block_history:rawOperatingHistory});\n      return sourceGuard.inspectRecord(row);\n    }\n    if(capMigrationOnly&&hash(row)!==postCapAuthorization.migration_record_sha256)fail('BUDGET_CAP_MIGRATION_CLOSED_RECORD');\n    let body;try{body=JSON.parse(row.body_json);}catch{fail('BUDGET_ROW_JSON');}\n    exact(body,bodyKeys,'BUDGET_BODY_SHAPE');\n    if(canonicalJSON(body)!==row.body_json||body.version!==1||body.budget_id!==budgetId||body.epoch_id!==epochId||body.handoff_sha256!==handoffSha256\n      ||!same(body.anchor,anchor)||body.cap_posts!==capPosts||body.cap_tokens!==capTokens||!Array.isArray(body.blocks)||body.blocks.length!==blocks.length\n      ||!Array.isArray(body.coupons)||body.coupons.length>capPosts-anchor.posts)fail('BUDGET_GLOBAL_BINDING');\n    exact(body.totals,['posts','tokens'],'BUDGET_TOTALS');const seenBlocks=new Set(),counts=new Map();\n    for(const state of body.blocks){exact(state,['block_id','authorization_sha256','calls','status','stop_code'],'BUDGET_BLOCK_STATE');const authorized=configBlock(state.block_id);\n      if(seenBlocks.has(state.block_id)||state.authorization_sha256!==authorized.authorization_sha256||!integer(state.calls)||state.calls>authorized.max_calls\n        ||!['open','stopped'].includes(state.status)||state.status==='open'&&state.stop_code!==null||state.status==='stopped'&&(!id(state.stop_code)))fail('BUDGET_BLOCK_STATE');\n      seenBlocks.add(state.block_id);counts.set(state.block_id,0);}\n    const seenCoupons=new Set(),seenOrigins=new Set(),seenNonces=new Set();let charged=anchor.tokens,active=null;\n    for(const coupon of body.coupons){\n      exact(coupon,couponKeys,'BUDGET_COUPON_STATE');const b=bindingOf(coupon.binding);\n      if(coupon.coupon_id!==couponFor(b)||coupon.origin_ref!==originFor(b)||seenCoupons.has(coupon.coupon_id)||seenOrigins.has(coupon.origin_ref)\n        ||!id(coupon.owner_execution)||!nonce(coupon.nonce)||seenNonces.has(coupon.nonce)||!integer(coupon.created_at_ms)||!integer(coupon.charged_tokens))fail('BUDGET_COUPON_STATE');\n      seenCoupons.add(coupon.coupon_id);seenOrigins.add(coupon.origin_ref);seenNonces.add(coupon.nonce);counts.set(b.block_id,counts.get(b.block_id)+1);\n      if(coupon.state==='DISPATCH_INTENT_UNKNOWN'){\n        if(active!==null||coupon.charged_tokens!==b.reserved_tokens||coupon.usage!==null||coupon.provider_ok!==null||coupon.error_code!==null||coupon.result_hash!==null||coupon.settled_at_ms!==null)fail('BUDGET_ACTIVE_COUPON');active=coupon;\n      }else{\n        if(!knownStates.includes(coupon.state)&&!unknownStates.includes(coupon.state)||typeof coupon.provider_ok!=='boolean'||!digest(coupon.result_hash)\n          ||!integer(coupon.settled_at_ms)||coupon.settled_at_ms<coupon.created_at_ms||coupon.provider_ok&&coupon.error_code!==null||!coupon.provider_ok&&!id(coupon.error_code))fail('BUDGET_SETTLEMENT_STATE');\n        if(knownStates.includes(coupon.state)){\n          const usage=normalizedUsage(coupon.usage);if(!usage||!same(usage,coupon.usage)||coupon.charged_tokens!==usageTotal(usage)||coupon.provider_ok!==(coupon.state==='SETTLED_KNOWN'))fail('BUDGET_SETTLEMENT_USAGE');\n        }else if(coupon.usage!==null||coupon.charged_tokens!==b.reserved_tokens||coupon.provider_ok!==(coupon.state==='USAGE_UNKNOWN_RESERVATION_RETAINED'))fail('BUDGET_UNKNOWN_REFUND');\n        if(coupon.state!=='SETTLED_KNOWN'&&body.blocks.find(x=>x.block_id===b.block_id).status!=='stopped')fail('BUDGET_BLOCK_NOT_STOPPED');\n      }\n      charged+=coupon.charged_tokens;if(!integer(charged))fail('BUDGET_COUNTER_OVERFLOW');\n    }\n    if(body.blocks.some(x=>counts.get(x.block_id)!==x.calls)||body.totals.posts!==anchor.posts+body.coupons.length||body.totals.tokens!==charged)fail('BUDGET_TOTALS_RECONCILIATION');\n    if(body.active_coupon_id!==(active?.coupon_id??null)||row.owner_execution!==(active?.owner_execution??'')||row.nonce!==(active?.nonce??''))fail('BUDGET_ACTIVE_OWNER');\n    if(body.stop_code!==null&&body.stop_code!=='GLOBAL_CAP_EXCEEDED'||row.state!==(body.stop_code===null?'active':'stopped')\n      ||charged>capTokens&&body.stop_code!=='GLOBAL_CAP_EXCEEDED')fail('BUDGET_GLOBAL_STOP');\n    for(const closure of operatingHistory){\n      const preserved=body.blocks.find(x=>x.block_id===closure.state.block_id),coupons=body.coupons.filter(x=>x.binding.block_id===closure.state.block_id);\n      if(!same(preserved,closure.state)||coupons.length!==closure.coupon_count||hash(coupons)!==closure.coupons_sha256\n        ||body.totals.posts<closure.totals.posts||body.totals.tokens<closure.totals.tokens)fail('BUDGET_OPERATING_HISTORY_CHANGED');\n    }\n    if(postCapAuthorization&&(body.totals.posts<postCapAuthorization.source_totals.posts||body.totals.tokens<postCapAuthorization.source_totals.tokens\n      ||hash(body.coupons.slice(0,postCapAuthorization.source_coupon_count))!==postCapAuthorization.source_coupons_sha256\n      ||hash(body.blocks.slice(0,postCapAuthorization.closed_block_count))!==postCapAuthorization.closed_block_states_sha256))fail('BUDGET_POST_CAP_PRIOR_HISTORY_CHANGED');\n    return {record:row,body};\n  }\n  function values(body,head){const body_json=canonicalJSON(body),active=body.coupons.find(x=>x.coupon_id===body.active_coupon_id);return {head,state:body.stop_code===null?'active':'stopped',owner_execution:active?.owner_execution??'',nonce:active?.nonce??'',body_json,body_hash:hash(body_json)};}\n  function planUpdate(row,body,purpose,coupon){\n    const next=values(body,row.head+1),plan={status:'plan',purpose,operation:'update',table_id:tableId,row_id:rowId,epoch_id:epochId,expected_head:row.head,previous_body_hash:row.body_hash,\n      filters:{matchType:'allConditions',conditions:[['id',rowId],['head',row.head],['body_hash',row.body_hash]].map(([keyName,keyValue])=>({keyName,condition:'eq',keyValue}))},\n      values:next,expected_row:{id:rowId,...next},coupon_id:coupon.coupon_id,owner_execution_id:coupon.owner_execution,attempt_nonce:coupon.nonce};\n    readRecord(plan.expected_row);return {...plan,plan_hash:hash(plan)};\n  }\n  const denied=reason=>({status:'denied',reason,provider_dispatch_allowed:false});\n  function planDebit({record,expectedHead,binding,ownerExecutionId,createNonce}={}){\n    const {record:row,body}=readRecord(record,expectedHead);if(capMigrationOnly)return denied('CAP_MIGRATION_CLOSED_NO_PERMIT');\n    const b=bindingOf(binding),origin=originFor(b),existing=body.coupons.find(x=>x.origin_ref===origin);\n    if(existing){if(!same(existing.binding,b))fail('BUDGET_COUPON_IDENTITY_CHANGED');return {status:'repeat_no_permit',coupon_id:existing.coupon_id,provider_dispatch_allowed:false};}\n    const at=now(),authorized=configBlock(b.block_id),state=body.blocks.find(x=>x.block_id===b.block_id);\n    if(row.state!=='active')return denied('GLOBAL_STOPPED');if(state.status!=='open')return denied('BLOCK_STOPPED');if(at>=authorized.expires_at_ms)return denied('BLOCK_EXPIRED');\n    if(body.active_coupon_id!==null)return denied('GLOBAL_BUSY');if(state.calls>=authorized.max_calls)return denied('BLOCK_CAP');\n    if(operationalPolicy&&body.coupons.filter(coupon=>coupon.binding.run_id===b.run_id&&coupon.binding.workflow_id===b.workflow_id).length>=operationalPolicy.max_turn_calls)return denied('TURN_CALL_CAP');\n    if(body.totals.posts+1>capPosts||body.totals.tokens+b.reserved_tokens>capTokens)return denied('GLOBAL_CAP');\n    if(!id(ownerExecutionId)||typeof createNonce!=='function')fail('BUDGET_ATTEMPT_OWNER');const attemptNonce=createNonce();\n    if(!nonce(attemptNonce)||body.coupons.some(x=>x.nonce===attemptNonce))fail('BUDGET_ATTEMPT_NONCE');\n    const coupon={coupon_id:couponFor(b),origin_ref:origin,binding:b,owner_execution:ownerExecutionId,nonce:attemptNonce,created_at_ms:at,state:'DISPATCH_INTENT_UNKNOWN',charged_tokens:b.reserved_tokens,\n      usage:null,provider_ok:null,error_code:null,result_hash:null,settled_at_ms:null};\n    body.coupons.push(coupon);body.active_coupon_id=coupon.coupon_id;body.totals.posts++;body.totals.tokens+=b.reserved_tokens;state.calls++;\n    return planUpdate(row,body,'global_model_debit',coupon);\n  }\n  function planSettle({record,expectedHead,couponId,ownerExecutionId,attemptNonce,requestHash,outcome:rawOutcome}={}){\n    const {record:row,body}=readRecord(record,expectedHead);if(capMigrationOnly)return denied('CAP_MIGRATION_CLOSED_NO_PERMIT');\n    const coupon=body.coupons.find(x=>x.coupon_id===couponId);\n    if(!coupon||coupon.owner_execution!==ownerExecutionId||coupon.nonce!==attemptNonce||coupon.binding.request_hash!==requestHash)fail('BUDGET_SETTLEMENT_BINDING');\n    const outcome=own(rawOutcome);exact(outcome,['ok','usage','result_hash','error_code'],'BUDGET_OUTCOME_SHAPE');\n    if(typeof outcome.ok!=='boolean'||!digest(outcome.result_hash)||outcome.ok&&outcome.error_code!==null||!outcome.ok&&!id(outcome.error_code))fail('BUDGET_OUTCOME_SHAPE');\n    const usage=normalizedUsage(outcome.usage),evidence={provider_ok:outcome.ok,usage,result_hash:outcome.result_hash,error_code:outcome.error_code};\n    if(coupon.state!=='DISPATCH_INTENT_UNKNOWN'){\n      if(!same(evidence,{provider_ok:coupon.provider_ok,usage:coupon.usage,result_hash:coupon.result_hash,error_code:coupon.error_code}))fail('BUDGET_SETTLEMENT_CHANGED');\n      return {status:'repeat_no_permit',coupon_id:coupon.coupon_id,provider_dispatch_allowed:false};\n    }\n    if(body.active_coupon_id!==couponId)fail('BUDGET_SETTLEMENT_NOT_ACTIVE');const at=now();if(at<coupon.created_at_ms)fail('BUDGET_REAL_CLOCK');\n    const charge=usage?usageTotal(usage):coupon.binding.reserved_tokens,newTotal=body.totals.tokens-coupon.charged_tokens+charge;\n    if(!integer(newTotal))fail('BUDGET_COUNTER_OVERFLOW');\n    Object.assign(coupon,evidence,{charged_tokens:charge,settled_at_ms:at,state:usage?(outcome.ok?'SETTLED_KNOWN':'ERROR_SETTLED_KNOWN'):(outcome.ok?'USAGE_UNKNOWN_RESERVATION_RETAINED':'ERROR_UNKNOWN_RESERVATION_RETAINED')});\n    body.totals.tokens=newTotal;body.active_coupon_id=null;const state=body.blocks.find(x=>x.block_id===coupon.binding.block_id);\n    if(!usage||!outcome.ok){state.status='stopped';state.stop_code=outcome.ok?'global_model_usage_unknown':outcome.error_code;}\n    if(newTotal>capTokens){body.stop_code='GLOBAL_CAP_EXCEEDED';state.status='stopped';state.stop_code='global_model_actual_exceeded_cap';}\n    return planUpdate(row,body,'global_model_settlement',coupon);\n  }\n  function verify({plan:rawPlan,rows:rawRows,casResult:rawCas}={}){\n    const plan=own(rawPlan),sealed=own(plan);delete sealed.plan_hash;\n    if(plan.plan_hash!==hash(sealed)||plan.status!=='plan'||plan.operation!=='update'||plan.table_id!==tableId||plan.row_id!==rowId||plan.epoch_id!==epochId\n      ||!['global_model_debit','global_model_settlement'].includes(plan.purpose)||!integer(plan.expected_head)||plan.values?.head!==plan.expected_head+1||!digest(plan.previous_body_hash)\n      ||!same(plan.filters,{matchType:'allConditions',conditions:[['id',rowId],['head',plan.expected_head],['body_hash',plan.previous_body_hash]].map(([keyName,keyValue])=>({keyName,condition:'eq',keyValue}))})\n      ||!same(plan.expected_row,{id:rowId,...plan.values}))fail('BUDGET_PLAN_BINDING');\n    const expected=readRecord(plan.expected_row),coupon=expected.body.coupons.find(x=>x.coupon_id===plan.coupon_id);\n    if(!coupon||coupon.owner_execution!==plan.owner_execution_id||coupon.nonce!==plan.attempt_nonce||plan.purpose==='global_model_debit'&&coupon.state!=='DISPATCH_INTENT_UNKNOWN'\n      ||plan.purpose==='global_model_settlement'&&coupon.state==='DISPATCH_INTENT_UNKNOWN')fail('BUDGET_PLAN_BINDING');\n    const stopped=reason=>({status:'stopped',reason,charge_verified:false,provider_dispatch_allowed:false});\n    let cas;try{cas=own(rawCas);exact(cas,['acknowledged','matched_count'],'BUDGET_CAS_REPLY');}catch{return stopped('CAS_ZERO_OR_UNKNOWN');}\n    if(cas.acknowledged!==true||!(cas.matched_count===null||cas.matched_count===1))return stopped('CAS_ZERO_OR_UNKNOWN');\n    let rows;try{rows=own(rawRows);}catch{return stopped('READBACK_NOT_UNIQUE');}if(!Array.isArray(rows)||rows.length!==1)return stopped('READBACK_NOT_UNIQUE');\n    let actual;try{actual=readRecord(rows[0]);}catch{return stopped('READBACK_INVALID');}if(!same(actual.record,plan.expected_row))return stopped('READBACK_MISMATCH');\n    // Evidence for a future trusted authorizer, NEVER a provider bearer/permit.\n    // That integration still needs accredited handoff + native journal dispatch\n    // CAS + POS reservation + fresh lease, and must not replay this evidence.\n    return {status:'verified',charge_verified:plan.purpose==='global_model_debit',record:actual.record,coupon_id:coupon.coupon_id,\n      owner_execution_id:coupon.owner_execution,attempt_nonce:coupon.nonce,config_handoff_accredited,provider_dispatch_allowed:false,authority:null};\n  }\n  return {planDebit,planSettle,verify,inspectRecord:raw=>own(readRecord(raw)),\n    contract:{version:1,budget_id:budgetId,table_id:tableId,row_id:rowId,epoch_id:epochId,handoff_sha256:handoffSha256,anchor:own(anchor),cap_posts:capPosts,cap_tokens:capTokens,\n      max_block_calls:maxBlockCalls,post_cap_authorization_sha256:postCapAuthorization?hash(postCapAuthorization):null,global_active_limit:1,bootstrap:false,provider_authority:'SEPARATE_NOT_IMPLEMENTED',config_handoff_accredited,provider_dispatch_allowed:false,\n      tests_accredit_handoff:false,tests_accredit_VPS_concurrency:false}};\n}\n;\n\n\nconst quotaBlock=()=>({block_id:CFG.global_model_budget.block_id,authorization_sha256:CFG.global_model_budget.authorization_sha256,max_calls:CFG.global_model_budget.max_calls,expires_at_ms:CFG.global_model_budget.expires_at_ms,workflows:CFG.global_model_budget.authorized_workflows});\n;\n\nconst globalBudget=CFG.global_budget_configured?createNativeGlobalModelBudget({sha256:primitives.sha256,canonicalJSON:adapter.canonicalJSON,readRealClock:()=>Date.now(),tableId:CFG.global_model_budget.table_id,rowId:CFG.global_model_budget.row_id,epochId:CFG.global_model_budget.epoch_id,handoffSha256:CFG.global_model_budget.handoff_sha256,anchor:CFG.global_model_budget.anchor,authorizedBlocks:[...CFG.global_model_budget.historical_blocks,quotaBlock()],config_handoff_accredited:CFG.global_model_budget.handoff_accredited,operational_policy:CFG.global_model_budget.operational_policy??null,operating_block_history:CFG.global_model_budget.operating_block_history??[],post_cap_authorization:CFG.global_model_budget.post_cap_authorization??null}):null;\n;\n\nlet currentQuotaContext=null,currentPreparedModelAuthority=null;\n;\n\nfunction quotaPreflight(c){\n  need(globalBudget&&c.global_observed_at_ms<=Date.now()&&Date.now()-c.global_observed_at_ms<=CFG.global_readback_age_ms,'native_global_preflight_stale');\n  const {record,body}=globalBudget.inspectRecord(c.global_record),block=quotaBlock(),state=body.blocks.find(row=>row.block_id===block.block_id),reserved=c.materialized_request?.options?.body?.reserved_tokens;\n  need(c.kind==='pos_usage_reserve'&&Number.isSafeInteger(reserved)&&reserved>0&&reserved<=10000000,'native_global_preflight_reservation');\n  need(block.workflows.some(row=>row.workflow_id===CFG.workflow_id&&row.code_manifest_sha256===CFG.code_manifest_sha256)&&record.state==='active'&&body.stop_code===null&&state?.status==='open'&&state.stop_code===null&&state.authorization_sha256===block.authorization_sha256&&state.calls<block.max_calls&&Date.now()<block.expires_at_ms&&body.active_coupon_id===null&&body.totals.posts+1<=globalBudget.contract.cap_posts&&body.totals.tokens+reserved<=globalBudget.contract.cap_tokens,'native_global_preflight_unavailable');\n  return true;\n}\n;\n\nfunction planNative(effect,authority){\n  let request=effect.request,evidence=null;\n  if(currentMaterialization){need(currentMaterialization.effect_id===effect.effect_id&&currentMaterialization.request_hash===effect.request_hash,'native_media_effect_changed');request=currentMaterialization.request;evidence=currentMaterialization.evidence;}\n  else{const plan=mediaBoundary.planHydration({projected:request,binding:{scope:CFG.scope,run_id:'native-control'},boundary:'replay',sealedProjectedHash:mediaDigest(request)});need(plan.references.length===0,'native_media_preparation_required');}\n  if(effect.kind==='sink'){need(sinkAdapter,'native_sink_static_binding_required');return sinkAdapter.planSend(request,authority,{projectedRequest:effect.request});}\n  if(effect.kind==='model'){\n    need(currentQuotaContext&&currentPreparedModelAuthority&&currentQuotaContext.effect.effect_id===effect.effect_id&&currentQuotaContext.effect.request_hash===effect.request_hash&&currentPreparedModelAuthority.execution_id===String($execution.id),'native_model_internal_preparation_required');\n    const planned=adapter.planModel(request,{...currentPreparedModelAuthority,now_ms:Date.now()});\n    return {channel:'model_plan_only',operation_kind:planned.operation_kind,request_hash:planned.request_hash};\n  }\n  if(classifyNativeEffect(effect.kind,effect.request)==='pos_usage_reserve')quotaPreflight(currentQuotaContext);\n  return adapter.planPos(request,authority);\n}\n;\n\nconst fixedBound=()=>CFG.enabled===true&&!Object.values({workflow:CFG.workflow_id,table:CFG.table_id,tenant:CFG.qr_tenant_id}).some(value=>typeof value!=='string'||value.includes('__UNBOUND'))&&CFG.sink_configured===true&&CFG.private_media_configured===true&&CFG.global_budget_configured===true&&String($workflow.id)===CFG.workflow_id;\n;\n\n\n\n\n;\n\n\nconst c514Input=items=>{need(Array.isArray(items)&&items.length===1,'c514_single_item_pipeline');return {first:()=>items[0],all:()=>items};};\nreturn await(async($input)=>{\nneed(fixedBound(),'native_static_binding_required');\n// Isolated native Set snapshot; no authority is created here.\nconst __escalarHoist_a7a06a4a475cItems=$input.all();\nconst __escalarHoist_a7a06a4a475c=__escalarHoist_a7a06a4a475cItems[0]?.json?.[\"__escalar_ctx_a7a06a4a475cdd324bd5\"];\nif(!__escalarHoist_a7a06a4a475c||__escalarHoist_a7a06a4a475c.schema!==\"NATIVE_SET_CONTEXT_R01\"||__escalarHoist_a7a06a4a475c.gate_open!==true||__escalarHoist_a7a06a4a475c.node_id!==\"native-live-kernel\"||__escalarHoist_a7a06a4a475c.source_sha256!==\"a7a06a4a475cdd324bd5f14da91ab90927397a19096ea746f4dc4ad1c9b4f990\"||__escalarHoist_a7a06a4a475c.cfg_source_sha256!==\"d0b3a0eea19fcd120e0255b617abd49dccca122cdaf831eddfc7a198a7b5b542\"||__escalarHoist_a7a06a4a475c.workflow_id!==String($workflow.id)||__escalarHoist_a7a06a4a475c.execution_id!==String($execution.id)||!Array.isArray(__escalarHoist_a7a06a4a475c.values)||__escalarHoist_a7a06a4a475c.values.length!==1)throw Error(\"SET_CONTEXT_BINDING_REQUIRED\");\nfor(const __escalarHoist_a7a06a4a475cItem of __escalarHoist_a7a06a4a475cItems){const __escalarHoist_a7a06a4a475cCapture=__escalarHoist_a7a06a4a475cItem.json?.[\"__escalar_ctx_a7a06a4a475cdd324bd5\"];if(!__escalarHoist_a7a06a4a475cCapture||typeof __escalarHoist_a7a06a4a475cCapture.input_metadata!==\"object\"||__escalarHoist_a7a06a4a475cCapture.input_metadata===null)throw Error(\"SET_CONTEXT_INPUT_METADATA_REQUIRED\");const {[\"__escalar_ctx_a7a06a4a475cdd324bd5\"]:__escalarHoist_a7a06a4a475cDiscard,...__escalarHoist_a7a06a4a475cJson}=__escalarHoist_a7a06a4a475cItem.json;for(const __escalarHoist_a7a06a4a475cKey of Object.keys(__escalarHoist_a7a06a4a475cItem))if(__escalarHoist_a7a06a4a475cKey!==\"json\"&&__escalarHoist_a7a06a4a475cKey!==\"binary\")delete __escalarHoist_a7a06a4a475cItem[__escalarHoist_a7a06a4a475cKey];for(const [__escalarHoist_a7a06a4a475cKey,__escalarHoist_a7a06a4a475cValue] of Object.entries(__escalarHoist_a7a06a4a475cCapture.input_metadata)){if([\"__proto__\",\"prototype\",\"constructor\"].includes(__escalarHoist_a7a06a4a475cKey))throw Error(\"SET_CONTEXT_METADATA_KEY_REQUIRED\");__escalarHoist_a7a06a4a475cItem[__escalarHoist_a7a06a4a475cKey]=__escalarHoist_a7a06a4a475cValue;}__escalarHoist_a7a06a4a475cItem.json=__escalarHoist_a7a06a4a475cJson;}\nconst c=__escalarHoist_a7a06a4a475c.values[0].json,seed=$input.first().json.data;need(typeof seed==='string'&&/^[a-f0-9-]{36}$/.test(seed),'native_kernel_nonce');let count=0;const uuid=()=>{const h=primitives.sha256(seed+':'+count++);return h.slice(0,8)+'-'+h.slice(8,12)+'-4'+h.slice(13,16)+'-a'+h.slice(17,20)+'-'+h.slice(20,32);};const item=$input.first(),checkpoint=bodyOf(c.record).checkpoint,hydrated=await hydrateNativeMedia({plan:item.json.replay_plan,projected:checkpoint,item,readBinary:(...args)=>this.helpers.getBinaryDataBuffer(...args)});const handler=mediaReplay.wrap({checkpoint,hydrationPlan:item.json.replay_plan,hydratedCheckpoint:hydrated.value,handler:nativeLiveHandlerFactory({runtimeFactory:nativeRuntimeFactory,Buffer})});const plan=planNeed(await coordinator.kernelPreparedPlan({record:c.record,expectedHead:c.record.head,runId:c.run_id,handler,observeUuid:uuid}));if(plan.values.state==='complete'&&JSON.parse(plan.values.body_json).terminal?.value?.pendingAcks?.length){plan.values.owner_execution='ACK_PENDING';plan.expected_row.owner_execution='ACK_PENDING';}return emit({...c,plan});\n\n\n})(c514Input($input.all()));\n"
+      }
+    },
+    {
+      "id": "static-kernel-tag-original",
+      "name": "Tag disabled current kernel original",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        720
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all().map(item=>({json:{case_id:\"kernel:original\",case_name:\"kernel\",variant:\"original\",result:item.json}}));"
+      }
+    },
+    {
+      "id": "static-kernel-module",
+      "name": "kernel module",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        380,
+        790
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return await require(\"@escalar/static-code-body-poc-r01\")[\"body_e0ca9f2880ca128f1ae1d25811b531739be911517c8393db528e9663dc7da179\"].call(this,{reads:{\"$execution\":()=>$execution,\"$input\":()=>$input,\"$workflow\":()=>$workflow,\"AbortSignal\":()=>AbortSignal,\"Array\":()=>Array,\"Boolean\":()=>Boolean,\"Buffer\":()=>Buffer,\"DataView\":()=>DataView,\"Date\":()=>Date,\"Error\":()=>Error,\"Infinity\":()=>Infinity,\"Intl\":()=>Intl,\"JSON\":()=>JSON,\"Map\":()=>Map,\"Math\":()=>Math,\"Number\":()=>Number,\"Object\":()=>Object,\"Promise\":()=>Promise,\"Reflect\":()=>Reflect,\"RegExp\":()=>RegExp,\"Set\":()=>Set,\"String\":()=>String,\"TypeError\":()=>TypeError,\"URL\":()=>URL,\"Uint32Array\":()=>Uint32Array,\"Uint8Array\":()=>Uint8Array,\"clearTimeout\":()=>clearTimeout,\"decodeURIComponent\":()=>decodeURIComponent,\"encodeURIComponent\":()=>encodeURIComponent,\"fetch\":()=>fetch,\"parseInt\":()=>parseInt,\"require\":()=>require,\"setTimeout\":()=>setTimeout,\"undefined\":()=>undefined},types:{\"AbortSignal\":()=>typeof AbortSignal,\"Array\":()=>typeof Array,\"Boolean\":()=>typeof Boolean,\"DataView\":()=>typeof DataView,\"Date\":()=>typeof Date,\"Error\":()=>typeof Error,\"Infinity\":()=>typeof Infinity,\"Intl\":()=>typeof Intl,\"JSON\":()=>typeof JSON,\"Map\":()=>typeof Map,\"Math\":()=>typeof Math,\"Number\":()=>typeof Number,\"Object\":()=>typeof Object,\"Promise\":()=>typeof Promise,\"Reflect\":()=>typeof Reflect,\"RegExp\":()=>typeof RegExp,\"Set\":()=>typeof Set,\"String\":()=>typeof String,\"TypeError\":()=>typeof TypeError,\"URL\":()=>typeof URL,\"Uint32Array\":()=>typeof Uint32Array,\"Uint8Array\":()=>typeof Uint8Array,\"clearTimeout\":()=>typeof clearTimeout,\"decodeURIComponent\":()=>typeof decodeURIComponent,\"encodeURIComponent\":()=>typeof encodeURIComponent,\"fetch\":()=>typeof fetch,\"parseInt\":()=>typeof parseInt,\"setTimeout\":()=>typeof setTimeout,\"undefined\":()=>typeof undefined},lookups:[]},[()=>({\"enabled\":false})],[\"__escalar_ctx_a7a06a4a475cdd324bd5\",\"a7a06a4a475cdd324bd5f14da91ab90927397a19096ea746f4dc4ad1c9b4f990\",\"d0b3a0eea19fcd120e0255b617abd49dccca122cdaf831eddfc7a198a7b5b542\"]);"
+      }
+    },
+    {
+      "id": "static-kernel-tag-module",
+      "name": "Tag disabled current kernel module",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        790
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all().map(item=>({json:{case_id:\"kernel:module\",case_name:\"kernel\",variant:\"module\",result:item.json}}));"
+      }
+    }
+  ],
+  "connections": {
+    "Run isolated static body components": {
+      "main": [
+        [
+          {
+            "node": "Ten fixed public cases",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ten fixed public cases": {
+      "main": [
+        [
+          {
+            "node": "One fixed case at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify one native case": {
+      "main": [
+        [
+          {
+            "node": "One fixed case at a time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "One fixed case at a time": {
+      "main": [
+        [
+          {
+            "node": "Static body native result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is fixed text case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is fixed text case": {
+      "main": [
+        [
+          {
+            "node": "Is original text case",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is fixed png case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "text original": {
+      "main": [
+        [
+          {
+            "node": "Verify one native case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "text module": {
+      "main": [
+        [
+          {
+            "node": "Verify one native case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is original text case": {
+      "main": [
+        [
+          {
+            "node": "text original",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "text module",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is fixed png case": {
+      "main": [
+        [
+          {
+            "node": "Is original png case",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is fixed ambient case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "png original": {
+      "main": [
+        [
+          {
+            "node": "Read physical PNG original",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read physical PNG original": {
+      "main": [
+        [
+          {
+            "node": "Verify one native case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "png module": {
+      "main": [
+        [
+          {
+            "node": "Read physical PNG module",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read physical PNG module": {
+      "main": [
+        [
+          {
+            "node": "Verify one native case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is original png case": {
+      "main": [
+        [
+          {
+            "node": "png original",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "png module",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is fixed ambient case": {
+      "main": [
+        [
+          {
+            "node": "Is original ambient case",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is fixed nominal case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ambient original": {
+      "main": [
+        [
+          {
+            "node": "Verify one native case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ambient module": {
+      "main": [
+        [
+          {
+            "node": "Verify one native case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is original ambient case": {
+      "main": [
+        [
+          {
+            "node": "ambient original",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ambient module",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is fixed nominal case": {
+      "main": [
+        [
+          {
+            "node": "Static native nominal source",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is fixed kernel case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Static native nominal source": {
+      "main": [
+        [
+          {
+            "node": "Is original nominal case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "nominal original": {
+      "main": [
+        [
+          {
+            "node": "Verify one native case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "nominal module": {
+      "main": [
+        [
+          {
+            "node": "Verify one native case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is original nominal case": {
+      "main": [
+        [
+          {
+            "node": "nominal original",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "nominal module",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is fixed kernel case": {
+      "main": [
+        [
+          {
+            "node": "Is original kernel case",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject unknown fixed case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "kernel original": {
+      "main": [
+        [
+          {
+            "node": "Tag disabled current kernel original",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tag disabled current kernel original": {
+      "main": [
+        [
+          {
+            "node": "Verify one native case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "kernel module": {
+      "main": [
+        [
+          {
+            "node": "Tag disabled current kernel module",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tag disabled current kernel module": {
+      "main": [
+        [
+          {
+            "node": "Verify one native case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is original kernel case": {
+      "main": [
+        [
+          {
+            "node": "kernel original",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "kernel module",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "executionTimeout": 180,
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  },
+  "pinData": {},
+  "staticData": {}
+}

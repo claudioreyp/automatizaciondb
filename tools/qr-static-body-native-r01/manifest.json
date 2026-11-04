@@ -1,0 +1,153 @@
+{
+  "schema": "escalarai.static-body-native-pack.v1",
+  "state": "PREPARED_NOT_EXECUTED",
+  "workflow_id": "QrStaticBodyNativeR0120261104",
+  "final_node_name": "Static body native result",
+  "expected_case_ids": [
+    "text:original",
+    "text:module",
+    "png:original",
+    "png:module",
+    "ambient:original",
+    "ambient:module",
+    "nominal:original",
+    "nominal:module",
+    "kernel:original",
+    "kernel:module"
+  ],
+  "expected_cases": 10,
+  "expected_image_id": "sha256:4f448824ec99e1160e49eeb1c5bf2130a5d244fe9029e871a9f4d9f126dbfc98",
+  "module_package": "@escalar/static-code-body-poc-r01",
+  "r03_package": "@escalar/qr-native-r03",
+  "node_count": 31,
+  "fixture_count": 6,
+  "fixture_sources": [
+    {
+      "name": "text",
+      "key": "body_552eef3b6f48b61fd6ac19078254eef3531f4759d3c3265d0dd8f156ea1eee76",
+      "source_sha256": "195273ca66167fd4f27de15cb547c292d8595b0cdb3d0abdfbf90fce545488ea",
+      "body_sha256": "552eef3b6f48b61fd6ac19078254eef3531f4759d3c3265d0dd8f156ea1eee76",
+      "wrapper_sha256": "26088f48c506a31f3f28e71f2fcb459ba3b6fbc5f52f708e62290b340ab6efb2",
+      "nominal_lookups": []
+    },
+    {
+      "name": "pngPrepare",
+      "key": "body_02b3f3b2283d987c8d78b59a7b89eb26f1403516a5b1c8fe41c21a023e416afa",
+      "source_sha256": "1ddcab61c453fa41752f3e750da2accd7041fa5893dab81164b3c63aadfe3671",
+      "body_sha256": "02b3f3b2283d987c8d78b59a7b89eb26f1403516a5b1c8fe41c21a023e416afa",
+      "wrapper_sha256": "3f448476326a5690cfd2eb219ee86725ffea8654b8b325511834ede12336c0bc",
+      "nominal_lookups": []
+    },
+    {
+      "name": "pngRead",
+      "key": "body_5e3a8badf793fe2ba488d9a0d5c0dc1640d577448953c20842f7842ebf627712",
+      "source_sha256": "a3b4f7217c043846956ffc190b4581f547c32a039696681e0438ddbcb45ce85b",
+      "body_sha256": "5e3a8badf793fe2ba488d9a0d5c0dc1640d577448953c20842f7842ebf627712",
+      "wrapper_sha256": "2251358ede685c61b8b0d29c2fc70735d7d7837f6deb79fc8f2c0818e6399008",
+      "nominal_lookups": []
+    },
+    {
+      "name": "ambient",
+      "key": "body_94c3ff3dd5f62389f73deb6b6ebc7a4d62aabd675c7fc06a456b2d7e25230385",
+      "source_sha256": "5ca973cd610298256a44663b9bfa5160c07cddabc73aa542454f1a5e6b7fd1a4",
+      "body_sha256": "94c3ff3dd5f62389f73deb6b6ebc7a4d62aabd675c7fc06a456b2d7e25230385",
+      "wrapper_sha256": "7c8561c9e66386ccb9df561181781d5499d84ef38234db7d6a275f9009784dd6",
+      "nominal_lookups": []
+    },
+    {
+      "name": "nominal",
+      "key": "body_c438d1f1e60a9ae85f806ab38b1d5f315e771a3087e809a19a5e8d344d1d069f",
+      "source_sha256": "0d97dda2915477d66c67a0314380798ab2c67c1bdd3e3eca8a7e8f668aa1c878",
+      "body_sha256": "c438d1f1e60a9ae85f806ab38b1d5f315e771a3087e809a19a5e8d344d1d069f",
+      "wrapper_sha256": "96d68362c0cc33f6fd9d954ebecb30fd8ab1460c03269bacfa399fa270815d6e",
+      "nominal_lookups": [
+        {
+          "source": "$('Static native nominal source').item",
+          "target": "Static native nominal source",
+          "accessor": "item"
+        },
+        {
+          "source": "$('Static native nominal source').first()",
+          "target": "Static native nominal source",
+          "accessor": "first"
+        },
+        {
+          "source": "$('Static native nominal source').all()",
+          "target": "Static native nominal source",
+          "accessor": "all"
+        }
+      ]
+    },
+    {
+      "name": "kernel",
+      "key": "body_e0ca9f2880ca128f1ae1d25811b531739be911517c8393db528e9663dc7da179",
+      "source_sha256": "0eff4a546b5a4caf16a7e2e0bfaa8570b1af6e6cce18e2705d50addf48544557",
+      "body_sha256": "e0ca9f2880ca128f1ae1d25811b531739be911517c8393db528e9663dc7da179",
+      "wrapper_sha256": "9ffde8029d2863d6ab6080801339b5bb7f6826ad2bad5d5052f25d99598176a9",
+      "nominal_lookups": []
+    }
+  ],
+  "kernel": {
+    "source_kernel_sha256": "1fe2121dd305692d76fc2b830263bcb1d3fcb1e4bec1750da6b9ae3b15d58a94",
+    "public_kernel_sha256": "0eff4a546b5a4caf16a7e2e0bfaa8570b1af6e6cce18e2705d50addf48544557",
+    "substitutions": [
+      "outer CFG initializer to enabled:false only",
+      "matching native Set CFG-source digest"
+    ],
+    "operational_cfg_removed": true,
+    "financial_ledger_fixture": false,
+    "private_credentials": false,
+    "remaining_kernel_bytes_exact": true
+  },
+  "models": 0,
+  "real_pos_requests": 0,
+  "data_table_requests": 0,
+  "external_requests": 0,
+  "credentials": 0,
+  "network": "none",
+  "physical_storage_acceptance": false,
+  "native_execution_performed": false,
+  "agent_latency_acceptance": false,
+  "whole_agent_acceptance": false,
+  "launch_constraints": {
+    "same_immutable_image": true,
+    "read_only": true,
+    "uid": "1000:1000",
+    "network": "none",
+    "fresh_sqlite_and_binary_tmpfs": true,
+    "allowed_external": [
+      "@escalar/qr-native-r03",
+      "@escalar/static-code-body-poc-r01"
+    ],
+    "mounts": [
+      "probe",
+      "r03",
+      "package"
+    ],
+    "one_execution_no_retry": true
+  },
+  "files": {
+    "probe/workflow.OFF.json": "051655cce315984b97ce6f8f9b0fac73ecc38a2a4f9b3c5c2b74d6eac267f5d8",
+    "package/index.cjs": "1bb60b6fd4b06d781a69029bfaf6c51d73e3f3287a65564b8eb971e7c5e86c25",
+    "package/package.json": "9cd6c0419caf525325314a42013f858057f4f6898ec5bc2532ba449a2f1aa2a5",
+    "r03/index.cjs": "cc64011e21b074ae1fcad83909294fb8e200ab70712d872a898404a5fbf6ec92",
+    "r03/package.json": "7c3bc2f85ae6fe16a20eefa74569cdbdaf3eb319c8056ecf0b04b3e8607d5ea9",
+    "run-probe.py": "29c4aeb6daec54c81f1efbc930def88958215aa3ea3ad7fdfc868384821652e9"
+  },
+  "file_bytes": {
+    "probe/workflow.OFF.json": 105426,
+    "package/index.cjs": 8322620,
+    "package/package.json": 144,
+    "r03/index.cjs": 731506,
+    "r03/package.json": 133,
+    "run-probe.py": 23471
+  },
+  "module_sha256": "1bb60b6fd4b06d781a69029bfaf6c51d73e3f3287a65564b8eb971e7c5e86c25",
+  "module_bytes": 8322620,
+  "unique_bodies": 96,
+  "body_copies": 108,
+  "r03_module_sha256": "cc64011e21b074ae1fcad83909294fb8e200ab70712d872a898404a5fbf6ec92",
+  "financial_ledger_fixture": false,
+  "private_credentials": false,
+  "production_changes": 0
+}
