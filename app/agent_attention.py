@@ -112,6 +112,10 @@ async def _request_attention_transaction(payload, response, *, idempotency_key, 
         if not order:
             raise HTTPException(404, "Order not found")
         assert_sender(order, payload.sender)
+    policy_proof = None
+    if payload.kind == "product_change_request":
+        from .agent_original_policy import REVIEW_TITLE
+        payload.summary = REVIEW_TITLE
     if any(len(value) > 240 for value in payload.message_ids):
         raise HTTPException(422, "Invalid message identifier")
     scope = f"agent-attention:{branch.id}"
@@ -123,6 +127,21 @@ async def _request_attention_transaction(payload, response, *, idempotency_key, 
     if old:
         response.status_code = 200
         return old, branch.id, False
+    if payload.kind == "product_change_request":
+        from .agent_original_policy import confirmed_original_policy_context
+        from .errors import CodedHTTPException
+        if payload.order_id is None or not integration.conversation_id:
+            raise CodedHTTPException(409, "A previously delivered explanation is required", "ORIGINAL_CHANGE_EXPLANATION_REQUIRED")
+        conversation = db.scalar(select(AgentConversation).where(
+            AgentConversation.id == integration.conversation_id,
+            AgentConversation.business_id == branch.business_id,
+            AgentConversation.branch_id == branch.id,
+            AgentConversation.sender == payload.sender))
+        if conversation is None or str((conversation.state or {}).get("order_id")) != str(payload.order_id):
+            raise CodedHTTPException(409, "The explanation belongs to another order", "ORIGINAL_CHANGE_EXPLANATION_REQUIRED")
+        policy_proof = confirmed_original_policy_context(db, conversation, conversation.current_message_id)
+        if not policy_proof:
+            raise CodedHTTPException(409, "A previously delivered explanation is required", "ORIGINAL_CHANGE_EXPLANATION_REQUIRED")
     prepared = await prepare_attention_attachments(db, integration, payload.attachments) if payload.attachments else []
     row = db.scalar(select(AgentAttentionRequest).where(
         AgentAttentionRequest.business_id == branch.business_id, AgentAttentionRequest.branch_id == branch.id,
@@ -142,6 +161,9 @@ async def _request_attention_transaction(payload, response, *, idempotency_key, 
         row = create_attention(db, business_id=branch.business_id, branch_id=branch.id,
             sender=payload.sender, kind=payload.kind, summary=payload.summary, order_id=payload.order_id,
             source_key=f"request:{idempotency_key}", details={"message_ids": payload.message_ids})
+    if policy_proof:
+        row.summary = REVIEW_TITLE
+        row.details = {**(row.details or {}), "original_change_explanation": policy_proof}
     if prepared:
         bind_attention_attachments(row, prepared)
     from fastapi.encoders import jsonable_encoder

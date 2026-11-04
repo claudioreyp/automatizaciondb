@@ -40,20 +40,6 @@ def test_initial_receipt_rejects_cash_other_chat_and_unclassified_images_without
         if code:
             assert response.json()["code"] == code
 
-    async def rejected_by_vision(*_args, **_kwargs):
-        return {"looks_like_payment_receipt": False}
-
-    monkeypatch.setattr(api, "analyze_payment_image", rejected_by_vision)
-    negative = upload("vision-rejected")
-    assert negative.status_code == 422
-    assert negative.json()["code"] == "PAYMENT_RECEIPT_REQUIRED"
-    async def inconclusive_vision(*_args, **_kwargs):
-        return {"available": True, "error": "invalid_model_json"}
-
-    monkeypatch.setattr(api, "analyze_payment_image", inconclusive_vision)
-    inconclusive = upload("vision-inconclusive")
-    assert inconclusive.status_code == 422
-    assert inconclusive.json()["code"] == "PAYMENT_RECEIPT_REQUIRED"
     with SessionLocal() as db:
         saved = db.get(Order, order["id"])
         assert saved.status == "draft" and saved.version == order["version"]
@@ -68,17 +54,16 @@ def test_initial_receipt_saves_three_digit_code_and_replays_same_operation(
 ):
     headers, order = setup(client, tenant, auth_headers)
 
-    async def classified_receipt(*_args, **_kwargs):
-        return {"looks_like_payment_receipt": True, "operation_number": "YP-12345",
-            "security_code": "085", "recipient": "Pizza House", "amount": "20.00"}
+    async def unexpected_analysis(*_args, **_kwargs):
+        raise AssertionError("Integration uploads must not invoke a hidden secondary model")
 
-    monkeypatch.setattr(api, "analyze_payment_image", classified_receipt)
+    monkeypatch.setattr(api, "analyze_payment_image", unexpected_analysis)
     path = f"/api/v1/integrations/orders/{order['id']}/payment-evidence"
-    # n8n includes empty multipart fields when vision cannot read a value.
-    # The API must still save a classified receipt and use legible analysis fields.
+    # The workflow provides legible hints; only a human can approve payment.
+    # The API stores them without an additional model call.
     fields = {"provider": "yape", "sender": PHONE, "whatsapp_message_id": "wamid-three-digit",
-        "looks_like_payment_receipt": "true", "amount_detected": "", "operation_number": "",
-        "security_code": "", "recipient": ""}
+        "looks_like_payment_receipt": "true", "amount_detected": "", "operation_number": "YP-12345",
+        "security_code": "085", "recipient": "Pizza House"}
     image = {"file": ("receipt.png", b"\x89PNG\r\n\x1a\nthree-digit", "image/png")}
     request_headers = {**headers, "Idempotency-Key": "one-image-one-operation"}
     first = client.post(path, headers=request_headers, data=fields, files=image)
@@ -87,6 +72,8 @@ def test_initial_receipt_saves_three_digit_code_and_replays_same_operation(
     assert first.json()["evidence"]["operation_number"] == "YP-12345"
     assert first.json()["evidence"]["whatsapp_message_id"] == "wamid-three-digit"
     assert first.json()["order"]["payment_status"] == "evidence_received"
+    assert first.json()["evidence"]["status"] == "under_review"
+    assert first.json()["requires_human_review"] is True
 
     repeated = client.post(path, headers=request_headers, data=fields, files=image)
     assert repeated.status_code == 201, repeated.text

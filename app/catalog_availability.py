@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import Modifier, ModifierGroup, Product, ProductModifierGroup, ProductVariant
+from .selection_rules import effective_minimum
 
 
 def set_product_availability(db: Session, product: Product, available: bool) -> None:
@@ -22,7 +23,7 @@ def selection_unavailable_reason(variants, groups) -> str | None:
     if active and not any(variant.available for variant in active):
         return "No hay variantes disponibles."
     for group, options in groups:
-        minimum = max(group.minimum, 1 if group.required else 0)
+        minimum = effective_minimum(group.minimum, group.required)
         available = [option for option in options if option.active and option.available]
         capacity = len(available)
         if group.allow_repeats:

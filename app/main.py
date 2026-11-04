@@ -12,7 +12,13 @@ from .api import api, legacy
 from .agent_checkout_api import router as agent_checkout_router
 from .agent_attention import router as agent_attention_router
 from .agent_runtime_api import router as agent_runtime_router
+from .agent_turn_context import router as agent_turn_context_router
 from .agent_usage import router as agent_usage_router
+from .agent_event_outbox import router as agent_event_outbox_router
+from .agent_selection import router as agent_selection_router
+from .agent_http_contracts import error_body, integration_http_exception, install_openapi
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from uuid import uuid4
 from .auth import AuthContext, decode_access_token, ensure_branch_scope, require_active_scope, resolve_membership
 from .config import get_settings
 from .database import Base, SessionLocal, engine
@@ -33,7 +39,7 @@ async def lifespan(_: FastAPI):
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version="1.0.0",
+    version="1.1.0",
     description=(
         "API multiempresa para operaciones POS gastronómicas de Escalar AI. "
         "Incluye aislamiento por negocio y sucursal, idempotencia y compatibilidad legacy controlada."
@@ -66,36 +72,53 @@ app.include_router(legacy)
 app.include_router(agent_checkout_router)
 app.include_router(agent_attention_router)
 app.include_router(agent_runtime_router)
+app.include_router(agent_turn_context_router)
 app.include_router(agent_usage_router)
+app.include_router(agent_event_outbox_router)
+app.include_router(agent_selection_router)
+app.add_exception_handler(StarletteHTTPException, integration_http_exception)
+install_openapi(app)
 
 
 @app.middleware("http")
 async def private_password_reset_responses(request, call_next):
+    request.state.request_id = str(uuid4())
     response = await call_next(request)
+    response.headers["X-Request-Id"] = request.state.request_id
     if request.url.path.startswith("/api/v1/admin/businesses/") and "/password-reset" in request.url.path:
         response.headers["Cache-Control"] = "no-store"
     return response
 
 
 @app.exception_handler(CodedHTTPException)
-async def coded_http_exception(_, exc: CodedHTTPException):
+async def coded_http_exception(request, exc: CodedHTTPException):
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": exc.detail, "code": exc.code},
+        content=error_body(request, exc.detail, exc.status_code, code=exc.code)
+            if request.url.path.startswith("/api/v1/integrations/") else {"detail": exc.detail, "code": exc.code},
         headers=exc.headers,
     )
 
 
 @app.exception_handler(RequestValidationError)
-async def redact_validation_secrets(_, exc: RequestValidationError):
+async def redact_validation_secrets(request, exc: RequestValidationError):
     errors = []
     for error in exc.errors():
         safe_error = dict(error)
+        if request.url.path.startswith("/api/v1/integrations/"):
+            safe_error.pop("input", None)
+            safe_error.pop("ctx", None)
         location = [str(part).lower() for part in safe_error.get("loc", [])]
         if any(any(secret in part for secret in ("password", "pin", "token", "pairing_code")) for part in location):
             safe_error["input"] = "[REDACTED]"
         errors.append(safe_error)
-    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
+    body = {"detail": jsonable_encoder(errors)}
+    if request.url.path.startswith("/api/v1/integrations/"):
+        body = error_body(request, jsonable_encoder(errors), 422, issues=[{
+            "path": ".".join(str(p) for p in error.get("loc", []) if p != "body"),
+            "code": "INVALID_FIELD", "message": error.get("msg", "Invalid field")}
+            for error in errors])
+    return JSONResponse(status_code=422, content=body)
 
 
 def websocket_user(websocket: WebSocket, branch: Branch) -> AuthContext:

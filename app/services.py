@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from .auth import AuthContext, ensure_branch_scope
 from .cash_service import actor_display_name as cash_actor_display_name, cash_reconciliation, resolve_payment_cash_session
 from .catalog_availability import product_selection_unavailable_reason
+from .selection_rules import effective_minimum
 from .command_revisions import effective_ticket_items, retired_modifier_units
 from .order_folios import reserve_order_folio
 from .pos_printing import (
@@ -609,7 +610,7 @@ def build_order_item(
         )
     for group in linked_groups:
         selected_count = selections_by_group.get(group.id, 0)
-        minimum = max(group.minimum, 1 if group.required else 0)
+        minimum = effective_minimum(group.minimum, group.required)
         if selected_count < minimum:
             raise HTTPException(
                 status_code=422,
@@ -806,33 +807,38 @@ def create_order(
 
 
 def product_capacity(db: Session, product: Product) -> dict:
+    return product_capacities(db, [product])[product.id]
+
+
+def product_capacities(db: Session, products: list[Product]) -> dict:
+    """Same stock calculation as POS writes, with one recipe read per catalog."""
+    if not products:
+        return {}
+    products_by_id = {product.id: product for product in products}
+    components_by_product = {product.id: [] for product in products}
     components = list(
         db.execute(
             select(RecipeItem, InventoryItem)
             .join(InventoryItem, InventoryItem.id == RecipeItem.inventory_item_id)
             .where(
-                RecipeItem.product_id == product.id,
-                InventoryItem.branch_id == product.branch_id,
+                RecipeItem.product_id.in_(products_by_id),
+                InventoryItem.branch_id.in_({p.branch_id for p in products}),
             )
         )
     )
-    if not components:
-        return {
-            "available": bool(product.available),
-            "available_units": None,
-            "stock_known": not product.track_stock,
-        }
-    capacities = [
-        int(Decimal(str(inventory.quantity)) // Decimal(str(recipe.quantity)))
-        for recipe, inventory in components
-        if Decimal(str(recipe.quantity)) > 0
-    ]
-    available_units = min(capacities) if capacities else 0
-    return {
-        "available": bool(product.available and available_units > 0),
-        "available_units": available_units,
-        "stock_known": True,
-    }
+    for recipe, inventory in components:
+        product = products_by_id[recipe.product_id]
+        if inventory.branch_id == product.branch_id and inventory.business_id == product.business_id:
+            components_by_product[product.id].append((recipe, inventory))
+    result = {}
+    for product in products:
+        rows = components_by_product[product.id]
+        capacities = [int(Decimal(str(inventory.quantity)) // Decimal(str(recipe.quantity)))
+                      for recipe, inventory in rows if Decimal(str(recipe.quantity)) > 0]
+        units = (min(capacities) if capacities else 0) if rows else None
+        result[product.id] = {"available": bool(product.available and (units is None or units > 0)),
+                              "available_units": units, "stock_known": bool(rows) or not product.track_stock}
+    return result
 
 
 def create_integration_event(
@@ -1341,8 +1347,18 @@ def finalize_order_item_batch(
             select(func.count(KitchenTicket.id)).where(KitchenTicket.order_id == order.id)
         ) or 0
         if previous_status == "confirmed" and existing_ticket_count == 0:
-            tickets = create_kitchen_tickets(db, order, active_order_items(order),
-                context={"created_by": user.user_id, **(ticket_context or {})})
+            if (ticket_context or {}).get("agent_addition") is True:
+                # Preserve a never-issued base command separately from this addition.
+                new_item_ids = {item.id for item in new_items}
+                base_items = [item for item in active_order_items(order) if item.id not in new_item_ids]
+                if base_items:
+                    tickets.extend(create_kitchen_tickets(db, order, base_items,
+                        context={"created_by": user.user_id, "suppress_customer_receipt": True}))
+                tickets.extend(create_kitchen_tickets(db, order, new_items, kind="addition",
+                    context={"created_by": user.user_id, **ticket_context}))
+            else:
+                tickets = create_kitchen_tickets(db, order, active_order_items(order),
+                    context={"created_by": user.user_id, **(ticket_context or {})})
             order.status = "sent_to_kitchen"
             order.sent_to_kitchen_at = order.sent_to_kitchen_at or utcnow()
         else:

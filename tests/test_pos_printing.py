@@ -264,7 +264,9 @@ def test_does_not_backfill_historical_orders_or_integrations(client, tenant, aut
     assert jobs(client, order, auth_headers)["items"] == []
     integrated = create_order(client, tenant, auth_headers, key="integration")
     with SessionLocal.begin() as db:
-        db.get(Order, integrated["id"]).source = "whatsapp_agent"
+        # Generic integrations stay on their existing contract. Agent orders
+        # now explicitly use POS printing, per the user's 2026-10-18 decision.
+        db.get(Order, integrated["id"]).source = "integration"
     send_order(client, integrated, auth_headers, key="integration-send")
     assert jobs(client, integrated, auth_headers)["items"] == []
 

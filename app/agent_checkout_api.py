@@ -5,6 +5,7 @@ from datetime import timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -26,8 +27,28 @@ from .services import (append_order_item_batch, assert_version, audit,
 from .auth import IntegrationAuthContext, require_integration_scope
 from .realtime import hub
 from .errors import CodedHTTPException
+from .agent_contracts import CatalogResponse, CustomerOrderState, OrderPreview
 
 router = APIRouter(prefix="/api/v1", tags=["agent-checkout"])
+
+
+def fulfillment_change_notice(order, destination):
+    """Visible staff warning built only after the POS confirms the mutation."""
+    title = "REVISIÓN: CAMBIO DE UBICACIÓN DE ENTREGA"
+    parts = [title + (f". Pedido #{order.folio}." if order.folio else ".")]
+    if order.channel == "delivery" and destination:
+        location = destination.get("address") or destination.get("maps_url")
+        if not location and destination.get("latitude") is not None and destination.get("longitude") is not None:
+            location = f"{destination['latitude']}, {destination['longitude']}"
+        if location:
+            parts.append("Nuevo destino: " + str(location)[:900] + ".")
+        if destination.get("reference"):
+            parts.append("Referencia: " + str(destination["reference"])[:500] + ".")
+        parts.append("Revisar el nuevo destino antes de entregar el pedido al repartidor.")
+    else:
+        parts.append("Modalidad actual: recojo en el restaurante. Revisar el cambio antes de entregar el pedido.")
+    return " ".join(parts)
+
 
 
 class Preview(BaseModel):
@@ -50,7 +71,18 @@ class Addition(CustomerOperation):
 
 
 class Revision(CustomerOperation):
+    model_config = ConfigDict(extra="forbid")
     operations: list[OrderItemRevisionOperation] = Field(min_length=1, max_length=100)
+
+
+class RevisionCommit(Revision):
+    quote_fingerprint: str = Field(min_length=64, max_length=64)
+    expected_total: Decimal = Field(ge=0)
+
+
+class OriginalCancellation(CustomerOperation):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=1, max_length=1000)
 
 
 class Fulfillment(CustomerOperation):
@@ -128,7 +160,7 @@ async def finish(db, order, scope, key, digest, result):
     return result
 
 
-@router.get("/integrations/context/catalog")
+@router.get("/integrations/context/catalog", response_model=CatalogResponse, response_model_exclude_unset=True)
 def catalog(response: Response, integration: IntegrationAuthContext = Depends(require_integration_scope("menu:read")), db: Session = Depends(get_db)):
     from .api import integration_branch_from_auth, serialize_catalog
     _, branch = integration_branch_from_auth(db, integration, None)
@@ -136,23 +168,36 @@ def catalog(response: Response, integration: IntegrationAuthContext = Depends(re
     categories = [{k: c[k] for k in ("id", "name")} for c in raw["categories"] if c["active"]]
     active_categories = {c["id"] for c in categories}
     products = []
+    from .services import product_capacities
+    from .selection_rules import selection_requirements
+    product_rows = list(db.scalars(select(Product).where(Product.branch_id == branch.id,
+        Product.business_id == branch.business_id, Product.id.in_([p["id"] for p in raw["products"]]))))
+    capacities = product_capacities(db, product_rows)
     for p in raw["products"]:
         if p["category_id"] is not None and p["category_id"] not in active_categories:
             continue
         item = {k: p[k] for k in ("id", "category_id", "name", "description", "price", "service_channels", "product_type", "combo_components")}
-        capacity = product_capacity(db, db.get(Product, p["id"]))
+        capacity = capacities[p["id"]]
         item["available"] = bool(p["available"] and capacity["available"] and not p["unavailable_reason"])
         item["variants"] = [v for v in p["variants"] if v["active"]]
         item["modifier_groups"] = [{**{k: g[k] for k in ("id", "name", "minimum", "maximum", "required", "allow_repeats", "max_per_option")},
             "modifiers": [m for m in g["modifiers"] if m["active"]]} for g in p["modifier_groups"]]
+        item["selection_requirements"] = selection_requirements(item)
+        item["availability"] = {"manual": p["available"],
+            "stock": capacity["available_units"] is None or capacity["available_units"] > 0,
+            "options": not bool(p["unavailable_reason"]), "schedule": None, "channels": {},
+            "reasons": (["MANUALLY_UNAVAILABLE"] if not p["available"] else [])
+                + (["OUT_OF_STOCK"] if capacity["available_units"] == 0 else [])
+                + (["REQUIRED_OPTIONS_UNAVAILABLE"] if p["unavailable_reason"] else [])}
         products.append(item)
     response.headers["Cache-Control"] = "no-store"
     from .agent_catalog import complete_catalog
     return complete_catalog(db, branch, {"business_id": branch.business_id, "branch_id": branch.id, "categories": categories,
-            "products": products, "promotions": raw["promotions"]})
+            "products": products, "promotions": raw["promotions"]},
+            restaurant_agent=integration.profile == "restaurant_agent")
 
 
-@router.post("/integrations/orders/preview")
+@router.post("/integrations/orders/preview", response_model=OrderPreview, response_model_exclude_unset=True)
 def preview(payload: Preview, response: Response, integration: IntegrationAuthContext = Depends(require_integration_scope("orders:write")), db: Session = Depends(get_db),
     idempotency_key: str | None = Header(None, alias="Idempotency-Key")):
     from .api import integration_branch_from_auth
@@ -167,7 +212,8 @@ def preview(payload: Preview, response: Response, integration: IntegrationAuthCo
             if previous.get("request_digest") != digest:
                 raise HTTPException(409, "Idempotency key belongs to different content")
             return previous["result"]
-    draft = preview_items(db, branch, payload.channel, payload.items, payload.payment_method)
+    draft = preview_items(db, branch, payload.channel, payload.items, payload.payment_method,
+                          verify_agent_service=integration.profile == "restaurant_agent")
     is_restaurant_agent = integration.profile == "restaurant_agent"
     delivery = agent_context(db, branch, restaurant_agent=is_restaurant_agent)["delivery"]
     fee = Decimal(0)
@@ -214,10 +260,10 @@ def preview(payload: Preview, response: Response, integration: IntegrationAuthCo
     if quote:
         save_idempotent_response(db, scope, idempotency_key, branch.business_id, {"request_digest": digest, "result": result})
         db.commit()
-    return result
+    return jsonable_encoder(result)  # Match persisted replay formatting, including UTC datetimes.
 
 
-@router.get("/integrations/orders/{order_id}/customer-state")
+@router.get("/integrations/orders/{order_id}/customer-state", response_model=CustomerOrderState, response_model_exclude_unset=True)
 def customer_state(order_id: int, sender: str, response: Response, integration: IntegrationAuthContext = Depends(require_integration_scope("orders:read")), db: Session = Depends(get_db)):
     order = scoped(db, integration, order_id, sender)
     attach_recent_agent_order_changes(db, [order])
@@ -227,23 +273,48 @@ def customer_state(order_id: int, sender: str, response: Response, integration: 
     from .api import serialize_payment_evidence
     paid = paid_order_amount(db, order)
     tickets = list(db.scalars(select(KitchenTicket).where(KitchenTicket.order_id == order.id)))
-    is_open = order.status not in {"dispatched", "delivered", "cancelled", "closed"} and not order.table_released_at
+    from .agent_checkout import operational_block_reason, dispatch_state
+    operational_reason = operational_block_reason(db, order)
+    is_open = operational_reason is None
     requests = requests_for_order(db, order)
     kitchen_completed = kitchen_was_completed(db, order)
+    from .agent_original_payment import original_payment_policy
+    payment_policy, _, _, _, _ = original_payment_policy(db, order)
+    from .agent_original_policy import before_kitchen_mutable, kitchen_started
+    original_mutable = before_kitchen_mutable(db, order)
+    fulfillment_reasons = {}
+    for target in ("delivery", "takeaway"):
+        try:
+            assert_fulfillment_available(db, order, target, lock=False)
+            fulfillment_reasons[target] = None
+        except CodedHTTPException as exc:
+            fulfillment_reasons[target] = exc.code
     return {**serialize_order(order), "paid_amount": float(paid),
+        "initial_payment_amount": payment_policy["initial_payment_amount"],
+        "payment_method_change": payment_policy,
         "remaining_amount": float(max(Decimal(0), money(order.total) - paid)),
-        "kitchen_completed": kitchen_completed,
+        "kitchen_completed": kitchen_completed, "kitchen_started": kitchen_started(db, order),
+        "dispatch": dispatch_state(db, order),
         "allowed_actions": {
             "add_items": bool(is_open and order.status not in {"draft", "pending_confirmation"}
                               and order.payment_method in {"cash", "yape"}),
-            "cancel_order": False,
-            "revise_items": False,
-            "change_fulfillment": is_open,
-            "change_to_delivery": is_open,
-            "change_to_takeaway": is_open,
+            "cancel_order": original_mutable,
+            "change_original_payment": payment_policy["allowed"],
+            "revise_items": original_mutable,
+            "change_fulfillment": any(reason is None for reason in fulfillment_reasons.values()),
+            "change_to_delivery": fulfillment_reasons["delivery"] is None,
+            "change_to_takeaway": fulfillment_reasons["takeaway"] is None,
             "fulfillment_change_block_reason": None if is_open else "order_dispatched_or_completed",
-            "editable_item_ids": [],
+            "editable_item_ids": [item.id for item in order.items if item.status not in {"cancelled", "superseded"}] if original_mutable else [],
             "choose_delivery_payment": bool(is_open and any(r.purpose == "delivery" and r.method == "unselected" for r in requests)),
+            "reasons": {"add_items": operational_reason or ("INITIAL_ORDER_PENDING" if order.status in {"draft", "pending_confirmation"}
+                else "PAYMENT_METHOD_DISABLED" if order.payment_method not in {"cash", "yape"} else None),
+                "revise_items": None if original_mutable else operational_reason or "ORIGINAL_ITEMS_LOCKED",
+                "cancel_order": None if original_mutable else operational_reason or "ORIGINAL_ITEMS_LOCKED",
+                "change_to_delivery": fulfillment_reasons["delivery"], "change_to_takeaway": fulfillment_reasons["takeaway"],
+                "change_original_payment": payment_policy["block_reason"],
+                "change_fulfillment": None if any(reason is None for reason in fulfillment_reasons.values()) else fulfillment_reasons["delivery"],
+                "choose_delivery_payment": operational_reason or (None if any(r.purpose == "delivery" and r.method == "unselected" for r in requests) else "NO_UNSELECTED_DELIVERY_PAYMENT")},
         }, "payment_requests": [serialize_request(r) for r in requests],
         "payment_evidence": [{k: v for k, v in serialize_payment_evidence(e).items() if k in {
             "id", "payment_request_id", "expected_amount", "amount_detected", "operation_number", "security_code",
@@ -269,15 +340,17 @@ def fulfillment_destination(payload):
     return destination
 
 
-def assert_fulfillment_available(db, order, channel):
+def assert_fulfillment_available(db, order, channel, *, lock=True):
     from .services import service_channel_for_order, active_order_items
-    assert_open(order)
-    assignment = db.scalar(select(DeliveryAssignment).where(
-        DeliveryAssignment.order_id == order.id).with_for_update())
+    assert_open(order, db=db)
+    assignment_query = select(DeliveryAssignment).where(DeliveryAssignment.order_id == order.id,
+        DeliveryAssignment.business_id == order.business_id, DeliveryAssignment.branch_id == order.branch_id)
+    assignment = db.scalar(assignment_query.with_for_update() if lock else assignment_query)
     if assignment and (assignment.dispatched_at or assignment.delivered_at or assignment.status in {"dispatched", "delivered"}):
         raise CodedHTTPException(409, "Delivery was already dispatched", "ORDER_ITEMS_LOCKED")
-    settings = db.scalar(select(BranchSettings).where(BranchSettings.branch_id == order.branch_id,
-        BranchSettings.business_id == order.business_id).with_for_update())
+    settings_query = select(BranchSettings).where(BranchSettings.branch_id == order.branch_id,
+        BranchSettings.business_id == order.business_id)
+    settings = db.scalar(settings_query.with_for_update() if lock else settings_query)
     service = service_channel_for_order(channel, "whatsapp_agent")
     if settings and not getattr(settings, service):
         raise CodedHTTPException(409, "Service is disabled", "SERVICE_DISABLED")
@@ -450,7 +523,7 @@ async def change_fulfillment(order_id: int, payload: FulfillmentCommit,
                 "requires_financial_review": True}
             financial_review = True
     create_attention(db, business_id=order.business_id, branch_id=order.branch_id, sender=payload.sender,
-        kind="fulfillment_change", summary="El cliente cambió la modalidad o el destino de entrega.",
+        kind="fulfillment_change", summary=fulfillment_change_notice(order, destination),
         order_id=order.id, source_key=f"fulfillment:{quote.id}", details=details)
     if financial_review or (quote.fee is not None and financial["overpayment_amount"] > 0):
         create_attention(db, business_id=order.business_id, branch_id=order.branch_id, sender=payload.sender,
@@ -476,11 +549,14 @@ async def add_items(order_id: int, payload: Addition, idempotency_key: str | Non
     previous, digest = replay(db, order, scope, idempotency_key, payload)
     if previous is not None:
         return previous
-    assert_registered(order)
+    if integration.profile == "restaurant_agent" and payload.payment_method is None:
+        raise CodedHTTPException(409, "Choose Yape or cash for this addition", "ADDITION_PAYMENT_METHOD_REQUIRED")
+    assert_registered(order, db=db)
     method = payload.payment_method or order.payment_method
     if method not in {"cash", "yape"} or order.payment_method not in {"cash", "yape"}:
         raise HTTPException(409, "A staff member must handle this payment method")
-    draft = preview_items(db, db.get(Branch, order.branch_id), order.channel, payload.items, method)
+    draft = preview_items(db, db.get(Branch, order.branch_id), order.channel, payload.items, method,
+                          verify_agent_service=integration.profile == "restaurant_agent")
     if money(payload.expected_amount) != draft.total:
         raise HTTPException(409, "Review the updated addition price")
     user = AuthContext("integration", "owner", order.business_id, order.branch_id)
@@ -490,6 +566,7 @@ async def add_items(order_id: int, payload: Addition, idempotency_key: str | Non
             order_id=order.id, purpose="addition", method=method, amount=draft.total,
             status="awaiting_base_review" if waiting_base else "pending",
             snapshot={"lines": [x.model_dump(mode="json") for x in payload.items], "pricing": priced_snapshot(draft),
+                "verify_agent_service": integration.profile == "restaurant_agent",
                 "blocked_reason": "initial_payment_pending" if waiting_base else None})
         db.add(request)
         db.flush()
@@ -514,12 +591,45 @@ async def add_items(order_id: int, payload: Addition, idempotency_key: str | Non
 
 
 @router.post("/integrations/orders/{order_id}/item-revisions")
-async def revise_items(order_id: int, payload: Revision, idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+async def revise_items(order_id: int, payload: RevisionCommit, idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     integration: IntegrationAuthContext = Depends(require_integration_scope("orders:write")), db: Session = Depends(get_db)):
-    scoped(db, integration, order_id, payload.sender)
-    if not idempotency_key or len(idempotency_key) > 240:
-        raise HTTPException(422, "Idempotency-Key is required (max 240 characters)")
-    reject_agent_order_change()
+    from .agent_original_items import commit_revisions
+    order = scoped(db, integration, order_id, payload.sender)
+    scope = f"agent-original-items:{order.id}"
+    previous, digest = replay(db, order, scope, idempotency_key, payload)
+    if previous is not None:
+        return previous
+    result = commit_revisions(db, order, payload.operations, quote_fingerprint=payload.quote_fingerprint,
+        expected_total=payload.expected_total, operation_key=digest, verify_agent_service=integration.profile == 'restaurant_agent')
+    return await finish(db, order, scope, idempotency_key, digest, result)
+
+
+@router.post("/integrations/orders/{order_id}/item-revisions/preview")
+def preview_original_items(order_id: int, payload: Revision, idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    integration: IntegrationAuthContext = Depends(require_integration_scope("orders:write")), db: Session = Depends(get_db)):
+    from .agent_original_items import preview_revisions
+    order = scoped(db, integration, order_id, payload.sender)
+    scope = f"agent-original-items-preview:{order.id}"
+    previous, digest = replay(db, order, scope, idempotency_key, payload)
+    if previous is not None:
+        return previous
+    result = preview_revisions(db, order, payload.operations, verify_agent_service=integration.profile == 'restaurant_agent')
+    save_idempotent_response(db, scope, idempotency_key, order.business_id, {"request_digest": digest, "result": result})
+    db.commit()
+    return result
+
+
+@router.post("/integrations/orders/{order_id}/cancel-before-kitchen")
+async def cancel_original_order(order_id: int, payload: OriginalCancellation, idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    integration: IntegrationAuthContext = Depends(require_integration_scope("orders:write")), db: Session = Depends(get_db)):
+    from .agent_original_items import cancel_before_kitchen
+    order = scoped(db, integration, order_id, payload.sender)
+    scope = f"agent-original-cancel:{order.id}"
+    previous, digest = replay(db, order, scope, idempotency_key, payload)
+    if previous is not None:
+        return previous
+    result = cancel_before_kitchen(db, order, reason=payload.reason, operation_key=digest)
+    return await finish(db, order, scope, idempotency_key, digest, result)
 
 
 
@@ -679,3 +789,55 @@ def select_delivery_method(db, user, order, method):
     audit(db, user, "order.delivery_payment_selected", "order", order.id, order.business_id,
           {"request_id": request.id, "method": method}, branch_id=order.branch_id)
     return request
+
+
+class OriginalPaymentMethod(CustomerOperation):
+    model_config = ConfigDict(extra="forbid")
+    method: Literal["cash", "yape"]
+
+
+class OriginalPaymentMethodCommit(OriginalPaymentMethod):
+    preview_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+@router.post("/integrations/orders/{order_id}/payment-method-preview")
+async def preview_original_payment_method(order_id: int, payload: OriginalPaymentMethod,
+    response: Response, idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    integration: IntegrationAuthContext = Depends(require_integration_scope("orders:write")), db: Session = Depends(get_db)):
+    order = scoped(db, integration, order_id, payload.sender)
+    from .agent_original_payment import require_accepted_original
+    require_accepted_original(order)
+    scope = f"agent-original-payment-preview:{order.id}"
+    previous, digest = replay(db, order, scope, idempotency_key, payload)
+    if previous is not None:
+        return previous
+    from .agent_original_payment import original_payment_policy
+    info, preview_fingerprint, _, _, tickets = original_payment_policy(db, order, payload.method)
+    response.headers["Cache-Control"] = "no-store"
+    result = {"order_id": order.id, "order_version": order.version,
+        "from_method": order.payment_method, "to_method": payload.method,
+        "preview_fingerprint": preview_fingerprint, **info,
+        "effects": {"existing_kitchen_preserved": bool(tickets),
+            "initial_kitchen_release": bool(info["allowed"] and payload.method == "cash" and not tickets),
+            "approved_payments_modified": False, "products_or_amounts_modified": False}}
+    return await finish(db, order, scope, idempotency_key, digest, result)
+
+
+@router.patch("/integrations/orders/{order_id}/payment-method")
+async def change_original_payment_method(order_id: int, payload: OriginalPaymentMethodCommit,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    integration: IntegrationAuthContext = Depends(require_integration_scope("orders:write")), db: Session = Depends(get_db)):
+    order = scoped(db, integration, order_id, payload.sender)
+    from .agent_original_payment import require_accepted_original
+    require_accepted_original(order)
+    scope = f"agent-original-payment:{order.id}"
+    previous, digest = replay(db, order, scope, idempotency_key, payload)
+    if previous is not None:
+        return previous
+    from .agent_original_payment import apply_original_payment_method
+    user = AuthContext("integration", "owner", order.business_id, order.branch_id)
+    result = apply_original_payment_method(db, user, order, payload.sender,
+        payload.method, payload.preview_fingerprint)
+    db.flush()
+    result = {"order": serialize_order(order), **result}
+    return await finish(db, order, scope, idempotency_key, digest, result)

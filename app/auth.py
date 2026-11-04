@@ -66,6 +66,7 @@ ALL_INTEGRATION_SCOPES = frozenset(
         "payments:write",
         "reservations:write",
         "events:read",
+        "events:deliver",
         "agent:state",
         "agent:attention",
     }
@@ -260,7 +261,7 @@ def require_integration_token(x_integration_token: str | None = Header(default=N
         raise HTTPException(status_code=401, detail="Invalid integration token")
 
 
-def require_integration_scope(required_scope: str):
+def require_integration_scope(required_scope: str, *, read_only: bool = False):
     if required_scope not in ALL_INTEGRATION_SCOPES:
         raise ValueError(f"Unsupported integration scope: {required_scope}")
 
@@ -315,9 +316,10 @@ def require_integration_scope(required_scope: str):
             from .agent_runtime_api import authorize_agent_request
             sender, conversation_id = authorize_agent_request(db, request, credential)
         # Do not commit here: the agent lease is locked through the domain write.
-        credential.last_used_at = utcnow()
-        if profile == "generic":
-            db.commit()
+        if not read_only:
+            credential.last_used_at = utcnow()
+            if profile == "generic":
+                db.commit()
         return IntegrationAuthContext(
             credential.id,
             credential.business_id,

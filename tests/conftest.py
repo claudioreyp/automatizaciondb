@@ -1,7 +1,15 @@
 import os
 
 os.environ["ENVIRONMENT"] = "test"
-os.environ["DATABASE_URL"] = "sqlite+pysqlite:///:memory:"
+local_pg = os.environ.get("POS_TEST_ASGI_POSTGRES_URL")
+if local_pg:
+    from sqlalchemy.engine import make_url
+    parsed = make_url(local_pg)
+    assert os.environ.get("API_TOOLS_LOCAL_PG_TEST") == "true"
+    assert parsed.host == "127.0.0.1" and parsed.database == "escalar_agent_isolated"
+    assert parsed.username == "api_tools_test" and parsed.drivername.startswith("postgresql")
+os.environ["DATABASE_URL"] = local_pg or "sqlite+pysqlite:///:memory:"
+os.environ["ESCALAR_ENV_FILE_DISABLED"] = "true"
 os.environ["AUTO_CREATE_SCHEMA"] = "true"
 os.environ["DEV_AUTH_TOKEN"] = "test-token"
 os.environ["INTEGRATION_SERVICE_TOKEN"] = "test-integration-token"

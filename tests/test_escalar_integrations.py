@@ -539,7 +539,7 @@ def test_yape_requires_real_image_and_human_approval_emits_durable_event(
     assert payment_event["whatsapp_chat_id"] == "51999999999@c.us"
     assert payment_event["payload"]["channel"] == "whatsapp"
     assert payment_event["payload"]["message"] == (
-        "¡Pago confirmado! Tu pedido fue aprobado y ya está en preparación. "
+        "¡Pago confirmado! Tu pedido fue aprobado y se envió a cocina. "
         "Te avisaremos cuando esté listo para que puedas venir al local. 🍕"
     )
     assert approved.json()["notification"]["event_id"] == payment_event["id"]

@@ -40,24 +40,29 @@ def add(client, headers, order, *, method=None, key="addition", quantity=1):
 
 @pytest.mark.parametrize("method", ["cash", "yape"])
 @pytest.mark.parametrize("status", ["confirmed", "sent_to_kitchen", "preparing", "ready", "closed", "delivered", "dispatched"])
-def test_agent_can_never_change_registered_order(client, tenant, auth_headers, method, status):
+def test_agent_cannot_change_original_products_after_kitchen_regardless_of_payment(client, tenant, auth_headers, method, status):
     headers, order = registered(client, tenant, auth_headers, method)
     with SessionLocal.begin() as db:
-        db.get(Order, order["id"]).status = status
+        persisted = db.get(Order, order["id"])
+        persisted.status = status
+        persisted.sent_to_kitchen_at = utcnow()  # Actual kitchen boundary, not receipt/payment status.
     before = state(client, headers, order)
     allowed = before["allowed_actions"]
-    assert not any(allowed[key] for key in ("cancel_order", "revise_items", "change_fulfillment", "change_to_delivery", "change_to_takeaway"))
+    assert not any(allowed[key] for key in ("cancel_order", "revise_items"))
+    assert allowed["change_fulfillment"] == (status not in {"closed", "delivered", "dispatched"})
     assert allowed["editable_item_ids"] == []
     with SessionLocal() as db:
         counts = {model: db.query(model).count() for model in (AuditEvent, KitchenTicket, Payment, PaymentEvidence, OrderPaymentRequest)}
         stock = db.get(InventoryItem, tenant["inventory_id"]).quantity
-    revision = {"sender": PHONE, "expected_version": before["version"], "operations": [{"type": "edit",
+    revision = {"sender": PHONE, "expected_version": before["version"], "quote_fingerprint": "0" * 64,
+        "expected_total": before["total"], "operations": [{"type": "edit",
         "item_id": before["items"][0]["id"], "replacement": {
             "product_id": tenant["product_id"], "quantity": 1, "notes": "Sin cebolla"}}]}
-    requests = [
-        client.patch(f"/api/v1/integrations/orders/{order['id']}/fulfillment", headers={**headers, "Idempotency-Key": "fulfillment"}, json={
+    unquoted_change = client.patch(f"/api/v1/integrations/orders/{order['id']}/fulfillment", headers={**headers, "Idempotency-Key": "fulfillment"}, json={
             "sender": PHONE, "expected_version": before["version"], "channel": "delivery",
-            "delivery_address": {"address": "Calle Nueva 123", "reference": "Casa blanca"}}),
+            "delivery_address": {"address": "Calle Nueva 123", "reference": "Casa blanca"}})
+    assert unquoted_change.status_code == 422  # Fulfillment requires its own bound quote.
+    requests = [
         client.post(f"/api/v1/integrations/orders/{order['id']}/item-revisions", headers={**headers, "Idempotency-Key": "revision"}, json=revision),
         client.post(f"/api/v1/integrations/orders/{order['id']}/item-revisions", headers={**headers, "Idempotency-Key": "cancel-line"}, json={
             **revision, "operations": [{"type": "cancel", "item_id": before["items"][0]["id"], "reason": "Cliente solicita cancelar"}]}),
@@ -66,9 +71,10 @@ def test_agent_can_never_change_registered_order(client, tenant, auth_headers, m
         client.post(f"/api/v1/integrations/orders/{order['id']}/cash-confirm", headers={**headers, "Idempotency-Key": "change-to-cash"}),
         client.post(f"/api/v1/integrations/orders/{order['id']}/confirm", headers={**headers, "Idempotency-Key": "reconfirm"}),
     ]
-    for result in requests:
+    for result, code in zip(requests, ["ORDER_ITEMS_ALREADY_SENT", "ORDER_ITEMS_ALREADY_SENT",
+                                      "AGENT_ORDER_ADDITIONS_ONLY", "AGENT_ORDER_ADDITIONS_ONLY", "AGENT_ORDER_ADDITIONS_ONLY"]):
         assert result.status_code == 409, result.text
-        assert result.json()["code"] == "AGENT_ORDER_ADDITIONS_ONLY"
+        assert result.json()["code"] == code
     after = state(client, headers, order)
     assert after == before
     with SessionLocal() as db:

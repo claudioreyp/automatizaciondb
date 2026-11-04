@@ -7,11 +7,21 @@ from sqlalchemy import func, select
 
 from app.config import get_settings
 from app.database import SessionLocal
-from app.models import Branch, BranchSettings, Business, IntegrationCredential
+from app.models import (Branch, BranchSettings, Business, IntegrationCredential,
+                        KitchenTicket, Order, Payment, PaymentEvidence, PrintJob)
 from app.settings_service import get_or_create_branch_settings
 from test_escalar_integrations import create_credential, integration_headers
+from test_restaurant_agent_boundary import agent_headers
 
 BASE = "/api/v1"
+INITIAL_PROCESSING = {
+    "cash": {"scope": "initial_order", "payment_timing": "on_fulfillment",
+             "kitchen_release": "on_registration", "evidence_required": False,
+             "human_approval_required": False},
+    "yape": {"scope": "initial_order", "payment_timing": "before_kitchen_release",
+             "kitchen_release": "after_human_approval", "evidence_required": True,
+             "human_approval_required": True},
+}
 
 
 def keyed(headers, key):
@@ -90,6 +100,7 @@ def test_read_context_does_not_create_settings_and_disabled_fee_is_not_free(clie
         assert db.scalar(select(func.count()).select_from(BranchSettings)) == 0
         settings = get_or_create_branch_settings(db, db.get(Branch, tenant["branch_id"]))
         settings.pos_delivery = False
+        settings.digital_delivery = False
     delivery = client.get(f"{BASE}/integrations/context", headers=headers).json()["delivery"]
     assert delivery["fee"] is None and delivery["fee_status"] == "disabled"
 
@@ -138,3 +149,111 @@ def test_qr_storage_outage_is_not_missing_configuration(client, tenant, auth_hea
         raise httpx.ConnectError("isolated outage")
     monkeypatch.setattr("app.api.load_private_file", unavailable)
     assert client.get(f"{BASE}/integrations/context/yape-qr", headers=integration_headers(credential["token"])).status_code == 503
+
+
+@pytest.mark.parametrize("profile", ["generic", "restaurant_agent"])
+def test_payment_processing_is_additive_read_only_policy_with_legacy_methods(
+    client, tenant, auth_headers, agent_headers, profile,
+):
+    headers = agent_headers if profile == "restaurant_agent" else integration_headers(
+        create_credential(client, tenant, auth_headers, ["menu:read"])["token"])
+    with SessionLocal.begin() as db:
+        branch = db.get(Branch, tenant["branch_id"])
+        branch.accepted_payment_methods = ["cash", "transfer"]
+        branch.yape_number, branch.payment_recipient_name = "999000111", "Titular sintético"
+        branch.plin_number = "legacy-plin"
+        version = branch.version
+    response = client.get(f"{BASE}/integrations/context", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "private, no-store"
+    data = response.json()
+    assert data["payments"] == {
+        "methods": {channel: (["cash"] if profile == "restaurant_agent" else ["cash", "transfer"])
+            for channel in ("delivery", "takeaway", "counter")},
+        "processing": INITIAL_PROCESSING,
+        "yape": {"revision": data["payments"]["yape"]["revision"],
+                 "number": "999000111", "recipient_name": "Titular sintético", "qr_configured": False,
+                 "qr_url": None, "qr_authentication": "bearer", "qr_scope": "menu:read",
+                 **({"missing_fields": [], "instructions_ready": True} if profile == "restaurant_agent" else {})},
+        **({"plin_number": "legacy-plin"} if profile == "generic" else {}),
+    }
+    assert data["configuration_version"] == version
+    with SessionLocal() as db:
+        assert db.get(Branch, tenant["branch_id"]).version == version
+        for model in (BranchSettings, Order, Payment, PaymentEvidence, KitchenTicket, PrintJob):
+            assert db.scalar(select(func.count()).select_from(model)) == 0
+
+
+@pytest.mark.parametrize("methods", [
+    {"delivery": ["cash"], "takeaway": ["cash"], "counter": []},
+    {"delivery": ["yape"], "takeaway": [], "counter": ["cash"]},
+    {"delivery": ["cash", "yape"], "takeaway": ["yape"], "counter": ["transfer"]},
+    {"delivery": [], "takeaway": [], "counter": []},
+])
+def test_processing_policy_never_enables_or_replaces_configured_payment_methods(
+    client, tenant, auth_headers, methods,
+):
+    token = create_credential(client, tenant, auth_headers, ["menu:read"])["token"]
+    with SessionLocal.begin() as db:
+        branch = db.get(Branch, tenant["branch_id"])
+        branch.accepted_payment_methods = ["plin"]  # Superseded legacy configuration.
+        settings = get_or_create_branch_settings(db, branch)
+        settings.payment_methods = methods
+        settings.digital_tables = False
+        version = settings.version
+    headers = integration_headers(token)
+    response = client.get(f"{BASE}/integrations/context", headers=headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["payments"]["methods"] == methods
+    assert data["payments"]["processing"] == INITIAL_PROCESSING
+    assert "counter" not in data["capabilities"]["order_modes"]
+    assert set(data["payments"]["processing"]) == {"cash", "yape"}
+    assert data["configuration_version"] == version
+    data["payments"]["processing"]["yape"]["human_approval_required"] = False
+    data["payments"]["methods"]["takeaway"].append("plin")
+    fresh = client.get(f"{BASE}/integrations/context", headers=headers).json()
+    assert fresh["payments"]["processing"] == INITIAL_PROCESSING
+    assert fresh["payments"]["methods"] == methods
+    with SessionLocal() as db:
+        settings = db.scalar(select(BranchSettings).where(BranchSettings.branch_id == tenant["branch_id"]))
+        assert settings.payment_methods == methods and settings.version == version
+
+
+@pytest.mark.parametrize("method", ["cash", "yape"])
+def test_published_initial_processing_matches_registration_and_human_review(
+    client, tenant, auth_headers, monkeypatch, tmp_path, method,
+):
+    from test_agent_checkout import open_cash, review, setup, upload
+    config = get_settings()
+    monkeypatch.setattr(config, "upload_dir", tmp_path)
+    monkeypatch.setattr(config, "supabase_service_role_key", None)
+    headers, order = setup(client, tenant, auth_headers, method=method)
+    policy = client.get(f"{BASE}/integrations/context", headers=headers).json()["payments"]["processing"][method]
+    assert policy == INITIAL_PROCESSING[method]
+    assert order["sent_to_kitchen_at"] is None  # The intermediate draft is not completed registration.
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(Payment)) == 0
+        assert db.scalar(select(func.count()).select_from(KitchenTicket)) == 0
+    if method == "cash":
+        result = client.post(f"{BASE}/integrations/orders/{order['id']}/cash-confirm",
+            headers=keyed(headers, "processing-initial-cash"))
+        assert result.status_code == 200, result.text
+        assert result.json()["order"]["payment_status"] == "pending"
+    else:
+        receipt = upload(client, headers, order)
+        assert receipt["requires_human_review"] is True
+        assert receipt["evidence"]["status"] == "under_review"
+        assert receipt["order"]["sent_to_kitchen_at"] is None
+        with SessionLocal() as db:
+            assert db.scalar(select(func.count()).select_from(Payment)) == 0
+            assert db.scalar(select(func.count()).select_from(KitchenTicket)) == 0
+            assert db.scalar(select(func.count()).select_from(PrintJob)) == 0
+        open_cash(client, auth_headers, tenant)
+        result = review(client, auth_headers, tenant, receipt)
+        assert result.status_code == 200, result.text
+        assert result.json()["evidence"]["status"] == "paid"
+    assert result.json()["order"]["sent_to_kitchen_at"] is not None
+    with SessionLocal() as db:
+        assert db.scalar(select(func.count()).select_from(KitchenTicket)) == 1
+        assert db.scalar(select(func.count()).select_from(Payment)) == (1 if method == "yape" else 0)

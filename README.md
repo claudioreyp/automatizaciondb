@@ -36,7 +36,7 @@ El seed crea `Bazar pizzas`, una sucursal, mesas, productos, inventario, recetas
 1. Cree el proyecto Supabase y use su PostgreSQL como `DATABASE_URL`.
 2. Configure `SUPABASE_URL` y `SUPABASE_JWKS_URL`. Para aprovisionar propietarios puede usar `SUPABASE_SERVICE_ROLE_KEY` únicamente en Render o la Edge Function protegida indicada por `SUPABASE_OWNER_PROVISION_FUNCTION`.
 3. Cree un bucket privado para evidencias de pago y archivos sensibles. Las claves de servicio nunca deben llegar a Vercel.
-4. Deje `AUTO_CREATE_SCHEMA=false` y ejecute `alembic upgrade head` antes del arranque.
+4. Deje `AUTO_CREATE_SCHEMA=false`. Las migraciones se revisan y aplican por separado con una identidad de migración autorizada; el usuario de ejecución no realiza DDL.
 5. Restrinja `CORS_ORIGINS` a los dominios reales de ambos paneles.
 6. Cree un usuario en Supabase Auth y vincúlelo como primer superadmin:
 
@@ -44,7 +44,7 @@ El seed crea `Bazar pizzas`, una sucursal, mesas, productos, inventario, recetas
 python -m scripts.bootstrap_superadmin --auth-user-id UUID_DE_SUPABASE --email admin@dominio.com --name "Administrador Impulsa"
 ```
 
-`render.yaml` contiene el blueprint de despliegue sin secretos. Render ejecuta Alembic en predeploy y luego inicia Uvicorn.
+`render.yaml` contiene el blueprint sin secretos. Render inicia Uvicorn sin ejecutar Alembic en build, predeploy ni start. Consulte `docs/deployment-runbook.md` antes de publicar.
 
 ## Alta de un restaurante y conexión con n8n
 

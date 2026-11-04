@@ -75,11 +75,12 @@ INTEGRATION_SCOPES = {
     "payments:write",
     "reservations:write",
     "events:read",
+    "events:deliver",
     "agent:state",
     "agent:attention",
 }
 
-DEFAULT_AGENT_SCOPES = INTEGRATION_SCOPES - {"inventory:write", "agent:state", "agent:attention"}
+DEFAULT_AGENT_SCOPES = INTEGRATION_SCOPES - {"inventory:write", "agent:state", "agent:attention", "events:deliver"}
 RESTAURANT_AGENT_SCOPES = {"menu:read", "orders:read", "orders:write", "payments:write", "agent:state", "agent:attention"}
 
 

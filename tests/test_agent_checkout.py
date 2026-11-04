@@ -228,7 +228,8 @@ def test_prepared_line_is_protected_and_customer_state_reports_exact_balance(cli
     assert state.json()["remaining_amount"] == 20
     response = client.post(f"/api/v1/integrations/orders/{order['id']}/item-revisions",
         headers={**headers, "Idempotency-Key": "prepared-change"}, json={"sender": PHONE,
-        "expected_version": state.json()["version"], "operations": [{"type": "edit", "item_id": order["items"][0]["id"],
+        "expected_version": state.json()["version"], "quote_fingerprint": "0" * 64, "expected_total": 20,
+        "operations": [{"type": "edit", "item_id": order["items"][0]["id"],
         "replacement": {"product_id": tenant["product_id"], "quantity": 2}}]})
     assert response.status_code == 409, response.text
     open_cash(client, auth_headers, tenant)
@@ -331,3 +332,67 @@ def test_initial_evidence_rejects_wrong_sender_even_without_extra_request(client
         data={"sender": "51888888888", "provider": "yape"},
         files={"file": ("test.png", b"test", "image/png")})
     assert response.status_code == 404
+
+
+@pytest.mark.parametrize("status", ["dispatched", "delivered", "closed", "cancelled"])
+@pytest.mark.parametrize("method", ["cash", "yape"])
+def test_terminal_orders_reject_new_additions_without_side_effects(client, tenant, auth_headers, status, method):
+    from app.models import OrderPaymentRequest
+    headers, order = setup(client, tenant, auth_headers, method=method)
+    with SessionLocal.begin() as db:
+        db.get(Order, order["id"]).status = status
+    state = client.get(f"/api/v1/integrations/orders/{order['id']}/customer-state",
+        params={"sender": PHONE}, headers=headers).json()
+    assert state["allowed_actions"]["add_items"] is False
+    body = {"sender": PHONE, "expected_version": state["version"], "expected_amount": 20,
+            "items": [{"product_id": tenant["product_id"], "quantity": 1}]}
+    for key in ("blocked-addition", "blocked-addition", "new-attempt"):
+        response = client.post(f"/api/v1/integrations/orders/{order['id']}/item-batches", json=body,
+            headers={**headers, "Idempotency-Key": key})
+        assert response.status_code == 409, response.text
+        assert "ORDER_ITEMS_LOCKED" in response.text
+    with SessionLocal() as db:
+        saved = db.get(Order, order["id"])
+        assert saved.version == state["version"] and saved.total == Decimal(20)
+        assert len(saved.items) == 1
+        assert db.query(OrderPaymentRequest).count() == 0
+        assert db.query(Payment).count() == 0
+        assert db.query(KitchenTicket).count() == 0
+        assert db.query(PrintJob).count() == 0
+
+
+@pytest.mark.parametrize("channel", ["takeaway", "delivery"])
+def test_ready_yape_order_keeps_additions_until_collected_or_dispatched(client, tenant, auth_headers, channel):
+    headers, order = setup(client, tenant, auth_headers)
+    with SessionLocal.begin() as db:
+        saved = db.get(Order, order["id"])
+        saved.status = "ready"
+        saved.channel = channel
+    state = client.get(f"/api/v1/integrations/orders/{order['id']}/customer-state",
+        params={"sender": PHONE}, headers=headers).json()
+    assert state["allowed_actions"]["add_items"] is True
+    response = client.post(f"/api/v1/integrations/orders/{order['id']}/item-batches",
+        headers={**headers, "Idempotency-Key": "ready-extra"}, json={"sender": PHONE,
+        "expected_version": state["version"], "expected_amount": 20,
+        "items": [{"product_id": tenant["product_id"], "quantity": 1}]})
+    assert response.status_code == 200, response.text
+    assert response.json()["payment_request"]["purpose"] == "addition"
+    assert response.json()["sent_to_kitchen"] is False
+
+
+def test_new_delivery_is_priced_independently_of_previous_paid_shipping(client, tenant, auth_headers):
+    headers, order = setup(client, tenant, auth_headers)
+    with SessionLocal.begin() as db:
+        settings = db.scalar(select(BranchSettings).where(BranchSettings.branch_id == tenant["branch_id"]))
+        settings.fixed_delivery_fee = Decimal(7)
+        saved = db.get(Order, order["id"])
+        saved.channel = "delivery"
+        saved.status = "delivered"
+    response = client.post("/api/v1/integrations/orders/preview", headers=headers,
+        json={"channel": "delivery", "purpose": "initial", "payment_method": "yape",
+              "items": [{"product_id": tenant["product_id"], "quantity": 1}]})
+    assert response.status_code == 200, response.text
+    assert response.json()["delivery_fee"] == 7
+    assert response.json()["known_total"] == 27
+    with SessionLocal() as db:
+        assert db.query(Order).count() == 1
