@@ -26,6 +26,16 @@ def classify_engine(engine):
     return {"backend":engine.url.get_backend_name(),"driver":engine.url.get_driver_name(),
         "database_class":database_class,"exact_memory_url":str(engine.url)=="sqlite+pysqlite:///:memory:"}
 
+def configure_private_memory_temp_store(engine):
+    # This event belongs only to the sandbox's newly created memory engine.
+    # Apply it once at connection creation; never reset temporary tables while
+    # checking or reseeding an existing connection.
+    from sqlalchemy import event
+    def configure(connection,record):
+        connection.execute("PRAGMA temp_store=MEMORY")
+    event.listen(engine,"connect",configure)
+
+
 def assert_private_memory_engine(engine):
     # Validate URL fields before connecting. A file, host or URI query is never
     # admitted even when a newer SQLAlchemy release changes URL rendering.
@@ -37,8 +47,12 @@ def assert_private_memory_engine(engine):
     assert engine.dialect.name=="sqlite" and engine.dialect.driver=="pysqlite"
     with engine.connect() as connection:
         databases=connection.exec_driver_sql("PRAGMA database_list").all()
-    assert [(row[1],row[2]) for row in databases]==[("main","")]
-    return {"structural_memory":True,"main_filename_empty":True,"attached_databases":0}
+        temp_store=connection.exec_driver_sql("PRAGMA temp_store").scalar_one()
+    assert len([row for row in databases if row[1]=="main"])==1
+    assert all(row[1] in ("main","temp") and row[2]=="" for row in databases)
+    assert len([row for row in databases if row[1]=="temp"])<=1 and temp_store==2
+    return {"structural_memory":True,"main_filename_empty":True,"attached_databases":0,
+        "internal_temp_present":any(row[1]=="temp" for row in databases),"temp_store_memory":True}
 
 
 def resolve_api_root():
@@ -70,6 +84,7 @@ def create_sandbox():
     from sqlalchemy import select
     from app.auth import hash_integration_token
     from app.database import Base,SessionLocal,engine
+    configure_private_memory_temp_store(engine)
     from app.main import app
     from app.models import (Business,Branch,BranchSettings,CashRegister,Category,Product,
         ProductVariant,ModifierGroup,Modifier,ProductModifierGroup,ServiceSchedule,ScheduleShift,
