@@ -8,6 +8,7 @@ DESCRIPTIONS = {
     "customer_catalog": "Consultar productos, disponibilidad, tamaños y personalizaciones obligatorias u opcionales.",
     "validate_selection": "Validar elecciones incompletas y obtener datos faltantes sin registrar efectos comerciales.",
     "turn_context": "Leer restaurante, catálogo y pedido propio durante un turno autorizado.",
+    "conversations_native_readiness": "Consultar si la cola nativa requiere un tick, sin tomar mensajes, leases ni permisos de envío.",
     "preview_order": "Calcular importes oficiales. Puede persistir una cotización; no registra el pedido.",
     "create_order_draft": "Registrar un borrador con productos validados y precios del servidor.",
     "customer_order_state": "Consultar pedido, pagos, comprobantes, cocina y acciones permitidas.",
@@ -67,7 +68,7 @@ def integration_package(api_base_url: str, business_id: int, branch_id: int, sco
             "conversation_auth": conversation_auth,
             "conversation_auth_fields": list(tool.conversation_auth_fields) if conversation_auth != "none" else [],
             "parameters": parameters, "request_body": request, "responses": responses}
-    return {"package_version": 2, "api_contract_version": "1.1.0",
+    return {"package_version": 2, "api_contract_version": document["info"]["version"],
         "openapi_url": api_base_url.rstrip("/").removesuffix("/api/v1") + "/openapi.json",
         "api_base_url": api_base_url.rstrip("/"), "business_id": business_id, "branch_id": branch_id,
         "authentication": "bearer", "authorization_header": "Authorization",

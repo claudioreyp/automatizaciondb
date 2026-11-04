@@ -1,7 +1,6 @@
 """Versioned, tenant-scoped customer operations for the WhatsApp agent."""
 from decimal import Decimal
 from copy import deepcopy
-from datetime import timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
@@ -456,7 +455,7 @@ async def change_fulfillment(order_id: int, payload: FulfillmentCommit,
     from .agent_attention import create_attention
     from .agent_order_changes import update_active_ticket_fulfillment
     from .pos_printing import refresh_unclaimed_fulfillment_print_jobs
-    from .settings_service import sync_pending_kitchen_print_jobs
+    from .settings_service import _aware, sync_pending_kitchen_print_jobs
     from .cash_service import financial_summary, order_refunds
     order = scoped(db, integration, order_id, payload.sender)
     scope = f"agent-fulfillment:{order.id}"
@@ -477,7 +476,7 @@ async def change_fulfillment(order_id: int, payload: FulfillmentCommit,
             raise CodedHTTPException(409, "Delivery policy changed; request a new quote", "DELIVERY_CONFIGURATION_STALE")
     if snapshot.get("destination") != destination or snapshot.get("channel") != payload.channel:
         raise CodedHTTPException(409, "Delivery destination changed", "DELIVERY_QUOTE_DESTINATION_CHANGED")
-    if quote.expires_at.replace(tzinfo=timezone.utc) <= utcnow():
+    if _aware(quote.expires_at) <= utcnow():
         raise CodedHTTPException(409, "Delivery quote expired", "DELIVERY_QUOTE_EXPIRED")
     if (bool(settings) != snapshot.get("settings_present") or
         quote.configuration_version != (settings.version if settings else branch.version) or

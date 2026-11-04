@@ -9,6 +9,15 @@ class PublicModel(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class NativeQueueReadiness(PublicModel):
+    protocol_version: Literal[1] = 1
+    runtime_contract: Literal["native_v1"] = "native_v1"
+    business_id: int = Field(gt=0)
+    branch_id: int = Field(gt=0)
+    ready: bool = Field(description="Scheduling hint only; claims still own leases, batching and dispatch.")
+    checked_at: datetime = Field(description="UTC observation time; consumers must not cache a negative result.")
+
+
 class Choice(PublicModel):
     id: int
     name: str

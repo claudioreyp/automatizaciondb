@@ -27,6 +27,7 @@ from .agent_blocking_io import private_transaction
 from . import agent_message_batching as batching
 from .agent_original_policy import annotate_policy_response, confirmed_original_policy_context
 from .agent_order_reference import recover_order_reference
+from .agent_contracts import NativeQueueReadiness
 
 router = APIRouter(prefix="/api/v1/integrations/conversations", tags=["agent-conversations"])
 LEASE_SECONDS = 120
@@ -932,6 +933,29 @@ def complete_reserved_media(payload: Claim,
     return {"status": "queued", "duplicate": False}
 
 
+@router.get("/native/readiness", response_model=NativeQueueReadiness,
+    summary="Observe native queue readiness without claiming work",
+    description=("A current branch-scoped scheduling hint. False means no native work or pending response "
+        "was visible at checked_at; a later input can arrive immediately. True includes quiet-window "
+        "candidates. This read never claims a lease or delivery and grants no execution authority."))
+def native_queue_readiness(response: Response,
+    integration: IntegrationAuthContext = Depends(require_integration_scope("agent:state", read_only=True)), db=Depends(get_db)):
+    if integration.legacy or not integration.business_id or not integration.branch_id:
+        raise HTTPException(403, "Scoped integration credentials are required")
+    # A current database observation, not a claim or an execution permission.
+    # Quiet-window candidates deliberately stay ready; the existing claim owns
+    # batching, media expiry, ordering, leases and every subsequent decision.
+    checked_at = utcnow()
+    deliveries = delivery_candidates_query(integration, native=True).with_only_columns(AgentMessageDelivery.id)
+    work = work_candidates_query(integration, native=True, evaluated_at=checked_at).with_only_columns(AgentConversation.id)
+    ready = bool(db.scalar(select(or_(exists(deliveries), exists(work)))))
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
+    return {"protocol_version": 1, "runtime_contract": "native_v1",
+        "business_id": integration.business_id, "branch_id": integration.branch_id,
+        "ready": ready, "checked_at": checked_at}
+
+
 @router.post("/work/claim")
 def claim_work(idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     integration: IntegrationAuthContext = Depends(require_integration_scope("agent:state")), db=Depends(get_db)):
@@ -949,22 +973,26 @@ def contract_match(value, native):
     return value == batching.NATIVE_CONTRACT if native else or_(value.is_(None), value == batching.LEGACY_CONTRACT)
 
 
-def claim_work_for_contract(idempotency_key, integration, db, *, native):
-    require_key(idempotency_key)
+def work_candidates_query(integration, *, native, evaluated_at):
     # Accepted inputs are durable records, so workers can recover after restarts
     # without holding a list of chat IDs in memory.
     accepted = exists(select(IdempotencyRecord.id).where(
         IdempotencyRecord.business_id == AgentConversation.business_id,
         IdempotencyRecord.scope == "agent-input:" + AgentConversation.id,
         IdempotencyRecord.response_body["status"].as_string() == "accepted"))
-    rows = db.scalars(select(AgentConversation).where(
+    return select(AgentConversation).where(
         AgentConversation.business_id == integration.business_id,
         AgentConversation.branch_id == integration.branch_id, accepted,
         or_(and_(AgentConversation.current_message_id.is_not(None), contract_match(
                 AgentConversation.state["_processing_message"]["_runtime_contract"].as_string(), native)),
             and_(AgentConversation.current_message_id.is_(None), contract_match(
                 AgentConversation.pending[0]["_runtime_contract"].as_string(), native))),
-        or_(AgentConversation.lease_until.is_(None), AgentConversation.lease_until <= utcnow()))
+        or_(AgentConversation.lease_until.is_(None), AgentConversation.lease_until <= evaluated_at))
+
+
+def claim_work_for_contract(idempotency_key, integration, db, *, native):
+    require_key(idempotency_key)
+    rows = db.scalars(work_candidates_query(integration, native=native, evaluated_at=utcnow())
         .order_by(AgentConversation.updated_at, AgentConversation.id).with_for_update(skip_locked=True).limit(30)).all()
     # A quiet-window wait in one chat must not stall a ready, unrelated chat.
     for row in rows:
@@ -998,10 +1026,7 @@ def claim_delivery_for_contract(idempotency_key, integration, db, *, native, bac
     if previous:
         # A lost claim response is uncertain. Never authorize a second dispatch.
         return {"status": "uncertain", "delivery_id": previous.response_body["delivery_id"]}
-    row = db.scalar(select(AgentMessageDelivery).where(
-        AgentMessageDelivery.business_id == integration.business_id,
-        AgentMessageDelivery.branch_id == integration.branch_id, AgentMessageDelivery.status == "pending",
-        contract_match(AgentMessageDelivery.response["_runtime_contract"].as_string(), native))
+    row = db.scalar(delivery_candidates_query(integration, native=native)
         .order_by(AgentMessageDelivery.created_at, AgentMessageDelivery.id).with_for_update(skip_locked=True).limit(1))
     if not row:
         return {"status": "idle"}
@@ -1017,6 +1042,13 @@ def claim_delivery_for_contract(idempotency_key, integration, db, *, native, bac
     return {"status": "claimed", "delivery_id": row.id, "delivery_token": token,
         "conversation_id": row.conversation_id, "message_id": row.message_id,
         "sender": row.sender, "response": row.response}
+
+
+def delivery_candidates_query(integration, *, native):
+    return select(AgentMessageDelivery).where(
+        AgentMessageDelivery.business_id == integration.business_id,
+        AgentMessageDelivery.branch_id == integration.branch_id, AgentMessageDelivery.status == "pending",
+        contract_match(AgentMessageDelivery.response["_runtime_contract"].as_string(), native))
 
 
 def suppress_stale_delivery(db, delivery, *, background_tasks=None):

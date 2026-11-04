@@ -4,6 +4,7 @@ Set POS_TEST_PG_BIN to a locally installed PostgreSQL bin directory. No producti
 configuration, models, transport, storage credentials or printers are used.
 """
 import json
+import argparse
 import os
 from pathlib import Path
 import socket
@@ -16,6 +17,17 @@ import psycopg2
 
 def main():
     root = Path(__file__).resolve().parents[1]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("tests", nargs="*", default=[
+        "tests/test_agent_tools_contract.py", "tests/test_agent_tools_acceptance.py", "tests/test_agent_tool_metadata.py",
+        "tests/test_agent_native_readiness.py", "tests/test_agent_checkout.py", "tests/test_agent_order_fulfillment.py",
+        "tests/test_agent_printing.py", "tests/test_agent_checkout_postgres.py", "tests/test_agent_model_usage.py"],
+        help="Optional explicit local test files; the default runs the agent tools suite.")
+    selection = parser.parse_args().tests
+    for test in selection:
+        path = (root / test).resolve(strict=True)
+        if not path.is_relative_to(root / "tests") or path.suffix != ".py":
+            parser.error("Tests must be Python files within this checkout's tests directory")
     binaries = Path(os.environ["POS_TEST_PG_BIN"]).resolve(strict=True)
     artifact = root / ".test-results" / ("postgres-" + str(time.time_ns()))
     artifact.mkdir(parents=True, exist_ok=False)
@@ -35,7 +47,7 @@ def main():
             raise RuntimeError(f"Local PostgreSQL command failed: {args[0]}")
         return result
     started = False
-    result = {"scope": "fresh_loopback_synthetic_postgres", "port": port}
+    result = {"scope": "fresh_loopback_synthetic_postgres", "port": port, "test_files": selection}
     try:
         command(["initdb.exe" if os.name == "nt" else "initdb", "-D", str(data), "-U", "api_tools_test",
                  "-A", "trust", "--no-locale", "-E", "UTF8"])
@@ -55,9 +67,7 @@ def main():
             POS_TEST_ASGI_POSTGRES_URL=url, POS_TEST_POSTGRES_URL=url, AGENT_USAGE_PG_TEST_ALLOWED="true")
         with (artifact / "pytest.log").open("wb") as output:
             checked = subprocess.run([sys.executable, "-m", "pytest", "-q", "--disable-warnings", "--maxfail=3",
-                "tests/test_agent_tools_contract.py", "tests/test_agent_tools_acceptance.py", "tests/test_agent_tool_metadata.py",
-                "tests/test_agent_checkout.py", "tests/test_agent_order_fulfillment.py",
-                "tests/test_agent_printing.py", "tests/test_agent_checkout_postgres.py", "tests/test_agent_model_usage_postgres.py",
+                *selection,
                 "--junitxml=" + str(artifact / "pytest.xml")], cwd=root, env=env, stdout=output, stderr=subprocess.STDOUT,
                 timeout=240, creationflags=hidden)
         result["tests_exit_code"] = checked.returncode

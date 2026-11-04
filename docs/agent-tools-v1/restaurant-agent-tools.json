@@ -1,6 +1,6 @@
 {
   "package_version": 2,
-  "api_contract_version": "1.1.0",
+  "api_contract_version": "1.1.1",
   "openapi_url": "https://api.escalarai.tech/openapi.json",
   "api_base_url": "https://api.escalarai.tech/api/v1",
   "business_id": 1,
@@ -22,6 +22,140 @@
     "X-Agent-Lease"
   ],
   "endpoints": {
+    "conversations_native_readiness": {
+      "method": "GET",
+      "url": "https://api.escalarai.tech/api/v1/integrations/conversations/native/readiness",
+      "scope": "agent:state",
+      "required_scopes": [
+        "agent:state"
+      ],
+      "operation_id": "native_queue_readiness_api_v1_integrations_conversations_native_readiness_get",
+      "description": "Consultar si la cola nativa requiere un tick, sin tomar mensajes, leases ni permisos de envío.",
+      "read_only": true,
+      "idempotency": "none",
+      "idempotency_location": null,
+      "idempotency_key_field": null,
+      "idempotency_replay": "current_state",
+      "conversation_auth": "none",
+      "conversation_auth_fields": [],
+      "parameters": [
+        {
+          "name": "authorization",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Authorization"
+          }
+        },
+        {
+          "name": "x-integration-token",
+          "in": "header",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X-Integration-Token"
+          }
+        }
+      ],
+      "request_body": null,
+      "responses": {
+        "200": {
+          "description": "Successful Response",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NativeQueueReadiness"
+              }
+            }
+          }
+        },
+        "422": {
+          "description": "Error de integración con código estable.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentError"
+              }
+            }
+          }
+        },
+        "401": {
+          "description": "Error de integración con código estable.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentError"
+              }
+            }
+          }
+        },
+        "403": {
+          "description": "Error de integración con código estable.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentError"
+              }
+            }
+          }
+        },
+        "404": {
+          "description": "Error de integración con código estable.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentError"
+              }
+            }
+          }
+        },
+        "409": {
+          "description": "Error de integración con código estable.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentError"
+              }
+            }
+          }
+        },
+        "429": {
+          "description": "Error de integración con código estable.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentError"
+              }
+            }
+          }
+        },
+        "503": {
+          "description": "Error de integración con código estable.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentError"
+              }
+            }
+          }
+        }
+      }
+    },
     "restaurant_context": {
       "method": "GET",
       "url": "https://api.escalarai.tech/api/v1/integrations/context",
@@ -10226,6 +10360,52 @@
         },
         "type": "object",
         "title": "ModifierSelection"
+      },
+      "NativeQueueReadiness": {
+        "properties": {
+          "protocol_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Protocol Version",
+            "default": 1
+          },
+          "runtime_contract": {
+            "type": "string",
+            "const": "native_v1",
+            "title": "Runtime Contract",
+            "default": "native_v1"
+          },
+          "business_id": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Business Id"
+          },
+          "branch_id": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Branch Id"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready",
+            "description": "Scheduling hint only; claims still own leases, batching and dispatch."
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At",
+            "description": "UTC observation time; consumers must not cache a negative result."
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "business_id",
+          "branch_id",
+          "ready",
+          "checked_at"
+        ],
+        "title": "NativeQueueReadiness"
       },
       "OrderCreate": {
         "properties": {

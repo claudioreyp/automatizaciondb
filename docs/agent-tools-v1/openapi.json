@@ -3,7 +3,7 @@
   "info": {
     "title": "Escalar AI POS API",
     "description": "API multiempresa para operaciones POS gastronómicas de Escalar AI. Incluye aislamiento por negocio y sucursal, idempotencia y compatibilidad legacy controlada.",
-    "version": "1.1.0"
+    "version": "1.1.1"
   },
   "paths": {
     "/api/v1/integrations/conversations/media": {
@@ -39991,6 +39991,148 @@
         ]
       }
     },
+    "/api/v1/integrations/conversations/native/readiness": {
+      "get": {
+        "tags": [
+          "agent-conversations"
+        ],
+        "summary": "Observe native queue readiness without claiming work",
+        "description": "A current branch-scoped scheduling hint. False means no native work or pending response was visible at checked_at; a later input can arrive immediately. True includes quiet-window candidates. This read never claims a lease or delivery and grants no execution authority.",
+        "operationId": "native_queue_readiness_api_v1_integrations_conversations_native_readiness_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "x-integration-token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Integration-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NativeQueueReadiness"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error de integración con código estable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error de integración con código estable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error de integración con código estable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error de integración con código estable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Error de integración con código estable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Error de integración con código estable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error de integración con código estable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentError"
+                }
+              }
+            }
+          }
+        },
+        "x-tool-name": "conversations_native_readiness",
+        "x-required-scopes": [
+          "agent:state"
+        ],
+        "x-read-only": true,
+        "x-idempotency": "none",
+        "x-idempotency-location": null,
+        "x-idempotency-key-field": null,
+        "x-idempotency-replay": "current_state",
+        "x-conversation-auth": "none",
+        "x-conversation-auth-fields": [],
+        "security": [
+          {
+            "IntegrationBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/integrations/conversations/work/claim": {
       "post": {
         "tags": [
@@ -47685,6 +47827,52 @@
         },
         "type": "object",
         "title": "ModifierUpdate"
+      },
+      "NativeQueueReadiness": {
+        "properties": {
+          "protocol_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Protocol Version",
+            "default": 1
+          },
+          "runtime_contract": {
+            "type": "string",
+            "const": "native_v1",
+            "title": "Runtime Contract",
+            "default": "native_v1"
+          },
+          "business_id": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Business Id"
+          },
+          "branch_id": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Branch Id"
+          },
+          "ready": {
+            "type": "boolean",
+            "title": "Ready",
+            "description": "Scheduling hint only; claims still own leases, batching and dispatch."
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At",
+            "description": "UTC observation time; consumers must not cache a negative result."
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "business_id",
+          "branch_id",
+          "ready",
+          "checked_at"
+        ],
+        "title": "NativeQueueReadiness"
       },
       "NoticeDisposition": {
         "properties": {

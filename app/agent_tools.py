@@ -24,6 +24,9 @@ class Tool:
 
 
 TOOLS = (
+    Tool('conversations_native_readiness', 'GET', '/integrations/conversations/native/readiness', 'agent:state', ('restaurant_agent',), True, ('agent:state',),
+        idempotency='none', idempotency_location=None, idempotency_key_field=None, idempotency_replay='current_state',
+        conversation_auth='none', conversation_auth_fields=()),
     Tool('queue_event_notice', 'POST', '/integrations/events/{event_id}/outbox', 'events:deliver', ('generic',), False, ('events:deliver',),
         idempotency='required', idempotency_location='path', idempotency_key_field='event_id', idempotency_replay='event_identity',
         conversation_auth='none', conversation_auth_fields=()),

@@ -1,4 +1,4 @@
-# API del agente de restaurante · contrato 1.1.0
+# API del agente de restaurante · contrato 1.1.1
 
 Las rutas existentes de `/api/v1` se conservan. Esta entrega integra la candidata
 local, publica contratos de herramientas y prepara el backend para un futuro
@@ -22,6 +22,23 @@ el paquete real de Admins contiene el negocio y sucursal de cada credencial.
 Regenerar sin conexión ni secretos: `python scripts/export_agent_tool_contract.py`.
 
 ## Un turno del futuro agente
+
+El temporizador de n8n puede consultar primero
+`GET /integrations/conversations/native/readiness`. Requiere una credencial
+con negocio/sucursal y permiso `agent:state`; no requiere conversación, lease o
+clave idempotente. Devuelve únicamente `ready`, negocio, sucursal, contrato y
+`checked_at` UTC, sin mensajes, identificadores de consumidores o tokens.
+La lectura no modifica credenciales ni filas y utiliza una sola consulta de
+existencia para la cola nativa y el outbox pendiente del mismo ámbito.
+
+`ready: false` permite omitir ese tick; un mensaje posterior será visible en la
+siguiente consulta. No se debe almacenar la respuesta: lleva `Cache-Control:
+no-store`. `ready: true` es una indicación conservadora que también puede incluir
+la espera de agrupación o de un medio. El claim sigue comprobando estas esperas,
+vigencia, orden y leases. Dos workers pueden observar `true`; sólo el claim
+autoritativo con bloqueo y lease decide quién puede ejecutar. La lectura no
+autoriza operaciones o envíos, no reabre entregas inciertas y no cambia plazos.
+Si la lectura falla, el coordinador puede conservar su camino de claim original.
 
 1. El transporte identifica cada mensaje por el ID estable del proveedor y lo
    encola. Una redelivery conserva ese ID; dos textos iguales con IDs diferentes
@@ -141,6 +158,13 @@ escucha únicamente en loopback y siempre detiene su servidor al terminar.
 El ensayo visual usa `scripts/serve_agent_tools_sandbox.py` y los Vite locales;
 no configura transporte externo ni impresoras. Los resultados y capturas se
 guardan fuera del paquete productivo, bajo `.test-results`.
+
+Para comprobar únicamente readiness y sus contratos en un cluster nuevo:
+`python scripts/verify_agent_tools_postgres.py tests/test_agent_native_readiness.py tests/test_agent_tools_contract.py tests/test_agent_tool_metadata.py`.
+El lanzador admite una selección explícita de archivos locales, registra esa
+selección y rechaza rutas fuera de `tests` antes de iniciar PostgreSQL.
+La reversión específica de 1.1.1 usa API `42513ad`, sin migración. Un consumidor
+que obtiene un error o un hint inválido debe conservar su camino previo de claim.
 
 El benchmark `scripts/benchmark_agent_catalog.py` compara el código base con la
 candidata, misma semilla rica, calentamiento y cinco mediciones por tamaño.
