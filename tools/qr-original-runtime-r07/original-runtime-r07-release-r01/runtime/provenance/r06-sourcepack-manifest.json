@@ -1,0 +1,1247 @@
+{
+  "schema": "escalarai.notifier-runtime-r06-sourcepack.v1",
+  "state": "LOCAL_SOURCE_ONLY_NOT_BUILT_DEPLOYED_OR_EXECUTED",
+  "api_version": "1.1.1",
+  "api_revision": "7f840536c16aea143c9d71264bd83866ee4731b7",
+  "committed_api_blobs_unchanged": 70,
+  "api_files": [
+    {
+      "file": "api/app/__init__.py",
+      "bytes": 45,
+      "sha256": "011e1eaf5d331624ac713fe8126af51604d3accc9318d9b4bd5bfbf164979ad4",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_attention.py",
+      "bytes": 17367,
+      "sha256": "42e2e8040004a31a01a9d75f38dc2b13fa889c2b4cd11887583c729995cf584e",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_blocking_io.py",
+      "bytes": 788,
+      "sha256": "f45b144ec11795e4951e8a5a768d780167e9ed7f5b34f967e6bbb028f2eca4a1",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_catalog.py",
+      "bytes": 6431,
+      "sha256": "a5eec3cfa512e8fa71c7e6058b0208354e14c9345212e9c0e8ea7451ce3fcbdf",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_checkout.py",
+      "bytes": 19759,
+      "sha256": "69d4d2968ad55b3ea2f726ac5a9d7fd4733da3b07701bb02c79e97875e42cf07",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_checkout_api.py",
+      "bytes": 52870,
+      "sha256": "c8dd9081a4f7711742592e988281b00bd02643f8908492ceb7922e19c9258413",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_context.py",
+      "bytes": 10575,
+      "sha256": "2e17e813530cdbe5a5c4818bc0d3b6f584b081a643b4f39d40bae7843818410f",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_contracts.py",
+      "bytes": 15746,
+      "sha256": "914d6655358489687baf5c2d29ac136cd65db1c0bdb7266393f80389bf337c4a",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_delivery.py",
+      "bytes": 6110,
+      "sha256": "d0e331221a1b216742a5ad86236aa585a3df30efda2cc37364a12dbb88940eb3",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_event_outbox.py",
+      "bytes": 24294,
+      "sha256": "693026612376d5b0ee3a0e40353183d807fb00f9b928404dd3072d7e6193b547",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_http_contracts.py",
+      "bytes": 7643,
+      "sha256": "c78c15b340abb95accd7f373e51379699cfd7c4d534307f227b0b70da08968e7",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_input_media.py",
+      "bytes": 26689,
+      "sha256": "c533683cfda88e5c010c4028367d732452f605c191e6295b41b2f0ef55b7260f",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_media.py",
+      "bytes": 3131,
+      "sha256": "64afcd56b88d3ca9e7497704a241c92c0d9bd706cd19960688590fc213340e26",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_message_batching.py",
+      "bytes": 5779,
+      "sha256": "4bb3b7802dd43d0100e6b18c6495c9f07ded1cbdee2d5eb7ca2519ef3bc9a43c",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_order_changes.py",
+      "bytes": 5812,
+      "sha256": "13e5faa26b09c8df99e26f206b5a10d4d3dda2360c8c36404f7c394cb5b19a6e",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_order_reference.py",
+      "bytes": 2504,
+      "sha256": "9b0f0bf3239af9258af43fc596bb6d801be9d1f1aafb2b60e416a7c464f688d4",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_original_items.py",
+      "bytes": 10679,
+      "sha256": "dc046c81dc7ca55f6e2df1a25d62edf6976edf3f5a75e371724e0c0623cc8a71",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_original_payment.py",
+      "bytes": 14710,
+      "sha256": "cea29a4076a55e727bea87a1eef7cdc50ad957eab095b8dbf97dd85d630f052a",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_original_policy.py",
+      "bytes": 4955,
+      "sha256": "a35256065b7de0f68d9d945fde17340aa9214abf4d533f5a2ef069e80c9afe91",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_public_context.py",
+      "bytes": 2015,
+      "sha256": "34eed660029f828df914de67376e2534916cac9a102c47d847d59d3ffc6f8268",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_runtime_api.py",
+      "bytes": 91363,
+      "sha256": "173ce6ce9b4e192ee22e1c275108a174b9c9a9d6701ee358d5c4d6e81bd528c8",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_selection.py",
+      "bytes": 7341,
+      "sha256": "40d51c308294d8030c987c82c675f0b7c711cf41761bbcff690b847efafda0b5",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_selection_schemas.py",
+      "bytes": 2063,
+      "sha256": "30762aeb5e5e2e24b54439837e903cb960a7be53c40b2ab356ebc9c97b4b9f57",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_service.py",
+      "bytes": 3100,
+      "sha256": "16fd460a5607e1c5862bf0b8a4ce79354d81bf528384e11267e66efd80c3b753",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_settings.py",
+      "bytes": 11339,
+      "sha256": "72f83e89c986d612aa2c29b0fcfc21ff88e1fe82fb92050282c8864c1515d908",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_tools.py",
+      "bytes": 23550,
+      "sha256": "422b1bf8a356e7667416ed7761cca97ec801db6f4406815ec907518b697f8378",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_turn_context.py",
+      "bytes": 4007,
+      "sha256": "49d66c06e05dc2b5b54dbf92ae53a38522160126dac7b3c028d0f893116f5383",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_unsupported_input.py",
+      "bytes": 1613,
+      "sha256": "a3ec682f460d5277419f9f114072bb8c01168dfd083d2efff09dd43ae93a3061",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_usage.py",
+      "bytes": 14734,
+      "sha256": "497b89c33fb6151320fa8dca282cc0094e187c452e9d5ee58d79c8621899b7af",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/api.py",
+      "bytes": 348938,
+      "sha256": "dfc560a53c643b130d83d9ebde9becf578871d4edca1c85211bc924f855c108e",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/auth.py",
+      "bytes": 15001,
+      "sha256": "36b6dd83c117e925efcafbc5c559f1dd1e2054320d8a8da8f2b05087c7140a69",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/auth_sessions.py",
+      "bytes": 4493,
+      "sha256": "d79f610a572b24c331f014479d89551aa3a1a82ee3e0a8b3f05856db3c61daa4",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/cash_service.py",
+      "bytes": 35790,
+      "sha256": "f396bfa864f9e26587f30c1b8fa60a8da316092443b8569e6874819de17ed272",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/catalog_availability.py",
+      "bytes": 2279,
+      "sha256": "2263cdabe4236f23c3cc69f8ca12e8aaf46cecd174e0e2f484b28dcb91ab829f",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/command_revisions.py",
+      "bytes": 2465,
+      "sha256": "fe6a1489fa63fa508c695ebfa7df32898266c289e34ce6ef3c1d0b7cd9e018e9",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/config.py",
+      "bytes": 4848,
+      "sha256": "0db35076a797624beb4c354df571a0fc88463b6689c0136d4d21d9e71c64320f",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/credential_operations.py",
+      "bytes": 1137,
+      "sha256": "a6c7cd4b01f3385b879ed8df995c4691c2ae46f687898b4fa554203bdda64883",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/dashboard_report.py",
+      "bytes": 6743,
+      "sha256": "74f94296a4587b81c6d9c061ea7adf50155938c9f282bd01e8c89a6be3f5c68e",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/database.py",
+      "bytes": 851,
+      "sha256": "75926a98e861bd367c7f7346be9ae26852788e01cb889ca8c0f28e2751e649ce",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/device_api.py",
+      "bytes": 14841,
+      "sha256": "45ef9f5bf8bed2dafdc4660a2ce862c2b0c49ef6e776bc5bdee40acd4ff8eb2a",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/device_auth.py",
+      "bytes": 5584,
+      "sha256": "8128bff5e100550cded4dea0af15da5c66acc0bbaed93ae3dc594ee6fbfce4d4",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/errors.py",
+      "bytes": 233,
+      "sha256": "5fcd14f0f7779bde66728e2dcb19426bef881d5ad7d08afb74b6d5a9004cb6fd",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/integration_order_validation.py",
+      "bytes": 1932,
+      "sha256": "c12f2da56ece3b0e5ee1c636138da74e7a199da470f18b7bd6247d9f8e4dc0bf",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/integration_package.py",
+      "bytes": 5071,
+      "sha256": "3446469f884024583ec5e21fd92c66f898e291deac2f704914a56531a16b0332",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/log_redaction.py",
+      "bytes": 567,
+      "sha256": "395754443a908aa8ecec57027362823ec1ceeb9bc7afa9c2df6e8131cf530c02",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/main.py",
+      "bytes": 8068,
+      "sha256": "d9af35d914ca2c6ea0be4bf1fae824b5a9f9649ce48d17523ddf380fe729ffd1",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/models.py",
+      "bytes": 67385,
+      "sha256": "f6082492449bf6584eadceeabde07f58c246ab102d393d2187e2fdaa3745470f",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/order_editing.py",
+      "bytes": 6370,
+      "sha256": "b2d154a7d8edd3106dd4a2aef872e5bfeb9007f4de7aebef219a7d87d07fb5d5",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/order_folios.py",
+      "bytes": 936,
+      "sha256": "08c72ee58ef1d20e674f06588452db3142c4f70e1837e1df313eb2651aa33064",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/password_resets.py",
+      "bytes": 9859,
+      "sha256": "57f3403fae161e045dc551cc8222ced9471043548d374b14ac54a39b2b8825f7",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/pos_printing.py",
+      "bytes": 28292,
+      "sha256": "87dfea5bf11c3736f8972facfef583522bb0172a3318efd887c7cf7a28922d8c",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/pos_printing_api.py",
+      "bytes": 16212,
+      "sha256": "92a0e87d139ad425966b46df4a1fe0e74b28dcc4e4f7fe3730360c00a22089c2",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/printing_settings.py",
+      "bytes": 1376,
+      "sha256": "c23810f08c8784b8a707e3c135e1ca581eb716149511fbb2bd9774ae9e4e4431",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/product_access.py",
+      "bytes": 291,
+      "sha256": "898e0cf213339d12c856bf707bffda4413ac33667f6046d18ad15a5c4cd44478",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/qz_activation.py",
+      "bytes": 4117,
+      "sha256": "2b43a7929534e4bd25137d7445f23c9b60301b052871c7b5205b44f94c91df6f",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/qz_signing.py",
+      "bytes": 8159,
+      "sha256": "d4d86eb091bc091bd6561230d7bfc688d63112804f543d1c3447456a81e76f8b",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/realtime.py",
+      "bytes": 2345,
+      "sha256": "6639e3a85a5be69c0b5a7b094b06f32fb5174d27792a11b81daad46fd137b7d4",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/resources/qz/README.md",
+      "bytes": 675,
+      "sha256": "1003328b526cf241002a1931f9322d3c732ee8eaa06caa12c1a44ea75311c8a6",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/resources/qz/activate-unix.sh",
+      "bytes": 2988,
+      "sha256": "fcbaf24c0321746f794cdded3c22d45d439e2dae647b73973be026f026359229",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/resources/qz/activate-windows.ps1",
+      "bytes": 7313,
+      "sha256": "fcd70a36d01b98b313145a469c43ecb3bf59b48d56a233665b437cf26f9f56c4",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/resources/qz/qz-root.pem",
+      "bytes": 1513,
+      "sha256": "f834d6785ccb63f94e653fe5fe4399926eac38a532546225e0ec7187bb12fb2e",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/schemas.py",
+      "bytes": 42076,
+      "sha256": "25a3f8e012026a849bd19e879d65fa713620e03ea95c56f56c45153a9323a5c4",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/security_audit.py",
+      "bytes": 26102,
+      "sha256": "8369aae8a40522b4e9a70072bec678023e13b172afb37c9efc340134b0d5c130",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/selection_rules.py",
+      "bytes": 1130,
+      "sha256": "4041788620091d56f493f04b2156af94c3e005ead2025f16c77616b595126a63",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/services.py",
+      "bytes": 88046,
+      "sha256": "a6174fa82c57a1af290558907dec837cf1a895d3cdc919b57573c186a72e9230",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/settings_api.py",
+      "bytes": 83166,
+      "sha256": "af2c87d03fb3d8093e98c12ebf01e4dcea9f70ddbdc456eeae4bb5879bb358cc",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/settings_service.py",
+      "bytes": 48690,
+      "sha256": "08d722276af65a99e95a07e82e85a6c7e22767c8b5fc310ad93550e6dbd35838",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/storage.py",
+      "bytes": 5888,
+      "sha256": "be05c2404f1ac8694f4061fd0f4903f2e22f653febdddefd8763324b92c39e6f",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/table_lifecycle.py",
+      "bytes": 3043,
+      "sha256": "fb2742d7685f71c24c2092ea00e3fffa19b44ba97a684cee4fabce7c38eaa7f6",
+      "api_commit_matches": true
+    },
+    {
+      "file": "requirements.txt",
+      "bytes": 337,
+      "sha256": "f8145dc5db038a0e2b6a704b89e9e8947befbf3703415d5f46df11a7c57d20c2",
+      "api_commit_matches": true
+    }
+  ],
+  "base_image": {
+    "tag": "escalar-qr-api-eval:16240c5",
+    "fixture_commit": "16240c5fe1f4632a1c57c91e4d7f0fbd1c0a5959",
+    "expected_image_id": "sha256:93dc84393cbaa83f680830c2e53bc7567e1c73a5273f46a36bb72df46fa9f740",
+    "future_tag_id_verification_required": true,
+    "pull_allowed": false,
+    "build_network": "none"
+  },
+  "source_inputs": {
+    "verification/docker-api-111-r05/source-manifest.json": {
+      "sha256": "d97aa16cf0d63cf1d2ee6ee9157c2dc0317f42d0b0064506702379081a4cd6d8",
+      "bytes": 12522
+    },
+    "verification/notifier-fixture-r02/proposal.json": {
+      "sha256": "f2ca6b4945ca718f319c780d59c4aab0de19d917e51cce57de55fe3a81867f6b",
+      "bytes": 2117
+    },
+    "verification/docker-api-111-public-lf-r01/api70-commit-check.json": {
+      "sha256": "c5ade3c09d372e8480b8c5fac6f98a6d6747e123a0b56ff7633f3290a1d4ec30",
+      "bytes": 16847
+    },
+    "verification/docker-api-111-r05/api/app/__init__.py": {
+      "sha256": "011e1eaf5d331624ac713fe8126af51604d3accc9318d9b4bd5bfbf164979ad4",
+      "bytes": 45
+    },
+    "verification/docker-api-111-r05/api/app/agent_attention.py": {
+      "sha256": "42e2e8040004a31a01a9d75f38dc2b13fa889c2b4cd11887583c729995cf584e",
+      "bytes": 17367
+    },
+    "verification/docker-api-111-r05/api/app/agent_blocking_io.py": {
+      "sha256": "f45b144ec11795e4951e8a5a768d780167e9ed7f5b34f967e6bbb028f2eca4a1",
+      "bytes": 788
+    },
+    "verification/docker-api-111-r05/api/app/agent_catalog.py": {
+      "sha256": "a5eec3cfa512e8fa71c7e6058b0208354e14c9345212e9c0e8ea7451ce3fcbdf",
+      "bytes": 6431
+    },
+    "verification/docker-api-111-r05/api/app/agent_checkout.py": {
+      "sha256": "69d4d2968ad55b3ea2f726ac5a9d7fd4733da3b07701bb02c79e97875e42cf07",
+      "bytes": 19759
+    },
+    "verification/docker-api-111-r05/api/app/agent_checkout_api.py": {
+      "sha256": "c8dd9081a4f7711742592e988281b00bd02643f8908492ceb7922e19c9258413",
+      "bytes": 52870
+    },
+    "verification/docker-api-111-r05/api/app/agent_context.py": {
+      "sha256": "2e17e813530cdbe5a5c4818bc0d3b6f584b081a643b4f39d40bae7843818410f",
+      "bytes": 10575
+    },
+    "verification/docker-api-111-r05/api/app/agent_contracts.py": {
+      "sha256": "914d6655358489687baf5c2d29ac136cd65db1c0bdb7266393f80389bf337c4a",
+      "bytes": 15746
+    },
+    "verification/docker-api-111-r05/api/app/agent_delivery.py": {
+      "sha256": "d0e331221a1b216742a5ad86236aa585a3df30efda2cc37364a12dbb88940eb3",
+      "bytes": 6110
+    },
+    "verification/docker-api-111-r05/api/app/agent_event_outbox.py": {
+      "sha256": "693026612376d5b0ee3a0e40353183d807fb00f9b928404dd3072d7e6193b547",
+      "bytes": 24294
+    },
+    "verification/docker-api-111-r05/api/app/agent_http_contracts.py": {
+      "sha256": "c78c15b340abb95accd7f373e51379699cfd7c4d534307f227b0b70da08968e7",
+      "bytes": 7643
+    },
+    "verification/docker-api-111-r05/api/app/agent_input_media.py": {
+      "sha256": "c533683cfda88e5c010c4028367d732452f605c191e6295b41b2f0ef55b7260f",
+      "bytes": 26689
+    },
+    "verification/docker-api-111-r05/api/app/agent_media.py": {
+      "sha256": "64afcd56b88d3ca9e7497704a241c92c0d9bd706cd19960688590fc213340e26",
+      "bytes": 3131
+    },
+    "verification/docker-api-111-r05/api/app/agent_message_batching.py": {
+      "sha256": "4bb3b7802dd43d0100e6b18c6495c9f07ded1cbdee2d5eb7ca2519ef3bc9a43c",
+      "bytes": 5779
+    },
+    "verification/docker-api-111-r05/api/app/agent_order_changes.py": {
+      "sha256": "13e5faa26b09c8df99e26f206b5a10d4d3dda2360c8c36404f7c394cb5b19a6e",
+      "bytes": 5812
+    },
+    "verification/docker-api-111-r05/api/app/agent_order_reference.py": {
+      "sha256": "9b0f0bf3239af9258af43fc596bb6d801be9d1f1aafb2b60e416a7c464f688d4",
+      "bytes": 2504
+    },
+    "verification/docker-api-111-r05/api/app/agent_original_items.py": {
+      "sha256": "dc046c81dc7ca55f6e2df1a25d62edf6976edf3f5a75e371724e0c0623cc8a71",
+      "bytes": 10679
+    },
+    "verification/docker-api-111-r05/api/app/agent_original_payment.py": {
+      "sha256": "cea29a4076a55e727bea87a1eef7cdc50ad957eab095b8dbf97dd85d630f052a",
+      "bytes": 14710
+    },
+    "verification/docker-api-111-r05/api/app/agent_original_policy.py": {
+      "sha256": "a35256065b7de0f68d9d945fde17340aa9214abf4d533f5a2ef069e80c9afe91",
+      "bytes": 4955
+    },
+    "verification/docker-api-111-r05/api/app/agent_public_context.py": {
+      "sha256": "34eed660029f828df914de67376e2534916cac9a102c47d847d59d3ffc6f8268",
+      "bytes": 2015
+    },
+    "verification/docker-api-111-r05/api/app/agent_runtime_api.py": {
+      "sha256": "173ce6ce9b4e192ee22e1c275108a174b9c9a9d6701ee358d5c4d6e81bd528c8",
+      "bytes": 91363
+    },
+    "verification/docker-api-111-r05/api/app/agent_selection.py": {
+      "sha256": "40d51c308294d8030c987c82c675f0b7c711cf41761bbcff690b847efafda0b5",
+      "bytes": 7341
+    },
+    "verification/docker-api-111-r05/api/app/agent_selection_schemas.py": {
+      "sha256": "30762aeb5e5e2e24b54439837e903cb960a7be53c40b2ab356ebc9c97b4b9f57",
+      "bytes": 2063
+    },
+    "verification/docker-api-111-r05/api/app/agent_service.py": {
+      "sha256": "16fd460a5607e1c5862bf0b8a4ce79354d81bf528384e11267e66efd80c3b753",
+      "bytes": 3100
+    },
+    "verification/docker-api-111-r05/api/app/agent_settings.py": {
+      "sha256": "72f83e89c986d612aa2c29b0fcfc21ff88e1fe82fb92050282c8864c1515d908",
+      "bytes": 11339
+    },
+    "verification/docker-api-111-r05/api/app/agent_tools.py": {
+      "sha256": "422b1bf8a356e7667416ed7761cca97ec801db6f4406815ec907518b697f8378",
+      "bytes": 23550
+    },
+    "verification/docker-api-111-r05/api/app/agent_turn_context.py": {
+      "sha256": "49d66c06e05dc2b5b54dbf92ae53a38522160126dac7b3c028d0f893116f5383",
+      "bytes": 4007
+    },
+    "verification/docker-api-111-r05/api/app/agent_unsupported_input.py": {
+      "sha256": "a3ec682f460d5277419f9f114072bb8c01168dfd083d2efff09dd43ae93a3061",
+      "bytes": 1613
+    },
+    "verification/docker-api-111-r05/api/app/agent_usage.py": {
+      "sha256": "497b89c33fb6151320fa8dca282cc0094e187c452e9d5ee58d79c8621899b7af",
+      "bytes": 14734
+    },
+    "verification/docker-api-111-r05/api/app/api.py": {
+      "sha256": "dfc560a53c643b130d83d9ebde9becf578871d4edca1c85211bc924f855c108e",
+      "bytes": 348938
+    },
+    "verification/docker-api-111-r05/api/app/auth.py": {
+      "sha256": "36b6dd83c117e925efcafbc5c559f1dd1e2054320d8a8da8f2b05087c7140a69",
+      "bytes": 15001
+    },
+    "verification/docker-api-111-r05/api/app/auth_sessions.py": {
+      "sha256": "d79f610a572b24c331f014479d89551aa3a1a82ee3e0a8b3f05856db3c61daa4",
+      "bytes": 4493
+    },
+    "verification/docker-api-111-r05/api/app/cash_service.py": {
+      "sha256": "f396bfa864f9e26587f30c1b8fa60a8da316092443b8569e6874819de17ed272",
+      "bytes": 35790
+    },
+    "verification/docker-api-111-r05/api/app/catalog_availability.py": {
+      "sha256": "2263cdabe4236f23c3cc69f8ca12e8aaf46cecd174e0e2f484b28dcb91ab829f",
+      "bytes": 2279
+    },
+    "verification/docker-api-111-r05/api/app/command_revisions.py": {
+      "sha256": "fe6a1489fa63fa508c695ebfa7df32898266c289e34ce6ef3c1d0b7cd9e018e9",
+      "bytes": 2465
+    },
+    "verification/docker-api-111-r05/api/app/config.py": {
+      "sha256": "0db35076a797624beb4c354df571a0fc88463b6689c0136d4d21d9e71c64320f",
+      "bytes": 4848
+    },
+    "verification/docker-api-111-r05/api/app/credential_operations.py": {
+      "sha256": "a6c7cd4b01f3385b879ed8df995c4691c2ae46f687898b4fa554203bdda64883",
+      "bytes": 1137
+    },
+    "verification/docker-api-111-r05/api/app/dashboard_report.py": {
+      "sha256": "74f94296a4587b81c6d9c061ea7adf50155938c9f282bd01e8c89a6be3f5c68e",
+      "bytes": 6743
+    },
+    "verification/docker-api-111-r05/api/app/database.py": {
+      "sha256": "75926a98e861bd367c7f7346be9ae26852788e01cb889ca8c0f28e2751e649ce",
+      "bytes": 851
+    },
+    "verification/docker-api-111-r05/api/app/device_api.py": {
+      "sha256": "45ef9f5bf8bed2dafdc4660a2ce862c2b0c49ef6e776bc5bdee40acd4ff8eb2a",
+      "bytes": 14841
+    },
+    "verification/docker-api-111-r05/api/app/device_auth.py": {
+      "sha256": "8128bff5e100550cded4dea0af15da5c66acc0bbaed93ae3dc594ee6fbfce4d4",
+      "bytes": 5584
+    },
+    "verification/docker-api-111-r05/api/app/errors.py": {
+      "sha256": "5fcd14f0f7779bde66728e2dcb19426bef881d5ad7d08afb74b6d5a9004cb6fd",
+      "bytes": 233
+    },
+    "verification/docker-api-111-r05/api/app/integration_order_validation.py": {
+      "sha256": "c12f2da56ece3b0e5ee1c636138da74e7a199da470f18b7bd6247d9f8e4dc0bf",
+      "bytes": 1932
+    },
+    "verification/docker-api-111-r05/api/app/integration_package.py": {
+      "sha256": "3446469f884024583ec5e21fd92c66f898e291deac2f704914a56531a16b0332",
+      "bytes": 5071
+    },
+    "verification/docker-api-111-r05/api/app/log_redaction.py": {
+      "sha256": "395754443a908aa8ecec57027362823ec1ceeb9bc7afa9c2df6e8131cf530c02",
+      "bytes": 567
+    },
+    "verification/docker-api-111-r05/api/app/main.py": {
+      "sha256": "d9af35d914ca2c6ea0be4bf1fae824b5a9f9649ce48d17523ddf380fe729ffd1",
+      "bytes": 8068
+    },
+    "verification/docker-api-111-r05/api/app/models.py": {
+      "sha256": "f6082492449bf6584eadceeabde07f58c246ab102d393d2187e2fdaa3745470f",
+      "bytes": 67385
+    },
+    "verification/docker-api-111-r05/api/app/order_editing.py": {
+      "sha256": "b2d154a7d8edd3106dd4a2aef872e5bfeb9007f4de7aebef219a7d87d07fb5d5",
+      "bytes": 6370
+    },
+    "verification/docker-api-111-r05/api/app/order_folios.py": {
+      "sha256": "08c72ee58ef1d20e674f06588452db3142c4f70e1837e1df313eb2651aa33064",
+      "bytes": 936
+    },
+    "verification/docker-api-111-r05/api/app/password_resets.py": {
+      "sha256": "57f3403fae161e045dc551cc8222ced9471043548d374b14ac54a39b2b8825f7",
+      "bytes": 9859
+    },
+    "verification/docker-api-111-r05/api/app/pos_printing.py": {
+      "sha256": "87dfea5bf11c3736f8972facfef583522bb0172a3318efd887c7cf7a28922d8c",
+      "bytes": 28292
+    },
+    "verification/docker-api-111-r05/api/app/pos_printing_api.py": {
+      "sha256": "92a0e87d139ad425966b46df4a1fe0e74b28dcc4e4f7fe3730360c00a22089c2",
+      "bytes": 16212
+    },
+    "verification/docker-api-111-r05/api/app/printing_settings.py": {
+      "sha256": "c23810f08c8784b8a707e3c135e1ca581eb716149511fbb2bd9774ae9e4e4431",
+      "bytes": 1376
+    },
+    "verification/docker-api-111-r05/api/app/product_access.py": {
+      "sha256": "898e0cf213339d12c856bf707bffda4413ac33667f6046d18ad15a5c4cd44478",
+      "bytes": 291
+    },
+    "verification/docker-api-111-r05/api/app/qz_activation.py": {
+      "sha256": "2b43a7929534e4bd25137d7445f23c9b60301b052871c7b5205b44f94c91df6f",
+      "bytes": 4117
+    },
+    "verification/docker-api-111-r05/api/app/qz_signing.py": {
+      "sha256": "d4d86eb091bc091bd6561230d7bfc688d63112804f543d1c3447456a81e76f8b",
+      "bytes": 8159
+    },
+    "verification/docker-api-111-r05/api/app/realtime.py": {
+      "sha256": "6639e3a85a5be69c0b5a7b094b06f32fb5174d27792a11b81daad46fd137b7d4",
+      "bytes": 2345
+    },
+    "verification/docker-api-111-r05/api/app/resources/qz/README.md": {
+      "sha256": "1003328b526cf241002a1931f9322d3c732ee8eaa06caa12c1a44ea75311c8a6",
+      "bytes": 675
+    },
+    "verification/docker-api-111-r05/api/app/resources/qz/activate-unix.sh": {
+      "sha256": "fcbaf24c0321746f794cdded3c22d45d439e2dae647b73973be026f026359229",
+      "bytes": 2988
+    },
+    "verification/docker-api-111-r05/api/app/resources/qz/activate-windows.ps1": {
+      "sha256": "fcd70a36d01b98b313145a469c43ecb3bf59b48d56a233665b437cf26f9f56c4",
+      "bytes": 7313
+    },
+    "verification/docker-api-111-r05/api/app/resources/qz/qz-root.pem": {
+      "sha256": "f834d6785ccb63f94e653fe5fe4399926eac38a532546225e0ec7187bb12fb2e",
+      "bytes": 1513
+    },
+    "verification/docker-api-111-r05/api/app/schemas.py": {
+      "sha256": "25a3f8e012026a849bd19e879d65fa713620e03ea95c56f56c45153a9323a5c4",
+      "bytes": 42076
+    },
+    "verification/docker-api-111-r05/api/app/security_audit.py": {
+      "sha256": "8369aae8a40522b4e9a70072bec678023e13b172afb37c9efc340134b0d5c130",
+      "bytes": 26102
+    },
+    "verification/docker-api-111-r05/api/app/selection_rules.py": {
+      "sha256": "4041788620091d56f493f04b2156af94c3e005ead2025f16c77616b595126a63",
+      "bytes": 1130
+    },
+    "verification/docker-api-111-r05/api/app/services.py": {
+      "sha256": "a6174fa82c57a1af290558907dec837cf1a895d3cdc919b57573c186a72e9230",
+      "bytes": 88046
+    },
+    "verification/docker-api-111-r05/api/app/settings_api.py": {
+      "sha256": "af2c87d03fb3d8093e98c12ebf01e4dcea9f70ddbdc456eeae4bb5879bb358cc",
+      "bytes": 83166
+    },
+    "verification/docker-api-111-r05/api/app/settings_service.py": {
+      "sha256": "08d722276af65a99e95a07e82e85a6c7e22767c8b5fc310ad93550e6dbd35838",
+      "bytes": 48690
+    },
+    "verification/docker-api-111-r05/api/app/storage.py": {
+      "sha256": "be05c2404f1ac8694f4061fd0f4903f2e22f653febdddefd8763324b92c39e6f",
+      "bytes": 5888
+    },
+    "verification/docker-api-111-r05/api/app/table_lifecycle.py": {
+      "sha256": "fb2742d7685f71c24c2092ea00e3fffa19b44ba97a684cee4fabce7c38eaa7f6",
+      "bytes": 3043
+    },
+    "verification/docker-api-111-r05/requirements.txt": {
+      "sha256": "f8145dc5db038a0e2b6a704b89e9e8947befbf3703415d5f46df11a7c57d20c2",
+      "bytes": 337
+    },
+    "verification/docker-api-111-r05/Dockerfile": {
+      "sha256": "185ef2817cd52d6538ec1dfbe8d7da7e5b0f4bfd0180da6d6efd4bb0976131d0",
+      "bytes": 1076
+    },
+    "verification/docker-api-111-r05/api-sandbox.py": {
+      "sha256": "7f371555ea05479d778f1a08b47f4ad3ffe2a433d07039c7918790140b52f6d0",
+      "bytes": 17909
+    },
+    "verification/notifier-fixture-r02/sandbox.patch": {
+      "sha256": "979c988e475f88b44423a9e99bc989933a7dbfb60a4be26fee40422ae99d0d24",
+      "bytes": 2206
+    },
+    "gateway/sandbox-proxy/fixed-api-proxy.py": {
+      "sha256": "454a199a340d164c81fff82b5a97dac03c347f799984f08c154cd4ea1459ddf3",
+      "bytes": 10190
+    },
+    "verification/notifier-fixture-r02/proxy.patch": {
+      "sha256": "380783a068ddf3f08ff414e53a621206524e72877cf1f569fc3c4dce7970abff",
+      "bytes": 1074
+    },
+    "build-eval-control.py": {
+      "sha256": "c44ace8e84f084c6f9973af4d9e342a912f5ce2435a1b57692c6482efcc09a23",
+      "bytes": 7304
+    },
+    "verification/notifier-fixture-r02/controller.patch": {
+      "sha256": "fa9e7db0cade4c3091e6cb3020a01cbb1ba8e8559b688c2df72bd7ee3cf2097c",
+      "bytes": 1052
+    },
+    "verification/notifier-fixture-r02/notifier_fixture.py": {
+      "sha256": "32d52800f8a21a481eba4a06672529a5b132194364158499504d9927d85fc2d3",
+      "bytes": 9307
+    },
+    "verification/notifier-fixture-r02/local-result.json": {
+      "sha256": "ade1c141330af6a09046b782d02f8a7516a0475d91314e96e25b3f0021d4e4a3",
+      "bytes": 1508
+    },
+    "deploy-n8n.py": {
+      "sha256": "7c925ceaca3894ab6049d88697d47fd736028f9e7550567b8b64d2485d4fe037",
+      "bytes": 3647
+    }
+  },
+  "files": [
+    {
+      "file": "api/app/__init__.py",
+      "bytes": 45,
+      "sha256": "011e1eaf5d331624ac713fe8126af51604d3accc9318d9b4bd5bfbf164979ad4"
+    },
+    {
+      "file": "api/app/agent_attention.py",
+      "bytes": 17367,
+      "sha256": "42e2e8040004a31a01a9d75f38dc2b13fa889c2b4cd11887583c729995cf584e"
+    },
+    {
+      "file": "api/app/agent_blocking_io.py",
+      "bytes": 788,
+      "sha256": "f45b144ec11795e4951e8a5a768d780167e9ed7f5b34f967e6bbb028f2eca4a1"
+    },
+    {
+      "file": "api/app/agent_catalog.py",
+      "bytes": 6431,
+      "sha256": "a5eec3cfa512e8fa71c7e6058b0208354e14c9345212e9c0e8ea7451ce3fcbdf"
+    },
+    {
+      "file": "api/app/agent_checkout.py",
+      "bytes": 19759,
+      "sha256": "69d4d2968ad55b3ea2f726ac5a9d7fd4733da3b07701bb02c79e97875e42cf07"
+    },
+    {
+      "file": "api/app/agent_checkout_api.py",
+      "bytes": 52870,
+      "sha256": "c8dd9081a4f7711742592e988281b00bd02643f8908492ceb7922e19c9258413"
+    },
+    {
+      "file": "api/app/agent_context.py",
+      "bytes": 10575,
+      "sha256": "2e17e813530cdbe5a5c4818bc0d3b6f584b081a643b4f39d40bae7843818410f"
+    },
+    {
+      "file": "api/app/agent_contracts.py",
+      "bytes": 15746,
+      "sha256": "914d6655358489687baf5c2d29ac136cd65db1c0bdb7266393f80389bf337c4a"
+    },
+    {
+      "file": "api/app/agent_delivery.py",
+      "bytes": 6110,
+      "sha256": "d0e331221a1b216742a5ad86236aa585a3df30efda2cc37364a12dbb88940eb3"
+    },
+    {
+      "file": "api/app/agent_event_outbox.py",
+      "bytes": 24294,
+      "sha256": "693026612376d5b0ee3a0e40353183d807fb00f9b928404dd3072d7e6193b547"
+    },
+    {
+      "file": "api/app/agent_http_contracts.py",
+      "bytes": 7643,
+      "sha256": "c78c15b340abb95accd7f373e51379699cfd7c4d534307f227b0b70da08968e7"
+    },
+    {
+      "file": "api/app/agent_input_media.py",
+      "bytes": 26689,
+      "sha256": "c533683cfda88e5c010c4028367d732452f605c191e6295b41b2f0ef55b7260f"
+    },
+    {
+      "file": "api/app/agent_media.py",
+      "bytes": 3131,
+      "sha256": "64afcd56b88d3ca9e7497704a241c92c0d9bd706cd19960688590fc213340e26"
+    },
+    {
+      "file": "api/app/agent_message_batching.py",
+      "bytes": 5779,
+      "sha256": "4bb3b7802dd43d0100e6b18c6495c9f07ded1cbdee2d5eb7ca2519ef3bc9a43c"
+    },
+    {
+      "file": "api/app/agent_order_changes.py",
+      "bytes": 5812,
+      "sha256": "13e5faa26b09c8df99e26f206b5a10d4d3dda2360c8c36404f7c394cb5b19a6e"
+    },
+    {
+      "file": "api/app/agent_order_reference.py",
+      "bytes": 2504,
+      "sha256": "9b0f0bf3239af9258af43fc596bb6d801be9d1f1aafb2b60e416a7c464f688d4"
+    },
+    {
+      "file": "api/app/agent_original_items.py",
+      "bytes": 10679,
+      "sha256": "dc046c81dc7ca55f6e2df1a25d62edf6976edf3f5a75e371724e0c0623cc8a71"
+    },
+    {
+      "file": "api/app/agent_original_payment.py",
+      "bytes": 14710,
+      "sha256": "cea29a4076a55e727bea87a1eef7cdc50ad957eab095b8dbf97dd85d630f052a"
+    },
+    {
+      "file": "api/app/agent_original_policy.py",
+      "bytes": 4955,
+      "sha256": "a35256065b7de0f68d9d945fde17340aa9214abf4d533f5a2ef069e80c9afe91"
+    },
+    {
+      "file": "api/app/agent_public_context.py",
+      "bytes": 2015,
+      "sha256": "34eed660029f828df914de67376e2534916cac9a102c47d847d59d3ffc6f8268"
+    },
+    {
+      "file": "api/app/agent_runtime_api.py",
+      "bytes": 91363,
+      "sha256": "173ce6ce9b4e192ee22e1c275108a174b9c9a9d6701ee358d5c4d6e81bd528c8"
+    },
+    {
+      "file": "api/app/agent_selection.py",
+      "bytes": 7341,
+      "sha256": "40d51c308294d8030c987c82c675f0b7c711cf41761bbcff690b847efafda0b5"
+    },
+    {
+      "file": "api/app/agent_selection_schemas.py",
+      "bytes": 2063,
+      "sha256": "30762aeb5e5e2e24b54439837e903cb960a7be53c40b2ab356ebc9c97b4b9f57"
+    },
+    {
+      "file": "api/app/agent_service.py",
+      "bytes": 3100,
+      "sha256": "16fd460a5607e1c5862bf0b8a4ce79354d81bf528384e11267e66efd80c3b753"
+    },
+    {
+      "file": "api/app/agent_settings.py",
+      "bytes": 11339,
+      "sha256": "72f83e89c986d612aa2c29b0fcfc21ff88e1fe82fb92050282c8864c1515d908"
+    },
+    {
+      "file": "api/app/agent_tools.py",
+      "bytes": 23550,
+      "sha256": "422b1bf8a356e7667416ed7761cca97ec801db6f4406815ec907518b697f8378"
+    },
+    {
+      "file": "api/app/agent_turn_context.py",
+      "bytes": 4007,
+      "sha256": "49d66c06e05dc2b5b54dbf92ae53a38522160126dac7b3c028d0f893116f5383"
+    },
+    {
+      "file": "api/app/agent_unsupported_input.py",
+      "bytes": 1613,
+      "sha256": "a3ec682f460d5277419f9f114072bb8c01168dfd083d2efff09dd43ae93a3061"
+    },
+    {
+      "file": "api/app/agent_usage.py",
+      "bytes": 14734,
+      "sha256": "497b89c33fb6151320fa8dca282cc0094e187c452e9d5ee58d79c8621899b7af"
+    },
+    {
+      "file": "api/app/api.py",
+      "bytes": 348938,
+      "sha256": "dfc560a53c643b130d83d9ebde9becf578871d4edca1c85211bc924f855c108e"
+    },
+    {
+      "file": "api/app/auth.py",
+      "bytes": 15001,
+      "sha256": "36b6dd83c117e925efcafbc5c559f1dd1e2054320d8a8da8f2b05087c7140a69"
+    },
+    {
+      "file": "api/app/auth_sessions.py",
+      "bytes": 4493,
+      "sha256": "d79f610a572b24c331f014479d89551aa3a1a82ee3e0a8b3f05856db3c61daa4"
+    },
+    {
+      "file": "api/app/cash_service.py",
+      "bytes": 35790,
+      "sha256": "f396bfa864f9e26587f30c1b8fa60a8da316092443b8569e6874819de17ed272"
+    },
+    {
+      "file": "api/app/catalog_availability.py",
+      "bytes": 2279,
+      "sha256": "2263cdabe4236f23c3cc69f8ca12e8aaf46cecd174e0e2f484b28dcb91ab829f"
+    },
+    {
+      "file": "api/app/command_revisions.py",
+      "bytes": 2465,
+      "sha256": "fe6a1489fa63fa508c695ebfa7df32898266c289e34ce6ef3c1d0b7cd9e018e9"
+    },
+    {
+      "file": "api/app/config.py",
+      "bytes": 4848,
+      "sha256": "0db35076a797624beb4c354df571a0fc88463b6689c0136d4d21d9e71c64320f"
+    },
+    {
+      "file": "api/app/credential_operations.py",
+      "bytes": 1137,
+      "sha256": "a6c7cd4b01f3385b879ed8df995c4691c2ae46f687898b4fa554203bdda64883"
+    },
+    {
+      "file": "api/app/dashboard_report.py",
+      "bytes": 6743,
+      "sha256": "74f94296a4587b81c6d9c061ea7adf50155938c9f282bd01e8c89a6be3f5c68e"
+    },
+    {
+      "file": "api/app/database.py",
+      "bytes": 851,
+      "sha256": "75926a98e861bd367c7f7346be9ae26852788e01cb889ca8c0f28e2751e649ce"
+    },
+    {
+      "file": "api/app/device_api.py",
+      "bytes": 14841,
+      "sha256": "45ef9f5bf8bed2dafdc4660a2ce862c2b0c49ef6e776bc5bdee40acd4ff8eb2a"
+    },
+    {
+      "file": "api/app/device_auth.py",
+      "bytes": 5584,
+      "sha256": "8128bff5e100550cded4dea0af15da5c66acc0bbaed93ae3dc594ee6fbfce4d4"
+    },
+    {
+      "file": "api/app/errors.py",
+      "bytes": 233,
+      "sha256": "5fcd14f0f7779bde66728e2dcb19426bef881d5ad7d08afb74b6d5a9004cb6fd"
+    },
+    {
+      "file": "api/app/integration_order_validation.py",
+      "bytes": 1932,
+      "sha256": "c12f2da56ece3b0e5ee1c636138da74e7a199da470f18b7bd6247d9f8e4dc0bf"
+    },
+    {
+      "file": "api/app/integration_package.py",
+      "bytes": 5071,
+      "sha256": "3446469f884024583ec5e21fd92c66f898e291deac2f704914a56531a16b0332"
+    },
+    {
+      "file": "api/app/log_redaction.py",
+      "bytes": 567,
+      "sha256": "395754443a908aa8ecec57027362823ec1ceeb9bc7afa9c2df6e8131cf530c02"
+    },
+    {
+      "file": "api/app/main.py",
+      "bytes": 8068,
+      "sha256": "d9af35d914ca2c6ea0be4bf1fae824b5a9f9649ce48d17523ddf380fe729ffd1"
+    },
+    {
+      "file": "api/app/models.py",
+      "bytes": 67385,
+      "sha256": "f6082492449bf6584eadceeabde07f58c246ab102d393d2187e2fdaa3745470f"
+    },
+    {
+      "file": "api/app/order_editing.py",
+      "bytes": 6370,
+      "sha256": "b2d154a7d8edd3106dd4a2aef872e5bfeb9007f4de7aebef219a7d87d07fb5d5"
+    },
+    {
+      "file": "api/app/order_folios.py",
+      "bytes": 936,
+      "sha256": "08c72ee58ef1d20e674f06588452db3142c4f70e1837e1df313eb2651aa33064"
+    },
+    {
+      "file": "api/app/password_resets.py",
+      "bytes": 9859,
+      "sha256": "57f3403fae161e045dc551cc8222ced9471043548d374b14ac54a39b2b8825f7"
+    },
+    {
+      "file": "api/app/pos_printing.py",
+      "bytes": 28292,
+      "sha256": "87dfea5bf11c3736f8972facfef583522bb0172a3318efd887c7cf7a28922d8c"
+    },
+    {
+      "file": "api/app/pos_printing_api.py",
+      "bytes": 16212,
+      "sha256": "92a0e87d139ad425966b46df4a1fe0e74b28dcc4e4f7fe3730360c00a22089c2"
+    },
+    {
+      "file": "api/app/printing_settings.py",
+      "bytes": 1376,
+      "sha256": "c23810f08c8784b8a707e3c135e1ca581eb716149511fbb2bd9774ae9e4e4431"
+    },
+    {
+      "file": "api/app/product_access.py",
+      "bytes": 291,
+      "sha256": "898e0cf213339d12c856bf707bffda4413ac33667f6046d18ad15a5c4cd44478"
+    },
+    {
+      "file": "api/app/qz_activation.py",
+      "bytes": 4117,
+      "sha256": "2b43a7929534e4bd25137d7445f23c9b60301b052871c7b5205b44f94c91df6f"
+    },
+    {
+      "file": "api/app/qz_signing.py",
+      "bytes": 8159,
+      "sha256": "d4d86eb091bc091bd6561230d7bfc688d63112804f543d1c3447456a81e76f8b"
+    },
+    {
+      "file": "api/app/realtime.py",
+      "bytes": 2345,
+      "sha256": "6639e3a85a5be69c0b5a7b094b06f32fb5174d27792a11b81daad46fd137b7d4"
+    },
+    {
+      "file": "api/app/resources/qz/activate-unix.sh",
+      "bytes": 2988,
+      "sha256": "fcbaf24c0321746f794cdded3c22d45d439e2dae647b73973be026f026359229"
+    },
+    {
+      "file": "api/app/resources/qz/activate-windows.ps1",
+      "bytes": 7313,
+      "sha256": "fcd70a36d01b98b313145a469c43ecb3bf59b48d56a233665b437cf26f9f56c4"
+    },
+    {
+      "file": "api/app/resources/qz/qz-root.pem",
+      "bytes": 1513,
+      "sha256": "f834d6785ccb63f94e653fe5fe4399926eac38a532546225e0ec7187bb12fb2e"
+    },
+    {
+      "file": "api/app/resources/qz/README.md",
+      "bytes": 675,
+      "sha256": "1003328b526cf241002a1931f9322d3c732ee8eaa06caa12c1a44ea75311c8a6"
+    },
+    {
+      "file": "api/app/schemas.py",
+      "bytes": 42076,
+      "sha256": "25a3f8e012026a849bd19e879d65fa713620e03ea95c56f56c45153a9323a5c4"
+    },
+    {
+      "file": "api/app/security_audit.py",
+      "bytes": 26102,
+      "sha256": "8369aae8a40522b4e9a70072bec678023e13b172afb37c9efc340134b0d5c130"
+    },
+    {
+      "file": "api/app/selection_rules.py",
+      "bytes": 1130,
+      "sha256": "4041788620091d56f493f04b2156af94c3e005ead2025f16c77616b595126a63"
+    },
+    {
+      "file": "api/app/services.py",
+      "bytes": 88046,
+      "sha256": "a6174fa82c57a1af290558907dec837cf1a895d3cdc919b57573c186a72e9230"
+    },
+    {
+      "file": "api/app/settings_api.py",
+      "bytes": 83166,
+      "sha256": "af2c87d03fb3d8093e98c12ebf01e4dcea9f70ddbdc456eeae4bb5879bb358cc"
+    },
+    {
+      "file": "api/app/settings_service.py",
+      "bytes": 48690,
+      "sha256": "08d722276af65a99e95a07e82e85a6c7e22767c8b5fc310ad93550e6dbd35838"
+    },
+    {
+      "file": "api/app/storage.py",
+      "bytes": 5888,
+      "sha256": "be05c2404f1ac8694f4061fd0f4903f2e22f653febdddefd8763324b92c39e6f"
+    },
+    {
+      "file": "api/app/table_lifecycle.py",
+      "bytes": 3043,
+      "sha256": "fb2742d7685f71c24c2092ea00e3fffa19b44ba97a684cee4fabce7c38eaa7f6"
+    },
+    {
+      "file": "controller.py",
+      "bytes": 7836,
+      "sha256": "857e4347b871ff82d18f3d792e0f07af6b4f43d9256976ef96fbc2913f265485"
+    },
+    {
+      "file": "Dockerfile",
+      "bytes": 406,
+      "sha256": "3f1b6cd551d430f093d7d82f653ac405f6b99b11f6aad66d4f52b0844af9b838"
+    },
+    {
+      "file": "Dockerfile.proxy",
+      "bytes": 529,
+      "sha256": "1a05a1a3030383ddae34601ae55b5278ba16a51aa93705b2cb3e888968eb168b"
+    },
+    {
+      "file": "future-importer-spec.json",
+      "bytes": 2747,
+      "sha256": "2b5a7c21367c7d13df78cc04bce10d98b0c6a46e45128a48dd83d3b592fb1726"
+    },
+    {
+      "file": "materialize-sourcepack.py",
+      "bytes": 12082,
+      "sha256": "8e61f6c5f859559d52fbe5ec14375ea64db1f5e7e1133c66f1750561c9e66d52"
+    },
+    {
+      "file": "notifier_fixture.py",
+      "bytes": 9307,
+      "sha256": "32d52800f8a21a481eba4a06672529a5b132194364158499504d9927d85fc2d3"
+    },
+    {
+      "file": "provenance/api70-commit-check.json",
+      "bytes": 16847,
+      "sha256": "c5ade3c09d372e8480b8c5fac6f98a6d6747e123a0b56ff7633f3290a1d4ec30"
+    },
+    {
+      "file": "provenance/controller.patch",
+      "bytes": 1052,
+      "sha256": "fa9e7db0cade4c3091e6cb3020a01cbb1ba8e8559b688c2df72bd7ee3cf2097c"
+    },
+    {
+      "file": "provenance/notifier-fixture-local-result.json",
+      "bytes": 1508,
+      "sha256": "ade1c141330af6a09046b782d02f8a7516a0475d91314e96e25b3f0021d4e4a3"
+    },
+    {
+      "file": "provenance/notifier-fixture-proposal.json",
+      "bytes": 2117,
+      "sha256": "f2ca6b4945ca718f319c780d59c4aab0de19d917e51cce57de55fe3a81867f6b"
+    },
+    {
+      "file": "provenance/proxy.patch",
+      "bytes": 1074,
+      "sha256": "380783a068ddf3f08ff414e53a621206524e72877cf1f569fc3c4dce7970abff"
+    },
+    {
+      "file": "provenance/r05-Dockerfile.reference",
+      "bytes": 1076,
+      "sha256": "185ef2817cd52d6538ec1dfbe8d7da7e5b0f4bfd0180da6d6efd4bb0976131d0"
+    },
+    {
+      "file": "provenance/r05-source-manifest.json",
+      "bytes": 12522,
+      "sha256": "d97aa16cf0d63cf1d2ee6ee9157c2dc0317f42d0b0064506702379081a4cd6d8"
+    },
+    {
+      "file": "provenance/sandbox.patch",
+      "bytes": 2206,
+      "sha256": "979c988e475f88b44423a9e99bc989933a7dbfb60a4be26fee40422ae99d0d24"
+    },
+    {
+      "file": "proxy.py",
+      "bytes": 10243,
+      "sha256": "d621318ac4b267efb1f1cf49ed8eb6058dda499f2abc30d21e02d97aa305bead"
+    },
+    {
+      "file": "README.md",
+      "bytes": 2901,
+      "sha256": "c487090572638aa434317835ea9757abad9f1f0943283217aa5f9c9a808f8f38"
+    },
+    {
+      "file": "requirements.txt",
+      "bytes": 337,
+      "sha256": "f8145dc5db038a0e2b6a704b89e9e8947befbf3703415d5f46df11a7c57d20c2"
+    },
+    {
+      "file": "sandbox.py",
+      "bytes": 18374,
+      "sha256": "da7b26433374725146535c2856359a5b9bc7695a465e54d86e1add61d0b9d4ad"
+    }
+  ],
+  "exact_fixture_proposal_applied_in_new_tree_only": true,
+  "controller_graph_source_sha256": "a9ebbbbf74606537e1087517999b869ddfbca202df09c9c8ecf632e70b99d925",
+  "controller_graph_only_helper_seam_changed": true,
+  "historical_controller_build_guard_reused": false,
+  "controller_registered": false,
+  "fixed_operations_added": [
+    "notice-ready",
+    "notice-snapshot"
+  ],
+  "allowed_sender": "519990900001",
+  "notifier_scope": {
+    "business_id": 2,
+    "branch_id": 2,
+    "profile": "generic",
+    "scopes": [
+      "events:deliver",
+      "events:read",
+      "menu:read",
+      "orders:read"
+    ]
+  },
+  "private_runtime_binding_generated": false,
+  "credentials_provisioned": 0,
+  "api_runtime_changed": false,
+  "frozen_R05_sources_unchanged": true,
+  "tests_executed": 0,
+  "docker_builds": 0,
+  "network": 0,
+  "models": 0,
+  "native_acceptance": false,
+  "production_changes": 0,
+  "pending": [
+    "finish and close R11 smoke before notifier native work",
+    "ROOT review sourcepack and verify current local base tag against exact image ID before pull=false network=none build",
+    "archive complete current synthetic snapshot and preserve current process/private binding before any isolated cutover",
+    "new ROOT controller stager with fresh metadata/readback and exact node/credential/settings preservation",
+    "new bounded create-only notifier credential importer per future-importer-spec.json",
+    "native notifier poll, MOCK delivery, receiver receipt/API ACK and event source-mapping verification"
+  ]
+}

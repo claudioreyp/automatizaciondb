@@ -1,0 +1,31 @@
+{
+  "schema": "escalarai.original-r07-deployment-source-provenance.v1",
+  "source_only": true,
+  "origins": [
+    {
+      "file": "entregas\\agente-qr-20261104\\verification\\notifier-runtime-r06-deploy-r01\\deploy_common.py",
+      "sha256": "43a579ddf0725216a331f0caad2f64c0515785139907ed06554852d4f50052d6"
+    },
+    {
+      "file": "entregas\\agente-qr-20261104\\verification\\notifier-runtime-r06-deploy-r01\\prepare.py",
+      "sha256": "c3eac9072fecead1c6335eaed20e69b1df563cd119749e9119d240e21cf50871"
+    },
+    {
+      "file": "entregas\\agente-qr-20261104\\verification\\notifier-runtime-r06-deploy-r01\\apply.py",
+      "sha256": "be4e802853b704dd11caa7e0952d352966c9a9a5f6101db07bf82008a6867ffc"
+    },
+    {
+      "file": "entregas\\agente-qr-20261104\\verification\\notifier-runtime-r06-deploy-r01\\reverse.py",
+      "sha256": "7768228332c0282388e1b18a77fef959d1a04188df097b53303dd5fef52135b7"
+    }
+  ],
+  "deltas": [
+    "R07 package paths/names/labels; same cachedbase93dc andAPI70",
+    "106 runtime sourcefiles plus exactmanifest/results; readonly mounts forfixedhelpers",
+    "Archive currentR12case+journal+recovery+budget; OPENmodelblock permitted; noCAS",
+    "SameUID/GID10001 privatebinding600/parent700 beforeproxy, security/net/resource profiles preserved",
+    "PreserveR05 stopped configuration; no in-memory restoration or oldcase replay",
+    "ROOT-authorized refinement: complete R12 payloads remain durable in user_workspace; VPS validates exact metadata receipt only, never opens Windows paths or duplicates payloads."
+  ],
+  "runtime_actions": 0
+}

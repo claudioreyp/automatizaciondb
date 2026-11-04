@@ -1,0 +1,14 @@
+{
+  "schema": "escalarai.local-process-receipt.v1",
+  "command": [
+    "python",
+    "integration.test.py"
+  ],
+  "exit_code": 0,
+  "wall_ms": 8953,
+  "stdout": "{\"schema\": \"escalarai.original-runtime-r07-local-integration.v1\", \"status\": \"PASS_LOCAL_ONLY\", \"api70_pins\": 70, \"fixed_original_contracts\": 15, \"archives_before_next_reset\": 15, \"unauthorized_and_invalid_contracts_no_reset\": true, \"same_engine_and_three_tokens\": true, \"original_pizza_price24_minimum2_preserved\": true, \"archive_failure_prevents_control_request_and_reset\": true, \"shared_lock_busy_rejects_security_and_visual_without_effects\": true, \"visual_route_exact_image_source_unchanged\": true, \"visual_bytes\": 1441792, \"visual_sha256\": \"3113e90b0a5470c6d1fcd008125ec5f2b92208539a992d4f1c01eb8aa992d198\", \"visual_registered_cases\": 27, \"visual_current_case_mismatch_rejected\": true, \"visual_unregistered_case_rejected\": true, \"visual_yape_case_same_engine_exact_image\": true, \"controller_all_nodes_edges_credentials_settings_preserved_except_prepare\": true, \"controller_off\": true, \"proxy_origin_and_limits_preserved\": true, \"local_visual_fixture_orders\": 2, \"saved_financial_evidence_sha256_unchanged\": \"9d1846d62c6ae890f20dfacc761f2a1399314592f80a2b9a737968e183c48c56\", \"live_budget_accessed\": false, \"network_attempts\": 0, \"models\": 0, \"vps\": 0, \"originals_executed\": 0, \"originals_accepted\": 0, \"physical_printing\": false, \"wall_ms\": 8422}\r\n",
+  "stderr": "C:\\Users\\claud\\AppData\\Local\\Programs\\Python\\Python311\\Lib\\site-packages\\fastapi\\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\r\n  from starlette.testclient import TestClient as TestClient  # noqa\r\n{\"sandbox_engine_diagnostic\": {\"backend\": \"sqlite\", \"driver\": \"pysqlite\", \"database_class\": \"memory\", \"exact_memory_url\": true}}\r\n",
+  "network": 0,
+  "models": 0,
+  "vps": 0
+}

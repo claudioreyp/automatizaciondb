@@ -1,0 +1,53 @@
+{
+  "schema": "escalarai.original-r07-operational-source-manifest.v1",
+  "state": "SOURCE_ONLY_NOT_EXECUTED",
+  "kind": "deploy",
+  "runtime_manifest_sha256": "ff514ad7767879624c5ca35c829efda3b5984707aeb9fafe478f7cbf374bfc7e",
+  "local_results_sha256": "9894ae4158ec41a1a4e5e6c76a216f1a0da73404716216969e5cb2d5973afd53",
+  "files": [
+    {
+      "file": "README.md",
+      "bytes": 3479,
+      "sha256": "7ad765be5b6884bbeb9e12d9b21988a7e38b83d544887a0ad2dcd26a94815dee"
+    },
+    {
+      "file": "apply.py",
+      "bytes": 12265,
+      "sha256": "603d86f89212f31ebac302afcf66b7cca70bb6c92e1190267b5f00df710aa1ac"
+    },
+    {
+      "file": "archive-inputs.json",
+      "bytes": 3939,
+      "sha256": "9828a0014628a3130e4fa6621fd5bc849ac33dc1ad7ee8f23ce0ec8e1f2ec1ae"
+    },
+    {
+      "file": "deploy_common.py",
+      "bytes": 18974,
+      "sha256": "7fb9976299b2cf34e508e9e5c884dca4349f78e7ccb22ca91b2b5094b937dd84"
+    },
+    {
+      "file": "prepare.py",
+      "bytes": 4376,
+      "sha256": "3ecc7526b1965d71b28532b079c820b567da0c68b9d9aecb791a46d92d1e439d"
+    },
+    {
+      "file": "reverse.py",
+      "bytes": 1633,
+      "sha256": "3d9af6125b5b02501154c99f477205f1831541e79982820171761fe160b2d72c"
+    },
+    {
+      "file": "source-provenance.json",
+      "bytes": 1586,
+      "sha256": "cbb4dd7d058bb86a1e6695beac8ee75bf0ad698c8b4f598e5009d2b4dfbd785c"
+    }
+  ],
+  "python_ast_only": 4,
+  "imports_performed": 0,
+  "network": 0,
+  "docker": 0,
+  "runtime_changes": 0,
+  "models": 0,
+  "archive_location": "user_workspace",
+  "private_case_payloads_copied_to_vps": false,
+  "preserved_pre_refinement_sources": "history/archive-payload-r01"
+}

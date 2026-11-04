@@ -1,0 +1,497 @@
+{
+  "schema": "escalarai.api70-git-blob-check.v1",
+  "revision": "7f840536c16aea143c9d71264bd83866ee4731b7",
+  "result": "PASS",
+  "files": [
+    {
+      "file": "api/app/__init__.py",
+      "api_path": "app/__init__.py",
+      "bytes": 45,
+      "sha256": "011e1eaf5d331624ac713fe8126af51604d3accc9318d9b4bd5bfbf164979ad4",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_attention.py",
+      "api_path": "app/agent_attention.py",
+      "bytes": 17367,
+      "sha256": "42e2e8040004a31a01a9d75f38dc2b13fa889c2b4cd11887583c729995cf584e",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_blocking_io.py",
+      "api_path": "app/agent_blocking_io.py",
+      "bytes": 788,
+      "sha256": "f45b144ec11795e4951e8a5a768d780167e9ed7f5b34f967e6bbb028f2eca4a1",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_catalog.py",
+      "api_path": "app/agent_catalog.py",
+      "bytes": 6431,
+      "sha256": "a5eec3cfa512e8fa71c7e6058b0208354e14c9345212e9c0e8ea7451ce3fcbdf",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_checkout.py",
+      "api_path": "app/agent_checkout.py",
+      "bytes": 19759,
+      "sha256": "69d4d2968ad55b3ea2f726ac5a9d7fd4733da3b07701bb02c79e97875e42cf07",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_checkout_api.py",
+      "api_path": "app/agent_checkout_api.py",
+      "bytes": 52870,
+      "sha256": "c8dd9081a4f7711742592e988281b00bd02643f8908492ceb7922e19c9258413",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_context.py",
+      "api_path": "app/agent_context.py",
+      "bytes": 10575,
+      "sha256": "2e17e813530cdbe5a5c4818bc0d3b6f584b081a643b4f39d40bae7843818410f",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_contracts.py",
+      "api_path": "app/agent_contracts.py",
+      "bytes": 15746,
+      "sha256": "914d6655358489687baf5c2d29ac136cd65db1c0bdb7266393f80389bf337c4a",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_delivery.py",
+      "api_path": "app/agent_delivery.py",
+      "bytes": 6110,
+      "sha256": "d0e331221a1b216742a5ad86236aa585a3df30efda2cc37364a12dbb88940eb3",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_event_outbox.py",
+      "api_path": "app/agent_event_outbox.py",
+      "bytes": 24294,
+      "sha256": "693026612376d5b0ee3a0e40353183d807fb00f9b928404dd3072d7e6193b547",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_http_contracts.py",
+      "api_path": "app/agent_http_contracts.py",
+      "bytes": 7643,
+      "sha256": "c78c15b340abb95accd7f373e51379699cfd7c4d534307f227b0b70da08968e7",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_input_media.py",
+      "api_path": "app/agent_input_media.py",
+      "bytes": 26689,
+      "sha256": "c533683cfda88e5c010c4028367d732452f605c191e6295b41b2f0ef55b7260f",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_media.py",
+      "api_path": "app/agent_media.py",
+      "bytes": 3131,
+      "sha256": "64afcd56b88d3ca9e7497704a241c92c0d9bd706cd19960688590fc213340e26",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_message_batching.py",
+      "api_path": "app/agent_message_batching.py",
+      "bytes": 5779,
+      "sha256": "4bb3b7802dd43d0100e6b18c6495c9f07ded1cbdee2d5eb7ca2519ef3bc9a43c",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_order_changes.py",
+      "api_path": "app/agent_order_changes.py",
+      "bytes": 5812,
+      "sha256": "13e5faa26b09c8df99e26f206b5a10d4d3dda2360c8c36404f7c394cb5b19a6e",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_order_reference.py",
+      "api_path": "app/agent_order_reference.py",
+      "bytes": 2504,
+      "sha256": "9b0f0bf3239af9258af43fc596bb6d801be9d1f1aafb2b60e416a7c464f688d4",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_original_items.py",
+      "api_path": "app/agent_original_items.py",
+      "bytes": 10679,
+      "sha256": "dc046c81dc7ca55f6e2df1a25d62edf6976edf3f5a75e371724e0c0623cc8a71",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_original_payment.py",
+      "api_path": "app/agent_original_payment.py",
+      "bytes": 14710,
+      "sha256": "cea29a4076a55e727bea87a1eef7cdc50ad957eab095b8dbf97dd85d630f052a",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_original_policy.py",
+      "api_path": "app/agent_original_policy.py",
+      "bytes": 4955,
+      "sha256": "a35256065b7de0f68d9d945fde17340aa9214abf4d533f5a2ef069e80c9afe91",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_public_context.py",
+      "api_path": "app/agent_public_context.py",
+      "bytes": 2015,
+      "sha256": "34eed660029f828df914de67376e2534916cac9a102c47d847d59d3ffc6f8268",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_runtime_api.py",
+      "api_path": "app/agent_runtime_api.py",
+      "bytes": 91363,
+      "sha256": "173ce6ce9b4e192ee22e1c275108a174b9c9a9d6701ee358d5c4d6e81bd528c8",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_selection.py",
+      "api_path": "app/agent_selection.py",
+      "bytes": 7341,
+      "sha256": "40d51c308294d8030c987c82c675f0b7c711cf41761bbcff690b847efafda0b5",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_selection_schemas.py",
+      "api_path": "app/agent_selection_schemas.py",
+      "bytes": 2063,
+      "sha256": "30762aeb5e5e2e24b54439837e903cb960a7be53c40b2ab356ebc9c97b4b9f57",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_service.py",
+      "api_path": "app/agent_service.py",
+      "bytes": 3100,
+      "sha256": "16fd460a5607e1c5862bf0b8a4ce79354d81bf528384e11267e66efd80c3b753",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_settings.py",
+      "api_path": "app/agent_settings.py",
+      "bytes": 11339,
+      "sha256": "72f83e89c986d612aa2c29b0fcfc21ff88e1fe82fb92050282c8864c1515d908",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_tools.py",
+      "api_path": "app/agent_tools.py",
+      "bytes": 23550,
+      "sha256": "422b1bf8a356e7667416ed7761cca97ec801db6f4406815ec907518b697f8378",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_turn_context.py",
+      "api_path": "app/agent_turn_context.py",
+      "bytes": 4007,
+      "sha256": "49d66c06e05dc2b5b54dbf92ae53a38522160126dac7b3c028d0f893116f5383",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_unsupported_input.py",
+      "api_path": "app/agent_unsupported_input.py",
+      "bytes": 1613,
+      "sha256": "a3ec682f460d5277419f9f114072bb8c01168dfd083d2efff09dd43ae93a3061",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/agent_usage.py",
+      "api_path": "app/agent_usage.py",
+      "bytes": 14734,
+      "sha256": "497b89c33fb6151320fa8dca282cc0094e187c452e9d5ee58d79c8621899b7af",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/api.py",
+      "api_path": "app/api.py",
+      "bytes": 348938,
+      "sha256": "dfc560a53c643b130d83d9ebde9becf578871d4edca1c85211bc924f855c108e",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/auth.py",
+      "api_path": "app/auth.py",
+      "bytes": 15001,
+      "sha256": "36b6dd83c117e925efcafbc5c559f1dd1e2054320d8a8da8f2b05087c7140a69",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/auth_sessions.py",
+      "api_path": "app/auth_sessions.py",
+      "bytes": 4493,
+      "sha256": "d79f610a572b24c331f014479d89551aa3a1a82ee3e0a8b3f05856db3c61daa4",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/cash_service.py",
+      "api_path": "app/cash_service.py",
+      "bytes": 35790,
+      "sha256": "f396bfa864f9e26587f30c1b8fa60a8da316092443b8569e6874819de17ed272",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/catalog_availability.py",
+      "api_path": "app/catalog_availability.py",
+      "bytes": 2279,
+      "sha256": "2263cdabe4236f23c3cc69f8ca12e8aaf46cecd174e0e2f484b28dcb91ab829f",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/command_revisions.py",
+      "api_path": "app/command_revisions.py",
+      "bytes": 2465,
+      "sha256": "fe6a1489fa63fa508c695ebfa7df32898266c289e34ce6ef3c1d0b7cd9e018e9",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/config.py",
+      "api_path": "app/config.py",
+      "bytes": 4848,
+      "sha256": "0db35076a797624beb4c354df571a0fc88463b6689c0136d4d21d9e71c64320f",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/credential_operations.py",
+      "api_path": "app/credential_operations.py",
+      "bytes": 1137,
+      "sha256": "a6c7cd4b01f3385b879ed8df995c4691c2ae46f687898b4fa554203bdda64883",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/dashboard_report.py",
+      "api_path": "app/dashboard_report.py",
+      "bytes": 6743,
+      "sha256": "74f94296a4587b81c6d9c061ea7adf50155938c9f282bd01e8c89a6be3f5c68e",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/database.py",
+      "api_path": "app/database.py",
+      "bytes": 851,
+      "sha256": "75926a98e861bd367c7f7346be9ae26852788e01cb889ca8c0f28e2751e649ce",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/device_api.py",
+      "api_path": "app/device_api.py",
+      "bytes": 14841,
+      "sha256": "45ef9f5bf8bed2dafdc4660a2ce862c2b0c49ef6e776bc5bdee40acd4ff8eb2a",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/device_auth.py",
+      "api_path": "app/device_auth.py",
+      "bytes": 5584,
+      "sha256": "8128bff5e100550cded4dea0af15da5c66acc0bbaed93ae3dc594ee6fbfce4d4",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/errors.py",
+      "api_path": "app/errors.py",
+      "bytes": 233,
+      "sha256": "5fcd14f0f7779bde66728e2dcb19426bef881d5ad7d08afb74b6d5a9004cb6fd",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/integration_order_validation.py",
+      "api_path": "app/integration_order_validation.py",
+      "bytes": 1932,
+      "sha256": "c12f2da56ece3b0e5ee1c636138da74e7a199da470f18b7bd6247d9f8e4dc0bf",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/integration_package.py",
+      "api_path": "app/integration_package.py",
+      "bytes": 5071,
+      "sha256": "3446469f884024583ec5e21fd92c66f898e291deac2f704914a56531a16b0332",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/log_redaction.py",
+      "api_path": "app/log_redaction.py",
+      "bytes": 567,
+      "sha256": "395754443a908aa8ecec57027362823ec1ceeb9bc7afa9c2df6e8131cf530c02",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/main.py",
+      "api_path": "app/main.py",
+      "bytes": 8068,
+      "sha256": "d9af35d914ca2c6ea0be4bf1fae824b5a9f9649ce48d17523ddf380fe729ffd1",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/models.py",
+      "api_path": "app/models.py",
+      "bytes": 67385,
+      "sha256": "f6082492449bf6584eadceeabde07f58c246ab102d393d2187e2fdaa3745470f",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/order_editing.py",
+      "api_path": "app/order_editing.py",
+      "bytes": 6370,
+      "sha256": "b2d154a7d8edd3106dd4a2aef872e5bfeb9007f4de7aebef219a7d87d07fb5d5",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/order_folios.py",
+      "api_path": "app/order_folios.py",
+      "bytes": 936,
+      "sha256": "08c72ee58ef1d20e674f06588452db3142c4f70e1837e1df313eb2651aa33064",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/password_resets.py",
+      "api_path": "app/password_resets.py",
+      "bytes": 9859,
+      "sha256": "57f3403fae161e045dc551cc8222ced9471043548d374b14ac54a39b2b8825f7",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/pos_printing.py",
+      "api_path": "app/pos_printing.py",
+      "bytes": 28292,
+      "sha256": "87dfea5bf11c3736f8972facfef583522bb0172a3318efd887c7cf7a28922d8c",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/pos_printing_api.py",
+      "api_path": "app/pos_printing_api.py",
+      "bytes": 16212,
+      "sha256": "92a0e87d139ad425966b46df4a1fe0e74b28dcc4e4f7fe3730360c00a22089c2",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/printing_settings.py",
+      "api_path": "app/printing_settings.py",
+      "bytes": 1376,
+      "sha256": "c23810f08c8784b8a707e3c135e1ca581eb716149511fbb2bd9774ae9e4e4431",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/product_access.py",
+      "api_path": "app/product_access.py",
+      "bytes": 291,
+      "sha256": "898e0cf213339d12c856bf707bffda4413ac33667f6046d18ad15a5c4cd44478",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/qz_activation.py",
+      "api_path": "app/qz_activation.py",
+      "bytes": 4117,
+      "sha256": "2b43a7929534e4bd25137d7445f23c9b60301b052871c7b5205b44f94c91df6f",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/qz_signing.py",
+      "api_path": "app/qz_signing.py",
+      "bytes": 8159,
+      "sha256": "d4d86eb091bc091bd6561230d7bfc688d63112804f543d1c3447456a81e76f8b",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/realtime.py",
+      "api_path": "app/realtime.py",
+      "bytes": 2345,
+      "sha256": "6639e3a85a5be69c0b5a7b094b06f32fb5174d27792a11b81daad46fd137b7d4",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/resources/qz/README.md",
+      "api_path": "app/resources/qz/README.md",
+      "bytes": 675,
+      "sha256": "1003328b526cf241002a1931f9322d3c732ee8eaa06caa12c1a44ea75311c8a6",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/resources/qz/activate-unix.sh",
+      "api_path": "app/resources/qz/activate-unix.sh",
+      "bytes": 2988,
+      "sha256": "fcbaf24c0321746f794cdded3c22d45d439e2dae647b73973be026f026359229",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/resources/qz/activate-windows.ps1",
+      "api_path": "app/resources/qz/activate-windows.ps1",
+      "bytes": 7313,
+      "sha256": "fcd70a36d01b98b313145a469c43ecb3bf59b48d56a233665b437cf26f9f56c4",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/resources/qz/qz-root.pem",
+      "api_path": "app/resources/qz/qz-root.pem",
+      "bytes": 1513,
+      "sha256": "f834d6785ccb63f94e653fe5fe4399926eac38a532546225e0ec7187bb12fb2e",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/schemas.py",
+      "api_path": "app/schemas.py",
+      "bytes": 42076,
+      "sha256": "25a3f8e012026a849bd19e879d65fa713620e03ea95c56f56c45153a9323a5c4",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/security_audit.py",
+      "api_path": "app/security_audit.py",
+      "bytes": 26102,
+      "sha256": "8369aae8a40522b4e9a70072bec678023e13b172afb37c9efc340134b0d5c130",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/selection_rules.py",
+      "api_path": "app/selection_rules.py",
+      "bytes": 1130,
+      "sha256": "4041788620091d56f493f04b2156af94c3e005ead2025f16c77616b595126a63",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/services.py",
+      "api_path": "app/services.py",
+      "bytes": 88046,
+      "sha256": "a6174fa82c57a1af290558907dec837cf1a895d3cdc919b57573c186a72e9230",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/settings_api.py",
+      "api_path": "app/settings_api.py",
+      "bytes": 83166,
+      "sha256": "af2c87d03fb3d8093e98c12ebf01e4dcea9f70ddbdc456eeae4bb5879bb358cc",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/settings_service.py",
+      "api_path": "app/settings_service.py",
+      "bytes": 48690,
+      "sha256": "08d722276af65a99e95a07e82e85a6c7e22767c8b5fc310ad93550e6dbd35838",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/storage.py",
+      "api_path": "app/storage.py",
+      "bytes": 5888,
+      "sha256": "be05c2404f1ac8694f4061fd0f4903f2e22f653febdddefd8763324b92c39e6f",
+      "api_commit_matches": true
+    },
+    {
+      "file": "api/app/table_lifecycle.py",
+      "api_path": "app/table_lifecycle.py",
+      "bytes": 3043,
+      "sha256": "fb2742d7685f71c24c2092ea00e3fffa19b44ba97a684cee4fabce7c38eaa7f6",
+      "api_commit_matches": true
+    },
+    {
+      "file": "requirements.txt",
+      "api_path": "requirements.txt",
+      "bytes": 337,
+      "sha256": "f8145dc5db038a0e2b6a704b89e9e8947befbf3703415d5f46df11a7c57d20c2",
+      "api_commit_matches": true
+    }
+  ]
+}

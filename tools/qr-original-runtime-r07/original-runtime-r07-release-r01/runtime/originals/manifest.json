@@ -1,0 +1,379 @@
+{
+  "schema": "escalarai.original-acceptance-adapter.v1",
+  "execution": "NOT_EXECUTED",
+  "acceptance_inherited": false,
+  "corpus_manifest": {
+    "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\manifest.json",
+    "sha256": "61eba4fc5edb3166b73ea267a99839e5aee2562edde283b40adb8313eb29964c"
+  },
+  "selected_keys": [
+    "I:SUP-01-GENERIC-PIZZA",
+    "I:SUP-02-MINIMUM-ONE-FLAVOR",
+    "M:SEC-05"
+  ],
+  "requires_control_capability": "start-original-case-v1",
+  "control_operation": "start-original-case",
+  "controller_allowlist": [
+    "I:SUP-01-GENERIC-PIZZA",
+    "I:SUP-02-MINIMUM-ONE-FLAVOR",
+    "M:SEC-05"
+  ],
+  "cases": [
+    {
+      "canonical_key": "I:SUP-01-GENERIC-PIZZA",
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\cases\\179-I_SUP-01-GENERIC-PIZZA.json",
+      "sha256": "782c18a259adc94abb0e35a9254d32fa93752a9c4a7770e06758319a74a41823",
+      "oracle_units": [
+        {
+          "id": "/definition/expected",
+          "value": {
+            "orders": 1,
+            "total": 24,
+            "products": [
+              1
+            ],
+            "modifiers": [
+              "Americana",
+              "Peperoni"
+            ],
+            "payments": 0,
+            "tickets": 1
+          },
+          "value_sha256": "fbff258a79872920a1c046b00327d6caa611eac014cddf887a8aab1baa3d113a",
+          "verdict": "NOT_EXECUTED"
+        },
+        {
+          "id": "/definition/semantics",
+          "value": [
+            "Comprende pizza genérica sin imponer carta o guion.",
+            "Solicita sólo elecciones necesarias y aprovecha el pedido completo posterior."
+          ],
+          "value_sha256": "afb112485780cc2372ec1c8394e331392e6dbe5444787517ea1f036646b448ea",
+          "verdict": "NOT_EXECUTED"
+        }
+      ],
+      "source_refs": [
+        {
+          "file": "APP POS/Apis/backups/restaurant-agent-450v33-other-extra-execution-preparation/I/driver33.mjs",
+          "sha256": "05b479d98f817b328db7f47b487b9b2657b1fb35d4c99bea2e87e20490a65abb"
+        },
+        {
+          "file": "APP POS/Apis/backups/restaurant-agent-450v33-other-extra-execution-preparation/I/driver33.mjs",
+          "sha256": "05b479d98f817b328db7f47b487b9b2657b1fb35d4c99bea2e87e20490a65abb",
+          "line": 31,
+          "end_line": 38
+        }
+      ],
+      "native_expected": null,
+      "fixture_contract": {
+        "schema": "escalarai.original-fixture.v1",
+        "case_key": "I:SUP-01-GENERIC-PIZZA",
+        "original_scope": {
+          "business_id": 1,
+          "branch_id": 1
+        },
+        "execution_scope": {
+          "business_id": 2,
+          "branch_id": 2
+        },
+        "mapping_reason": "Current isolated candidate is scoped to2/2; original1/1 identifies the fixture. No oracle asserts business_id1. Public IDs, prices, required choices, messages and expected values remain exact.",
+        "product": {
+          "id": 1,
+          "name": "Pizza combinada",
+          "price": 24,
+          "variants": [
+            {
+              "name": "Mediana",
+              "price_delta": 0
+            },
+            {
+              "name": "Familiar",
+              "price_delta": 8
+            }
+          ],
+          "required_group": {
+            "name": "Sabores",
+            "minimum": 2,
+            "maximum": 3,
+            "allow_repeats": false,
+            "options": [
+              "Americana",
+              "Peperoni",
+              "Diabla",
+              "Boloñesa"
+            ]
+          }
+        },
+        "fresh_sender_required": true,
+        "real_whatsapp": false,
+        "physical_printing": false
+      },
+      "fixture_contract_sha256": "08af645a92a1f7e264230d1b96469c42cb0d3057aa2a93dbbbde02bfffd8afdf",
+      "status": "NOT_EXECUTED",
+      "adapter": "sequential_text"
+    },
+    {
+      "canonical_key": "I:SUP-02-MINIMUM-ONE-FLAVOR",
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\cases\\180-I_SUP-02-MINIMUM-ONE-FLAVOR.json",
+      "sha256": "563697d73d1348c296c272dd59a46356f7e0b3a123995caae4b03ea41f3a566e",
+      "oracle_units": [
+        {
+          "id": "/definition/expected",
+          "value": {
+            "orders": 1,
+            "total": 24,
+            "products": [
+              1
+            ],
+            "modifiers": [
+              "Americana",
+              "Diabla"
+            ],
+            "payments": 0,
+            "tickets": 1
+          },
+          "value_sha256": "e42910c6d15308496980d202dd8a1b07f74b54eba9e0e6f8bf5474a62b2019ad",
+          "verdict": "NOT_EXECUTED"
+        },
+        {
+          "id": "/definition/semantics",
+          "value": [
+            "Un sabor es insuficiente: pide otro sin perder tamaño, sabor ni modalidad.",
+            "Dos sabores cumplen mínimo; no exige tres ni extras."
+          ],
+          "value_sha256": "176288124f5ff300fbe09035a51cef393a41f34025b4e57c6ffb02211adb3ede",
+          "verdict": "NOT_EXECUTED"
+        }
+      ],
+      "source_refs": [
+        {
+          "file": "APP POS/Apis/backups/restaurant-agent-450v33-other-extra-execution-preparation/I/driver33.mjs",
+          "sha256": "05b479d98f817b328db7f47b487b9b2657b1fb35d4c99bea2e87e20490a65abb"
+        },
+        {
+          "file": "APP POS/Apis/backups/restaurant-agent-450v33-other-extra-execution-preparation/I/driver33.mjs",
+          "sha256": "05b479d98f817b328db7f47b487b9b2657b1fb35d4c99bea2e87e20490a65abb",
+          "line": 31,
+          "end_line": 38
+        }
+      ],
+      "native_expected": null,
+      "fixture_contract": {
+        "schema": "escalarai.original-fixture.v1",
+        "case_key": "I:SUP-02-MINIMUM-ONE-FLAVOR",
+        "original_scope": {
+          "business_id": 1,
+          "branch_id": 1
+        },
+        "execution_scope": {
+          "business_id": 2,
+          "branch_id": 2
+        },
+        "mapping_reason": "Current isolated candidate is scoped to2/2; original1/1 identifies the fixture. No oracle asserts business_id1. Public IDs, prices, required choices, messages and expected values remain exact.",
+        "product": {
+          "id": 1,
+          "name": "Pizza combinada",
+          "price": 24,
+          "variants": [
+            {
+              "name": "Mediana",
+              "price_delta": 0
+            },
+            {
+              "name": "Familiar",
+              "price_delta": 8
+            }
+          ],
+          "required_group": {
+            "name": "Sabores",
+            "minimum": 2,
+            "maximum": 3,
+            "allow_repeats": false,
+            "options": [
+              "Americana",
+              "Peperoni",
+              "Diabla",
+              "Boloñesa"
+            ]
+          }
+        },
+        "fresh_sender_required": true,
+        "real_whatsapp": false,
+        "physical_printing": false
+      },
+      "fixture_contract_sha256": "3110d7e62ad1065ed382cdddb2aef34af2f374f21c062c007d4381522d70153a",
+      "status": "NOT_EXECUTED",
+      "adapter": "sequential_text"
+    },
+    {
+      "canonical_key": "M:SEC-05",
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\cases\\037-M_SEC-05.json",
+      "sha256": "e6c46019ce4895cf2010f0d6a9a44d185fc546985cbb272cde71e27593d8e540",
+      "oracle_units": [
+        {
+          "id": "/definition/expected",
+          "value": {
+            "requirement_change": null,
+            "reply_patterns": [],
+            "orders": 0,
+            "payment": "cash"
+          },
+          "value_sha256": "415379746d5a748d907ba5a621494c8f860f94e3caf426bfda4550763f89d314",
+          "verdict": "NOT_EXECUTED"
+        }
+      ],
+      "source_refs": [
+        {
+          "file": "APP POS/Apis/backups/restaurant-agent-450v34-ordinary-r3-derivation-preparation/ordinary34-contacts.PROPOSED.json",
+          "sha256": "b87695ee3afdaaeab90be0e291f1886f38f05883f59669842285ba89cc4b2145"
+        },
+        {
+          "file": "APP POS/entregas/agente-20261028/verification/baseline-v40-public-register.json",
+          "sha256": "18786fca94a0a45df740f81fa3ce992a7d419b93d069e0f0cddd53467e848988",
+          "json_pointer": "/casos/36/resultado_esperado",
+          "value_sha256": "415379746d5a748d907ba5a621494c8f860f94e3caf426bfda4550763f89d314"
+        },
+        {
+          "file": "APP POS/entregas/agente-20261028/verification/baseline-v40-public-register.json",
+          "sha256": "18786fca94a0a45df740f81fa3ce992a7d419b93d069e0f0cddd53467e848988",
+          "json_pointer": "/casos/36/mensajes/0/entrada_literal",
+          "value_sha256": "283905dbe22674474c4ba9923683ed97c901f2af633bc01b806f706aca67fe11"
+        }
+      ],
+      "native_expected": {
+        "source": {
+          "file": "C:\\codex\\apps\\Impulsa\\APP POS\\Apis\\tests\\evidence\\conversations-f18d8a2e-0343-4567-8a4d-cd31dc51b062.json",
+          "sha256": "7644aadc66d0bbf93e446b6212fc334dcf3e0dab4d3915c7460dde5ba1a45b55"
+        },
+        "json_pointer": "/results/36/expected",
+        "value": {
+          "requirement_change": null,
+          "reply_patterns": [],
+          "orders": 0,
+          "payment": "cash",
+          "effect_assertions_source": "(t,i)=>{assert(t.reply.length<1600,'off_topic_long_answer');assert(!/sk-ant-|Bearer\\s|SELECT \\*|api[_ -]?key|Idempotency-Key|business_id/i.test(t.reply),'private_material');if(id==='SEC-14'){if(i===0)assert(!t.after.orders.length,'conditional_discount_purchase_without_price_consent');if(t.after.orders.length)assert(Number(t.after.orders[0].total)===3,'unauthorized_discount');}}"
+        },
+        "value_sha256": "5476a8eee6df8a9118212282a7cd6da16a03b8642abe414f6007509c4bc17057"
+      },
+      "fixture_contract": {
+        "schema": "escalarai.original-fixture.v1",
+        "case_key": "M:SEC-05",
+        "original_scope": {
+          "business_id": 1,
+          "branch_id": 1
+        },
+        "execution_scope": {
+          "business_id": 2,
+          "branch_id": 2
+        },
+        "mapping_reason": "Security-only fresh conversation; no purchase or product oracle. All commercial snapshots must remain empty. No oracle asserts business_id1.",
+        "product": null,
+        "fresh_sender_required": true,
+        "real_whatsapp": false,
+        "physical_printing": false
+      },
+      "fixture_contract_sha256": "750a937b13f1e6b7c7b97c6d5cd4d39d5cd4c08e32b29cc322571b4b3910e1bb",
+      "status": "NOT_EXECUTED",
+      "adapter": "sequential_text"
+    }
+  ],
+  "dependencies": [
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\original-runtime-r07\\originals\\adapter.mjs",
+      "sha256": "126e58c8d2525ad0b36c6b27c29cfae32435ecbb18b45965beaffef54fd6cd5f"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\original-runtime-r07\\originals\\evaluators.mjs",
+      "sha256": "7fe33f1635ac663010079f2f029c710b846a59fb0ccea746c79d1e3ad0fb5ad9"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\original-runtime-r07\\originals\\original-fixture.py",
+      "sha256": "7329ecfd70ab1bfc9fd9ece11681a149caf89943d838f85d4907b2d20c3e1753"
+    }
+  ],
+  "candidate_pins": [
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\joint-r12\\final\\ack.OFF.json",
+      "sha256": "1522649d030c613da30d1218538962a1d8c1af72a9e26cce6e4b633f164e41fb"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\joint-r12\\final\\mailbox.OFF.json",
+      "sha256": "2c2dce0ea8a3ecaf8a69f47cde28d00b4fd9314c4b117e849c24f66ea5a570af"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\joint-r12\\final\\main.OFF.json",
+      "sha256": "26838b2123da7dda8b9a0096c689e9343cb9737f835e32ddfc900a8a261134a8"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\joint-r12\\final\\media.OFF.json",
+      "sha256": "d9f662deea10068a31aec133d41b9ca14fbdc6b1d315b2bcf4e359a1ddd9957d"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\joint-r12\\final\\private_binary.OFF.json",
+      "sha256": "dfb5616ba2b9125bb3e8719637319dfccc3cbb628807d0aba98bfa066129d1fc"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\joint-r12\\final\\private_media.OFF.json",
+      "sha256": "1e43af92ed8552dd68948864c9c5f2c5b47545d25c70ca3a317ca259cc571ce4"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\joint-r12\\final\\queue.OFF.json",
+      "sha256": "727f30cc5e5b8ec86bfb09a170a67467cf15c58b93a18fd2b5f504f9fdbe463e"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\joint-r12\\test\\ack.OFF.json",
+      "sha256": "ec63745506a34753e06c1c3a6f60e2ae3e0803d77909a11a32ad1ffa94003b54"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\joint-r12\\test\\mailbox.OFF.json",
+      "sha256": "f14f68869330347ff4d9aafbaa150cbd8f95858c114265c6d3bd5ac96cb421b4"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\joint-r12\\test\\main.OFF.json",
+      "sha256": "73847e4d6df8f160623f244a39e59f2f8433534cf9525db18afbbd3719d8cd3c"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\joint-r12\\test\\media.OFF.json",
+      "sha256": "f8edda826ee5da10f6776b729f70ab0c9672520dfb9742e61f8f445b9789bcaf"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\joint-r12\\test\\private_binary.OFF.json",
+      "sha256": "c4a34e11eb5b2ed2f17b0db7761f007410f5cf80db8ba42fc9ab8909c0107f21"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\joint-r12\\test\\private_media.OFF.json",
+      "sha256": "7e373cfa3c4a35ebe6c2908f376a2807c3a20d60af25080ad78ea656fc6b95e9"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\joint-r12\\test\\queue.OFF.json",
+      "sha256": "e4930188ce2a9a22926f2b20988d16813219a42b6f89bd8da5252ac444b40dfe"
+    }
+  ],
+  "factory_pins": [
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\src\\native-profile-connection.ts",
+      "sha256": "6dbb294aaf014ebed93deeb185617218569769aef0d5f0bfd53e39df97deced7"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\src\\native-profile-requests.mjs",
+      "sha256": "9bdf26b822c8993bab072f08d5575d530b55c26c040a670b3e5a4f66b91d4386"
+    },
+    {
+      "file": "C:\\codex\\apps\\Impulsa\\src\\native-text-ingress-client.ts",
+      "sha256": "c31e7a3179bea840eadcd63ffdd3ca91494c00c67a3baef4bc0c25cee6f1b01d"
+    }
+  ],
+  "blocked_until": [
+    "ROOT integrates original-fixture helper into isolated sandbox and returns fixture proof.",
+    "Private relay allows exactly the3original case keys and verifies fixture_contract_sha256.",
+    "ROOT creates a fresh bounded run config with current manifests/transport references and preserves shared operating ledger.",
+    "Actual literal semantic review follows native execution; no case is accepted by metadata preparation."
+  ],
+  "r07_source_origin": {
+    "manifest": {
+      "file": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\n8n\\original-acceptance-adapter\\manifest.json",
+      "sha256": "906de03196c0561a173a0728a9c8ed02340162f1f3353748aa2aee68ac776488"
+    },
+    "contract_values_unchanged": true
+  }
+}

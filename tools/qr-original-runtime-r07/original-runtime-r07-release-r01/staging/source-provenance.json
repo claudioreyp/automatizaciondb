@@ -1,0 +1,30 @@
+{
+  "schema": "escalarai.original-r07-staging-source-provenance.v1",
+  "source_only": true,
+  "origins": [
+    {
+      "file": "entregas\\agente-qr-20261104\\verification\\notifier-runtime-r06-staging-r01\\credential-stager.py",
+      "sha256": "e7ab4016d0b48cb3fc6c4af3777c634ecddbed28d71062b48d6c18fa12b55722"
+    },
+    {
+      "file": "entregas\\agente-qr-20261104\\verification\\notifier-runtime-r06-staging-r01\\controller-stager.py",
+      "sha256": "a3224a3b3c93d8ce418f03df474bdc71a2c7a9ab6f7670913886e1140fa4992d"
+    },
+    {
+      "file": "entregas\\agente-qr-20261104\\verification\\notifier-runtime-r06-staging-r01\\build-assigned-notifier.mjs",
+      "sha256": "c9c0e54d6470359cf407e214c74f77cacb0fdf391a7edcef9e26c78c0ea9f985"
+    },
+    {
+      "file": "entregas\\agente-qr-20261104\\n8n\\eval-credentials-r05\\refresh-eval-credentials-r05.py",
+      "sha256": "ef4296bc57dc672631d349025f3aeaddac36f5bea18ed4651c39f5b0915c21dd"
+    }
+  ],
+  "deltas": [
+    "R07paths/namespace/newprivate600 binding",
+    "Use actualdeployment+2IDrefresh receipts; no requirement to close financialmodelblock",
+    "Create-only notifier via publicPOST serverassignedid,4scopes2/2,ownedtransfer+oneusekeyfinally unchanged",
+    "Two-ID existing synthetic CLIrefresh onlydata.value,oldR05sourcepreserved,privatepayloadcleanup",
+    "FreshOFFcontroller with exact inverse of R07route/addnotice/identityseams; oldcontroller untouched"
+  ],
+  "runtime_actions": 0
+}

@@ -1,0 +1,109 @@
+{
+  "api70_pins": 70,
+  "archive_failure_prevents_control_request_and_reset": true,
+  "archives_before_next_reset": 15,
+  "contracts": [
+    {
+      "case_key": "I:SUP-01-GENERIC-PIZZA",
+      "schema": "escalarai.original-fixture-proof.v1",
+      "tables_initially_empty": true
+    },
+    {
+      "case_key": "I:SUP-02-MINIMUM-ONE-FLAVOR",
+      "schema": "escalarai.original-fixture-proof.v1",
+      "tables_initially_empty": true
+    },
+    {
+      "case_key": "M:SEC-05",
+      "schema": "escalarai.original-fixture-proof.v1",
+      "tables_initially_empty": true
+    },
+    {
+      "case_key": "M:SEC-COMPLAINT",
+      "schema": "escalarai.original-expansion-fixture-proof.v1",
+      "tables_initially_empty": true
+    },
+    {
+      "case_key": "M:SEC-01",
+      "schema": "escalarai.original-expansion-fixture-proof.v1",
+      "tables_initially_empty": true
+    },
+    {
+      "case_key": "M:SEC-02",
+      "schema": "escalarai.original-expansion-fixture-proof.v1",
+      "tables_initially_empty": true
+    },
+    {
+      "case_key": "M:SEC-03",
+      "schema": "escalarai.original-expansion-fixture-proof.v1",
+      "tables_initially_empty": true
+    },
+    {
+      "case_key": "M:SEC-04",
+      "schema": "escalarai.original-expansion-fixture-proof.v1",
+      "tables_initially_empty": true
+    },
+    {
+      "case_key": "M:SEC-06",
+      "schema": "escalarai.original-expansion-fixture-proof.v1",
+      "tables_initially_empty": true
+    },
+    {
+      "case_key": "M:SEC-07",
+      "schema": "escalarai.original-expansion-fixture-proof.v1",
+      "tables_initially_empty": true
+    },
+    {
+      "case_key": "M:SEC-08",
+      "schema": "escalarai.original-expansion-fixture-proof.v1",
+      "tables_initially_empty": true
+    },
+    {
+      "case_key": "M:SEC-09",
+      "schema": "escalarai.original-expansion-fixture-proof.v1",
+      "tables_initially_empty": true
+    },
+    {
+      "case_key": "M:SEC-11",
+      "schema": "escalarai.original-expansion-fixture-proof.v1",
+      "tables_initially_empty": true
+    },
+    {
+      "case_key": "M:SEC-13",
+      "schema": "escalarai.original-expansion-fixture-proof.v1",
+      "tables_initially_empty": true
+    },
+    {
+      "case_key": "M:SEC-19",
+      "schema": "escalarai.original-expansion-fixture-proof.v1",
+      "tables_initially_empty": true
+    }
+  ],
+  "controller_all_nodes_edges_credentials_settings_preserved_except_prepare": true,
+  "controller_off": true,
+  "fixed_original_contracts": 15,
+  "live_budget_accessed": false,
+  "local_visual_fixture_orders": 2,
+  "models": 0,
+  "network_attempts": 0,
+  "original_pizza_price24_minimum2_preserved": true,
+  "originals_accepted": 0,
+  "originals_executed": 0,
+  "physical_printing": false,
+  "proxy_origin_and_limits_preserved": true,
+  "same_engine_and_three_tokens": true,
+  "saved_financial_evidence_sha256_unchanged": "9d1846d62c6ae890f20dfacc761f2a1399314592f80a2b9a737968e183c48c56",
+  "schema": "escalarai.original-runtime-r07-local-integration.v1",
+  "shared_lock_busy_rejects_security_and_visual_without_effects": true,
+  "status": "PASS_LOCAL_ONLY",
+  "unauthorized_and_invalid_contracts_no_reset": true,
+  "visual_bytes": 1441792,
+  "visual_current_case_mismatch_rejected": true,
+  "visual_registered_cases": 27,
+  "visual_route_exact_image_source_unchanged": true,
+  "visual_sha256": "3113e90b0a5470c6d1fcd008125ec5f2b92208539a992d4f1c01eb8aa992d198",
+  "visual_unregistered_case_rejected": true,
+  "visual_yape_case_same_engine_exact_image": true,
+  "vps": 0,
+  "wall_ms": 8422
+}

@@ -1,0 +1,81 @@
+{
+  "schema": "escalarai.notifier-runtime-r06-independent-source-review.v1",
+  "status": "PASS_SOURCE_REVIEW_ONLY",
+  "deployment_authorized_by_this_review": false,
+  "native_acceptance": false,
+  "reviewer": "/root/r09_manifest_route_audit",
+  "independent_provenance_reviewer": "/root/notifier_fixture_r02",
+  "sourcepack_manifest_sha256": "b8e020520d8167b03728abe8e0e6775b834dae979eee91c1af04e4ae0aa814d7",
+  "source_pins": {
+    "sandbox.py": "da7b26433374725146535c2856359a5b9bc7695a465e54d86e1add61d0b9d4ad",
+    "notifier_fixture.py": "32d52800f8a21a481eba4a06672529a5b132194364158499504d9927d85fc2d3",
+    "proxy.py": "d621318ac4b267efb1f1cf49ed8eb6058dda499f2abc30d21e02d97aa305bead",
+    "controller.py": "857e4347b871ff82d18f3d792e0f07af6b4f43d9256976ef96fbc2913f265485",
+    "materialize-sourcepack.py": "8e61f6c5f859559d52fbe5ec14375ea64db1f5e7e1133c66f1750561c9e66d52",
+    "future-importer-spec.json": "2b5a7c21367c7d13df78cc04bce10d98b0c6a46e45128a48dd83d3b592fb1726",
+    "Dockerfile": "3f1b6cd551d430f093d7d82f653ac405f6b99b11f6aad66d4f52b0844af9b838",
+    "Dockerfile.proxy": "1a05a1a3030383ddae34601ae55b5278ba16a51aa93705b2cb3e888968eb168b"
+  },
+  "blockers": [],
+  "checks": [
+    {
+      "name": "frozen source provenance",
+      "result": "PASS",
+      "evidence": "All 87 listed files match manifest byte lengths and SHA256; all 83 source_inputs match their original files. All three reviewed patches reconstruct their pinned candidates exactly. Sandbox and proxy equal those candidates; helper equals the pinned R02 helper. Frozen inputs were only read."
+    },
+    {
+      "name": "API70 provenance",
+      "result": "PASS",
+      "api_revision": "7f840536c16aea143c9d71264bd83866ee4731b7",
+      "evidence": "Independent reviewer compared all 70 API/requirements files with R05 and Git blobs at this revision; exact app plus requirements Git-tree membership is 70. No application API file changes are present."
+    },
+    {
+      "name": "scoped fixture authority and restoration",
+      "result": "PASS_SOURCE",
+      "evidence": "Attachment requires a fresh, exact private in-memory engine/app binding. Control authentication precedes both new handlers. Ready accepts only the exact sender/body and dedicated case, consumes the attempt before writes, and uses fixed draft/cash/kitchen operations. Temporary owner 2/2 and two producer dependency overrides save prior entries and restore or remove each in finally. The real generic notifier credential has only menu:read, orders:read, events:read and events:deliver."
+    },
+    {
+      "name": "override concurrency boundary",
+      "result": "PASS_SOURCE_WITH_SERIAL_BACKEND_REQUIREMENT",
+      "evidence": "The backend is HTTPServer, not ThreadingHTTPServer, and processes all API/control requests serially. Ready and reseed also use a shared nonblocking lock. The separate threaded proxy forwards only to this serial backend. The inspected app lifespan starts no independent request worker; existing background work is awaited response work or websocket broadcast, and the wrapper does not expose websocket transport. Safety depends on retaining the serial backend and using this app only through its fixed wrapper."
+    },
+    {
+      "name": "new response and token boundaries",
+      "result": "PASS_SOURCE",
+      "evidence": "Notifier plaintext exists only in new process memory and its private binding; database credential storage is hashed. Notice snapshots do not read IntegrationCredential rows, expose only selected source-mapping fields, and recursively redact lease_token, access_token, header_value, claim_hash and lease_hash. Fixed-operation failures expose status/type rather than response/request bodies or credentials. Handler/proxy request logging is suppressed. This is source inspection, not a claim that native output was observed."
+    },
+    {
+      "name": "controller proposal preservation",
+      "result": "PASS_SOURCE",
+      "evidence": "The 6386-byte pinned patched graph region restores exactly after reversing only relay-entry and deployment.BASE helper seams. Existing node IDs, credential references, connections, settings and old routes are preserved in source; only notice-ready and notice-snapshot with the exact synthetic sender are added. The proposed workflow is OFF, only copy/json/pathlib are imported, legacy build raises unconditionally, and registration requires a separate fresh ROOT metadata/readback stager. No live-controller comparison is claimed."
+    },
+    {
+      "name": "future importer specification",
+      "result": "PASS_CONTRACT_ONLY",
+      "evidence": "The specification permits one create-only QrEvalNoticeR0620261104 synthetic httpHeaderAuth credential in project Wz76dpTUvZYQaRdl, bound to notifier_token and exact generic 2/2 four scopes. It rejects existing-ID updates, production credential isSVaRTGTA42G88Z, agent/control token reuse, public payload/output, retries and workflow activation. No importer implementation or credential creation is included or accepted."
+    },
+    {
+      "name": "static syntax",
+      "result": "PASS",
+      "evidence": "Python AST parsing succeeded for sandbox.py, notifier_fixture.py, proxy.py, controller.py and materialize-sourcepack.py. Proposed modules were not imported or executed."
+    }
+  ],
+  "pending_boundaries": [
+    "Close and archive the current R11 synthetic run and preserve its complete snapshot, process and private binding before any separate notifier cutover.",
+    "Docker FROM uses the existing mutable tag escalar-qr-api-eval:16240c5. A future stager must independently verify exact local image ID sha256:93dc84393cbaa83f680830c2e53bc7567e1c73a5273f46a36bb72df46fa9f740 and inherited API/base contents, then build with pull=false and network=none. This review did not inspect a running image or build anything.",
+    "sandbox.py creates binding with open('x') and does not itself chmod it to 0600. The future stager/importer must enforce and verify regular/no-symlink binding UID/GID10001, mode0600 and parent0700 before import, exactly as specified. Those permissions have not been observed here.",
+    "Fresh controller staging/readback, producer/control R05 credential refresh, and a separately reviewed bounded create-only notifier importer remain required; no existing runtime or production credential is authorized for reuse by this source review.",
+    "Native notifier polling, MOCK receiver delivery/receipt, API ACK, event-source mapping and final cleanup remain unexecuted. Prior R02 local ASGI results retain their own setup failure and passes and are not recounted as R06 tests or native acceptance."
+  ],
+  "review_actions": {
+    "proposed_modules_imported_or_executed": 0,
+    "pack_tests_executed": 0,
+    "docker_builds_or_runtime_actions": 0,
+    "network_requests": 0,
+    "model_calls": 0,
+    "credentials_read_or_created": 0,
+    "production_changes": 0,
+    "existing_source_files_modified": 0,
+    "new_report_files_written": 1
+  }
+}

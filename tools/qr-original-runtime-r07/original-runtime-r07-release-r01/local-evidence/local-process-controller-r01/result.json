@@ -1,0 +1,14 @@
+{
+  "schema": "escalarai.local-process-receipt.v1",
+  "command": [
+    "node",
+    "controller.test.mjs"
+  ],
+  "exit_code": 0,
+  "wall_ms": 109,
+  "stdout": "{\"status\":\"PASS_LOCAL_CONTROLLER_ONLY\",\"checks\":24,\"contracts\":15,\"models\":0,\"network\":0,\"originals_executed\":0}\n",
+  "stderr": "",
+  "network": 0,
+  "models": 0,
+  "vps": 0
+}

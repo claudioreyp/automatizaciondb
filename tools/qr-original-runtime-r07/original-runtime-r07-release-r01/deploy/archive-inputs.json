@@ -1,0 +1,86 @@
+{
+  "schema": "escalarai.original-r07-private-archive-input-spec.v1",
+  "state": "LOCAL_DURABLE_REFERENCES_ONLY_NO_PAYLOAD_TRANSFER",
+  "source_observation": "Actual R12 ACK recovery retained original FAIL, all4 modelusages and commerce unchanged, head48 and fourteenOFF at capture. ROOT confirms current OFF state before future cutover.",
+  "private_transfer_required_before_prepare": false,
+  "never_include_referenced_bytes_in_publication": true,
+  "files": [
+    {
+      "role": "snapshot",
+      "path": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\r12-existing-delivery-ack-recovery-r01\\snapshot-after.json",
+      "sha256": "04d02920fa24d5cd0b767716db7d68132348c1a1b1dff2b275d4d8547f725c5b",
+      "bytes": 56726
+    },
+    {
+      "role": "journal",
+      "path": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\r12-existing-delivery-ack-recovery-r01\\journal-after.json",
+      "sha256": "64259db1dbd976fc4884ebe1f64b1cfd478a7a56999d945700fd73e20c0e2a6a",
+      "bytes": 2672916
+    },
+    {
+      "role": "recovery",
+      "path": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\r12-existing-delivery-ack-recovery-r01\\result.json",
+      "sha256": "ffb97d60765ffb11fa85155ea07067a2787a81f67096fc03ffdad98f962459be",
+      "bytes": 627
+    },
+    {
+      "role": "budget",
+      "path": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\r12-existing-delivery-ack-recovery-r01\\budget-after.json",
+      "sha256": "9d1846d62c6ae890f20dfacc761f2a1399314592f80a2b9a737968e183c48c56",
+      "bytes": 27595
+    }
+  ],
+  "gate_private_target": "/opt/escalar-qr/private/original-r07-r12-case-archive-receipt.json",
+  "financial_CAS_or_block_close": false,
+  "runtime_actions": 0,
+  "private_metadata_receipt_transfer_required": true,
+  "gate_receipt": {
+    "schema": "escalarai.original-r07-archived-case-gate.v1",
+    "state": "R12_CASE_ARCHIVED",
+    "snapshot_scope": "complete_current_synthetic_consumer_case_and_journal",
+    "database_backup": false,
+    "current_case_settled": true,
+    "all_14_workflows_off": true,
+    "current_case_models_settled": true,
+    "no_active_coupon": true,
+    "no_runtime_change_in_progress": true,
+    "fresh_synthetic_phase_only": true,
+    "model_block_closure_required": false,
+    "artifacts": [
+      {
+        "role": "snapshot",
+        "path": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\r12-existing-delivery-ack-recovery-r01\\snapshot-after.json",
+        "sha256": "04d02920fa24d5cd0b767716db7d68132348c1a1b1dff2b275d4d8547f725c5b",
+        "bytes": 56726
+      },
+      {
+        "role": "journal",
+        "path": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\r12-existing-delivery-ack-recovery-r01\\journal-after.json",
+        "sha256": "64259db1dbd976fc4884ebe1f64b1cfd478a7a56999d945700fd73e20c0e2a6a",
+        "bytes": 2672916
+      },
+      {
+        "role": "recovery",
+        "path": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\r12-existing-delivery-ack-recovery-r01\\result.json",
+        "sha256": "ffb97d60765ffb11fa85155ea07067a2787a81f67096fc03ffdad98f962459be",
+        "bytes": 627
+      },
+      {
+        "role": "budget",
+        "path": "C:\\codex\\apps\\Impulsa\\APP POS\\entregas\\agente-qr-20261104\\verification\\r12-existing-delivery-ack-recovery-r01\\budget-after.json",
+        "sha256": "9d1846d62c6ae890f20dfacc761f2a1399314592f80a2b9a737968e183c48c56",
+        "bytes": 27595
+      }
+    ],
+    "archive_location": "user_workspace",
+    "workspace_root": "C:\\codex\\apps\\Impulsa\\APP POS",
+    "local_artifacts_verified_by_root": true,
+    "budget_head": 48,
+    "budget_totals": {
+      "posts": 3931,
+      "tokens": 77701710
+    }
+  },
+  "archive_location": "user_workspace",
+  "payload_bytes_to_vps": false
+}

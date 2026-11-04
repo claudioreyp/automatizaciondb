@@ -1,0 +1,9 @@
+{
+  "state": "PRESERVED_SOURCE_ASSEMBLY_FAILURE",
+  "sequence": 1,
+  "error": "FileExistsError on requirements.txt: API70 copy already included the root requirement file before the wrapper copy list reached it.",
+  "product_imports": 0,
+  "network": 0,
+  "models": 0,
+  "correction": "Verify existing byte equality and keep the original copied file; no overwrite or re-execution of proposed source."
+}

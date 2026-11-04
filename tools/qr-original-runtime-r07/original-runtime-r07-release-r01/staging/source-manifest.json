@@ -1,0 +1,45 @@
+{
+  "schema": "escalarai.original-r07-operational-source-manifest.v1",
+  "state": "SOURCE_ONLY_NOT_EXECUTED",
+  "kind": "staging",
+  "runtime_manifest_sha256": "ff514ad7767879624c5ca35c829efda3b5984707aeb9fafe478f7cbf374bfc7e",
+  "local_results_sha256": "9894ae4158ec41a1a4e5e6c76a216f1a0da73404716216969e5cb2d5973afd53",
+  "files": [
+    {
+      "file": "build-assigned-notifier.mjs",
+      "bytes": 4455,
+      "sha256": "bea2609c23c7da658649d8d50acf4637aa5e1381fb8db03c9b2585f6eeb14c32"
+    },
+    {
+      "file": "controller-stager.py",
+      "bytes": 11581,
+      "sha256": "0606f999287231b6d7cfabac352f60d92a14a4e6aadd574b6229d3b223880083"
+    },
+    {
+      "file": "credential-stager.py",
+      "bytes": 10562,
+      "sha256": "b252b756db68278fd93104f71200e7c143cb6c766e12953e064baf3eddd9601a"
+    },
+    {
+      "file": "README.md",
+      "bytes": 3372,
+      "sha256": "f3d14d3df8de61c2d484d4300c05dfd249131607111ce0fe08ab1a9a06101acc"
+    },
+    {
+      "file": "refresh-eval-credentials-r07.py",
+      "bytes": 17470,
+      "sha256": "e19172eb580a42ef4919851e777ffa2d575483450bf2c4812ad05109e553aa27"
+    },
+    {
+      "file": "source-provenance.json",
+      "bytes": 1491,
+      "sha256": "d07b8f7cecb7f5d28e9b5b59092a3fcb659dc126a5dda15048db30382bf4c838"
+    }
+  ],
+  "python_ast_only": 3,
+  "imports_performed": 0,
+  "network": 0,
+  "docker": 0,
+  "runtime_changes": 0,
+  "models": 0
+}
