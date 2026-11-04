@@ -1,0 +1,52 @@
+{
+  "schema": "escalarai.journal-benchmark-source-pack.v1",
+  "base_image": "sha256:4f448824ec99e1160e49eeb1c5bf2130a5d244fe9029e871a9f4d9f126dbfc98",
+  "installed_capture_manifest_sha256": "0d29a151537827799b1c00b1e1a192e693082bb2d0b24f840c9487bd209a4c03",
+  "patch": {
+    "path": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table-proxy.service.js",
+    "before": "    'n8n-nodes-base.evaluation',\n];",
+    "after": "    'n8n-nodes-base.evaluation',\n    'CUSTOM.escalarJournalLoop',\n];",
+    "before_sha256": "a0d894b23a921928cdce7cf68d58dacbd2bb390180571617a5e57ad1909733ad",
+    "after_sha256": "f5b16c17d788a24f583999bea27d43dc67601c6ee5174c7a6cdef77f031913ec"
+  },
+  "files": {
+    "apply-patch.cjs": {
+      "bytes": 1506,
+      "sha256": "b277b6e7552720a9994c75e0364ddc4dc92c399fd651fa172d788d8ee7136df8"
+    },
+    "Dockerfile": {
+      "bytes": 141,
+      "sha256": "5bb03ec8e6013a0044b8ad567a5a85fb3af56e8bc0e4d10f726d3bedf8fd4716"
+    },
+    "generate.cjs": {
+      "bytes": 6320,
+      "sha256": "3a836e758b3b011bf9eb88db3277e88d18efecd70b534ae7219526cc6fe330cf"
+    },
+    "node/EscalarJournalLoop.node.js": {
+      "bytes": 12828,
+      "sha256": "88b11ec4343888e38185b9218c64a92cd39624f8acf275d0b1456cada9cbea17"
+    },
+    "node/package.json": {
+      "bytes": 149,
+      "sha256": "4c84ff3cf2051fe47f8a1d1f2ec8a9b07de62c8801c7c8e1ebecd1c1318fe4b8"
+    },
+    "node/workload.cjs": {
+      "bytes": 6214,
+      "sha256": "8d486c908d234afb6dc601f1c9aef984ef8e10ae05d366a2117532167d99aef5"
+    },
+    "pins.json": {
+      "bytes": 30381,
+      "sha256": "bfb4cbd37815d80fce6fd6d9fddb1c5828b74980cb1f933c083ee8371c016622"
+    },
+    "run-proof.py": {
+      "bytes": 20671,
+      "sha256": "a33cd539cfcccebc2808159d35dd60dc41b2b0c4046e2b0746f5783afe964d6a"
+    },
+    "workload.cjs": {
+      "bytes": 6214,
+      "sha256": "8d486c908d234afb6dc601f1c9aef984ef8e10ae05d366a2117532167d99aef5"
+    }
+  },
+  "native_executions": 0,
+  "performance_measured": false
+}

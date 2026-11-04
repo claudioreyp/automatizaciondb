@@ -1,0 +1,1 @@
+{"name":"escalar-synthetic-journal-benchmark-r01","version":"0.1.0","private":true,"type":"commonjs","n8n":{"nodes":["EscalarJournalLoop.node.js"]}}

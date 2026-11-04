@@ -1,0 +1,105 @@
+{
+  "schema": "escalarai.journal-benchmark-frozen-source.v1",
+  "status": "LOCAL_SOURCE_READY_NATIVE_PROOF_PENDING",
+  "files": {
+    "apply-patch.cjs": {
+      "bytes": 1506,
+      "sha256": "b277b6e7552720a9994c75e0364ddc4dc92c399fd651fa172d788d8ee7136df8"
+    },
+    "benchmark.test.cjs": {
+      "bytes": 10750,
+      "sha256": "b92589148950c68e5845604bf8d29394c669b3cc28da350220e48a61efa15838"
+    },
+    "EscalarJournalLoop.node.js": {
+      "bytes": 12828,
+      "sha256": "88b11ec4343888e38185b9218c64a92cd39624f8acf275d0b1456cada9cbea17"
+    },
+    "generate.cjs": {
+      "bytes": 6320,
+      "sha256": "3a836e758b3b011bf9eb88db3277e88d18efecd70b534ae7219526cc6fe330cf"
+    },
+    "local-test-result.json": {
+      "bytes": 2654,
+      "sha256": "038be0031af71a9394e8806f611c7dc594d8e4614623b7e6101f5e574b5082c6"
+    },
+    "pack/apply-patch.cjs": {
+      "bytes": 1506,
+      "sha256": "b277b6e7552720a9994c75e0364ddc4dc92c399fd651fa172d788d8ee7136df8"
+    },
+    "pack/Dockerfile": {
+      "bytes": 141,
+      "sha256": "5bb03ec8e6013a0044b8ad567a5a85fb3af56e8bc0e4d10f726d3bedf8fd4716"
+    },
+    "pack/generate.cjs": {
+      "bytes": 6320,
+      "sha256": "3a836e758b3b011bf9eb88db3277e88d18efecd70b534ae7219526cc6fe330cf"
+    },
+    "pack/manifest.json": {
+      "bytes": 1994,
+      "sha256": "aa20178420270f566875546373ee4eaaa3a741358b27e487aa9e6300f54bd7b1"
+    },
+    "pack/node/EscalarJournalLoop.node.js": {
+      "bytes": 12828,
+      "sha256": "88b11ec4343888e38185b9218c64a92cd39624f8acf275d0b1456cada9cbea17"
+    },
+    "pack/node/package.json": {
+      "bytes": 149,
+      "sha256": "4c84ff3cf2051fe47f8a1d1f2ec8a9b07de62c8801c7c8e1ebecd1c1318fe4b8"
+    },
+    "pack/node/workload.cjs": {
+      "bytes": 6214,
+      "sha256": "8d486c908d234afb6dc601f1c9aef984ef8e10ae05d366a2117532167d99aef5"
+    },
+    "pack/pins.json": {
+      "bytes": 30381,
+      "sha256": "bfb4cbd37815d80fce6fd6d9fddb1c5828b74980cb1f933c083ee8371c016622"
+    },
+    "pack/run-proof.py": {
+      "bytes": 20671,
+      "sha256": "a33cd539cfcccebc2808159d35dd60dc41b2b0c4046e2b0746f5783afe964d6a"
+    },
+    "pack/workload.cjs": {
+      "bytes": 6214,
+      "sha256": "8d486c908d234afb6dc601f1c9aef984ef8e10ae05d366a2117532167d99aef5"
+    },
+    "package.json": {
+      "bytes": 149,
+      "sha256": "4c84ff3cf2051fe47f8a1d1f2ec8a9b07de62c8801c7c8e1ebecd1c1318fe4b8"
+    },
+    "prepare.py": {
+      "bytes": 4158,
+      "sha256": "71f62246f86b7df961b528d58b85bab9e53dfd8a2835c24c2aa8f7763b4124ea"
+    },
+    "README.md": {
+      "bytes": 8625,
+      "sha256": "370fb11186b2792dda9852115c90cd8c9b24ae737c576a7a9044666bd0b2f7af"
+    },
+    "run-proof.py": {
+      "bytes": 20671,
+      "sha256": "a33cd539cfcccebc2808159d35dd60dc41b2b0c4046e2b0746f5783afe964d6a"
+    },
+    "source-preparation-failure-r01.json": {
+      "bytes": 651,
+      "sha256": "fe8f7fcffe5c4470e0752ba360b16ba8a7da030222dbee7e8e046e12ee151d8f"
+    },
+    "source-preparation-failure-r02.json": {
+      "bytes": 498,
+      "sha256": "3d881491d26e4512158a8e13c8e902409d6493e51f7ded1e46f730dbc46c2c4e"
+    },
+    "test_sources.py": {
+      "bytes": 2990,
+      "sha256": "7bd9676598ce51f848ad2992c40c98c84b6a7be3624f71bb7db90b5fb0729f70"
+    },
+    "workload.cjs": {
+      "bytes": 6214,
+      "sha256": "8d486c908d234afb6dc601f1c9aef984ef8e10ae05d366a2117532167d99aef5"
+    }
+  },
+  "file_count": 23,
+  "pack_manifest_sha256": "aa20178420270f566875546373ee4eaaa3a741358b27e487aa9e6300f54bd7b1",
+  "native_executions": 0,
+  "performance_measured": false,
+  "excluded_non_distributable": [
+    "__pycache__"
+  ]
+}

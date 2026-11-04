@@ -1,0 +1,31 @@
+'use strict';
+const W=require('./workload.cjs');
+const variants=['r12-shaped','pure-merge','native-loop'];
+function graph(){const nodes=[],connections={};return {id:W.WORKFLOW,name:'OFF isolated synthetic journal benchmark R01',active:false,versionId:'037890e4-a8fd-435b-a40b-83b20f63b724',nodes,connections,pinData:{},staticData:{},settings:{executionOrder:'v1',saveExecutionProgress:false,executionTimeout:120,callerPolicy:'none',saveDataSuccessExecution:'all',saveDataErrorExecution:'all'}};}
+function add(g,name,type,parameters={}){const n={id:W.sha(name).slice(0,32),name,type,typeVersion:type===W.TYPE||type==='n8n-nodes-base.dataTable'?1.1:1,position:[g.nodes.length*140,0],parameters};g.nodes.push(n);if(g.nodes.length>1)g.connections[g.nodes.at(-2).name]={main:[[{node:name,type:'main',index:0}]]};return n;}
+function native(g,name,mode,c){return add(g,name,W.TYPE,{mode,config:JSON.stringify(c)});}
+function dt(g,name,p){const n=add(g,name,'n8n-nodes-base.dataTable',p);n.alwaysOutputData=true;n.retryOnFail=false;n.onError='continueRegularOutput';return n;}
+function columns(){return W.FIELDS.map(name=>({name,type:['business_id','branch_id','head'].includes(name)?'number':'string'}));}
+function setup(caseId){W.spec(caseId);const g=graph(),c={caseId};add(g,'Manual fixture setup','n8n-nodes-base.manualTrigger');dt(g,'Create fixture table',{resource:'table',operation:'create',tableName:W.TABLE_NAME,columns:{column:columns()},options:{createIfNotExists:false}});
+  native(g,'Build synthetic seed','seed',c);dt(g,'Insert synthetic seed',{resource:'row',operation:'insert',dataTableId:{__rl:true,mode:'name',value:W.TABLE_NAME},columns:{mappingMode:'autoMapInputData',value:{}},options:{optimizeBulk:false}});native(g,'Bind fresh fixture','bound',c);return g;}
+function validateBinding(binding,caseId){W.need(binding?.schema==='escalarai.journal-fresh-fixture.v1'&&binding.workflow_id===W.WORKFLOW&&binding.case_id===caseId&&binding.table_name===W.TABLE_NAME,'FRESH_OFFICIAL_BINDING');W.need(typeof binding.table_id==='string'&&/^[A-Za-z0-9]{8,32}$/.test(binding.table_id)&&typeof binding.project_id==='string'&&binding.project_id.length>0,'FRESH_BINDING_IDS');W.equalRow(binding.row,W.seed(caseId));}
+const expr=(name,tail)=>`={{ $('${name}').first().json.${tail} }}`;
+function updateParameters(caseId,tableId,planName){const p=W.step(W.seed(caseId),caseId,0,tableId).update;
+  for(const condition of p.filters.conditions)condition.keyValue=expr(planName,'cas.'+condition.keyName);
+  for(const field of W.FIELDS)p.columns.value[field]=expr(planName,'row.'+field);return p;}
+function bench(binding,variant){const caseId=binding.case_id;validateBinding(binding,caseId);W.need(variants.includes(variant),'FIXED_VARIANT');const c={caseId,tableId:binding.table_id,variant},g=graph();add(g,'Manual benchmark','n8n-nodes-base.manualTrigger');dt(g,'Read initial fixture',W.getParameters(c.tableId,W.seed(caseId)));native(g,'Begin measured','begin',c);
+  if(variant==='native-loop')native(g,'Native journal loop','loop',c);
+  else {const count=W.spec(caseId).effects*3;let currentName;
+    if(variant==='pure-merge'){currentName='Plan000';native(g,currentName,'plan',{...c,index:0});}
+    for(let index=0;index<count;index++){const suffix=String(index).padStart(3,'0');
+      if(variant==='r12-shaped'){currentName='Plan'+suffix;native(g,currentName,'plan',{...c,index});for(let guard=0;guard<8;guard++)native(g,'Validate '+suffix+' '+guard,'guard',c);}
+      dt(g,'Update'+suffix,updateParameters(caseId,c.tableId,currentName));dt(g,'Readback '+suffix,W.getParameters(c.tableId,W.seed(caseId)));
+      if(variant==='r12-shaped'){native(g,'Verify '+suffix,'verify',{...c,planName:currentName});if(index%3===2)native(g,'Effect fence '+Math.floor(index/3),'guard',c);}
+      else {const next='Merged'+String(index+1).padStart(3,'0');native(g,next,'merged',{...c,planName:currentName,index:index+1});currentName=next;}
+    }}native(g,'Finish measured','finish',c);return g;}
+function reset(binding,prior){const caseId=binding.case_id;validateBinding(binding,caseId);const c={caseId,tableId:binding.table_id},g=graph();W.need(prior&&prior.run_id===W.seed(caseId).run_id&&Number.isInteger(prior.head)&&prior.head>0,'KNOWN_PRIOR_ONLY_RESET');W.need(prior.body_hash===W.sha(prior.body_json),'RESET_PRIOR_HASH');
+  add(g,'Manual fixture reset','n8n-nodes-base.manualTrigger');const p=W.step(W.seed(caseId),caseId,0,c.tableId).update;p.filters=W.filter([['id',1],['head',prior.head],['state',prior.state],['body_hash',prior.body_hash]]);p.columns.value=Object.fromEntries(W.FIELDS.map(k=>[k,W.seed(caseId)[k]]));dt(g,'Reset only owned synthetic row',p);dt(g,'Read reset fixture',W.getParameters(c.tableId,W.seed(caseId)));native(g,'Begin measured','begin',c);return g;}
+function component(binding){validateBinding(binding,binding.case_id);const c={caseId:binding.case_id,tableId:binding.table_id},g=graph();add(g,'Manual components','n8n-nodes-base.manualTrigger');dt(g,'Read component seed',W.getParameters(c.tableId,W.seed(c.caseId)));native(g,'Native components','components',c);return g;}
+function audit(g){W.need(g.id===W.WORKFLOW&&g.active===false&&g.settings.saveExecutionProgress===false&&g.settings.callerPolicy==='none','OFF_SETTINGS');const allowed=new Set(['n8n-nodes-base.manualTrigger','n8n-nodes-base.dataTable',W.TYPE]);W.need(g.nodes.length<600&&g.nodes.every(n=>allowed.has(n.type)&&!n.credentials&&!n.retryOnFail&&!n.disabled),'ONLY_OFFLINE_NODES');W.need(g.nodes.filter(n=>n.type==='n8n-nodes-base.manualTrigger').length===1,'ONE_MANUAL_TRIGGER');return {nodes:g.nodes.length,data_table:g.nodes.filter(n=>n.type==='n8n-nodes-base.dataTable').length,native:g.nodes.filter(n=>n.type===W.TYPE).length};}
+module.exports={variants,graph,add,native,dt,columns,setup,validateBinding,updateParameters,bench,reset,component,audit};
+if(require.main===module){const fs=require('node:fs');const [mode,input,output,variant]=process.argv.slice(2);W.need(['setup','bench','component','reset'].includes(mode)&&output,'EXPLICIT_GENERATOR_ARGUMENTS');let g;if(mode==='setup')g=setup(input);else{const body=JSON.parse(fs.readFileSync(input,'utf8'));g=mode==='bench'?bench(body,variant):mode==='component'?component(body):reset(body.binding,body.prior);}audit(g);fs.writeFileSync(output,JSON.stringify(g)+'\n',{flag:'wx'});}

@@ -1,0 +1,56 @@
+{
+  "schema": "escalarai.journal-benchmark-local-source-result.v1",
+  "status": "PASS_SOURCE_ONLY",
+  "node": {
+    "command": "node --test benchmark.test.cjs",
+    "exit_code": 0,
+    "tests": 6,
+    "passed": 6,
+    "failed": 0,
+    "duration_ms": 2471.1721,
+    "runtime": "Node.js v24.14.0",
+    "backend": "EXPLICIT_RECORDING_PROXY_NOT_SQLITE",
+    "coverage": [
+      "Actual captured official DataTable.prototype.execute/router/get/update/filter compiled bodies; four workloads and exact six operation contracts",
+      "Actual R12-shaped and pure-merge generated graph chains, nominal data pairing and complete history equivalence",
+      "Official table-create/insert provisioning contract and fresh binding",
+      "Actual compiled operation calls with synthetic post-commit abort/lost-result/empty/duplicate seams; no retries and retained rows",
+      "Exact allowlist inverse; original unapproved rejection; owning project lookup and delegation",
+      "Changed scope/hash, malformed cardinality and identity rejection"
+    ]
+  },
+  "python": {
+    "command": "python -m unittest test_sources.py -v",
+    "exit_code": 0,
+    "tests": 3,
+    "passed": 3,
+    "failed": 0,
+    "duration_seconds": 0.025,
+    "coverage": [
+      "All66 actual captured bytes/pins; literal patch inverse; exact source materialization and refusal to overwrite",
+      "Independent complete ordered-history/body/hash oracle and missing-history rejection",
+      "Inert imports and explicit-run gate"
+    ]
+  },
+  "preserved_preparation_failures": ["source-preparation-failure-r01.json", "source-preparation-failure-r02.json"],
+  "materialization": {
+    "command": "python prepare.py --output pack",
+    "exit_code": 0,
+    "files_excluding_manifest": 9,
+    "manifest_sha256": "aa20178420270f566875546373ee4eaaa3a741358b27e487aa9e6300f54bd7b1",
+    "installed_capture_manifest_sha256": "0d29a151537827799b1c00b1e1a192e693082bb2d0b24f840c9487bd209a4c03",
+    "proxy_original_sha256": "a0d894b23a921928cdce7cf68d58dacbd2bb390180571617a5e57ad1909733ad",
+    "proxy_derivative_sha256": "f5b16c17d788a24f583999bea27d43dc67601c6ee5174c7a6cdef77f031913ec"
+  },
+  "official_caller_source_qualification": "ROOT inspected official2.14.2 execute-context.ts helper wiring; compiled caller not among66capture. Native actual CUSTOM helpers must pass before timing; no injection/spoof fallback.",
+  "docker_commands": 0,
+  "remote_commands": 0,
+  "native_executions": 0,
+  "actual_sqlite_provisioning": 0,
+  "models": 0,
+  "external_effects": 0,
+  "production_changes": 0,
+  "performance_measured": false,
+  "whole_agent_acceptance": false,
+  "agent_latency_acceptance": false
+}

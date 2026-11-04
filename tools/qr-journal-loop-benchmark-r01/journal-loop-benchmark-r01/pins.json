@@ -1,0 +1,515 @@
+{
+  "schema": "escalarai.journal-benchmark-installed-pins.v1",
+  "base_image": "sha256:4f448824ec99e1160e49eeb1c5bf2130a5d244fe9029e871a9f4d9f126dbfc98",
+  "capture_manifest_sha256": "0d29a151537827799b1c00b1e1a192e693082bb2d0b24f840c9487bd209a4c03",
+  "capture_raw_sha256": "bd2b885d166af4cefd81974bbe705859cdc91287aa4441e278750d92d22164f4",
+  "packages": {
+    "n8n": {
+      "name": "n8n",
+      "version": "2.14.2",
+      "package_json": "/usr/local/lib/node_modules/n8n/package.json",
+      "bytes": 8142,
+      "sha256": "4d72c3015c99722616b35ba3bc74042ada87e14a6eb5252b8ebdeabb766f736b"
+    },
+    "nodes_base": {
+      "name": "n8n-nodes-base",
+      "version": "2.14.1",
+      "package_json": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/package.json",
+      "bytes": 48124,
+      "sha256": "762dd5e1b4ca83d7dd12d9d1d252a0af582be348a997aa3526c143538ff5cd93"
+    },
+    "core": {
+      "name": "n8n-core",
+      "version": "2.14.1",
+      "package_json": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-core@file+packages+core_@opentelemetry+api@1.9.0_@opentelemetry+exporter-trace-otlp_9f358c3eeaef0d2736f54ac9757ada43/node_modules/n8n-core/package.json",
+      "bytes": 2574,
+      "sha256": "c03112078db128976f1c80fc4a86f9e9d5085dda91a31d0e27cafeb5fa191059"
+    },
+    "workflow": {
+      "name": "n8n-workflow",
+      "version": "2.14.1",
+      "package_json": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-workflow@file+packages+workflow/node_modules/n8n-workflow/package.json",
+      "bytes": 2129,
+      "sha256": "b0fa531bd64212a38c2f3c6e35e5c06fca370b5059b88cf3ba2c81476646b77e"
+    },
+    "db": {
+      "name": "@n8n/db",
+      "version": "1.14.1",
+      "package_json": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/@n8n+db@file+packages+@n8n+db_@opentelemetry+api@1.9.0_@opentelemetry+exporter-trace-ot_496eb58d78a338abeed29b3d8ec5ca2e/node_modules/@n8n/db/package.json",
+      "bytes": 1371,
+      "sha256": "b9734ed7b8c428192ab4f5dbe75cd899264fd93e7b3d4e41bb7394227b609b8a"
+    }
+  },
+  "files": [
+    {
+      "package": "core",
+      "relative": "dist/execution-engine/node-execution-context/base-execute-context.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-core@file+packages+core_@opentelemetry+api@1.9.0_@opentelemetry+exporter-trace-otlp_9f358c3eeaef0d2736f54ac9757ada43/node_modules/n8n-core/dist/execution-engine/node-execution-context/base-execute-context.js",
+      "bytes": 6486,
+      "sha256": "989f5002038309be6c16323d705b7e05fbb072363147d449e207d870ddd4e623"
+    },
+    {
+      "package": "core",
+      "relative": "dist/execution-engine/node-execution-context/utils/data-table-helper-functions.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-core@file+packages+core_@opentelemetry+api@1.9.0_@opentelemetry+exporter-trace-otlp_9f358c3eeaef0d2736f54ac9757ada43/node_modules/n8n-core/dist/execution-engine/node-execution-context/utils/data-table-helper-functions.js",
+      "bytes": 751,
+      "sha256": "7cd47793a9c328f1399acff0affdbb2ca1cbc7c58b0c97216a12b2cf7d53d098"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/csv-parser.service.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/csv-parser.service.js",
+      "bytes": 7138,
+      "sha256": "9e61390883837affa65a0137f9948027aa3a65a6c0ce9e1457dfbdffd53df5c3"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table-aggregate.controller.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table-aggregate.controller.js",
+      "bytes": 2926,
+      "sha256": "e7144888989c2b7b24746af0c49f1c3f85dd650ea8ce716685db2771a4c45d1f"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table-aggregate.service.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table-aggregate.service.js",
+      "bytes": 2783,
+      "sha256": "d9cbb603af1f989b10a37c262b20e5ea4a3f023aef2edf0c76ab85d1d7e3728b"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table-column.entity.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table-column.entity.js",
+      "bytes": 2059,
+      "sha256": "c5eaf75aafc34ce75e8c71ddd0264f813c4671fe05e77774d2a6072dad999a01"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table-column.repository.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table-column.repository.js",
+      "bytes": 7068,
+      "sha256": "cf4cdd7732ef62df72e18226e4d944334165e5ede6236548625c165f89d2a66d"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table-csv-import.service.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table-csv-import.service.js",
+      "bytes": 6412,
+      "sha256": "5d48d2a1b4f3804cf2fb9cc314cc8f5dacf8bb3eace2a0d4743305745229718c"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table-ddl.service.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table-ddl.service.js",
+      "bytes": 3412,
+      "sha256": "a60e27a5b03aee5532d4f60c8f5806ad8367a5d6c96e243e8eb83f59e89c16b7"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table-file-cleanup.service.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table-file-cleanup.service.js",
+      "bytes": 3650,
+      "sha256": "b5d0a32a54fc5550a87737ff60110ebe9df4bfcb1fde7e0f2de07099db5ec952"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table-proxy.service.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table-proxy.service.js",
+      "bytes": 5603,
+      "sha256": "a0d894b23a921928cdce7cf68d58dacbd2bb390180571617a5e57ad1909733ad"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table-rows.repository.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table-rows.repository.js",
+      "bytes": 20408,
+      "sha256": "23f05e4b263b656b8b5b98cadb0e93de1026a58dfac8f2f1c09fb0b6ea756578"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table-size-validator.service.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table-size-validator.service.js",
+      "bytes": 3889,
+      "sha256": "2ba848ddb9d74bc50abb7aab82f4c72cf15b6009b22f5408f763f2c287d2210d"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table-uploads.controller.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table-uploads.controller.js",
+      "bytes": 3483,
+      "sha256": "4950c5d889e7534560d6247f3519fb3ff17fc92116ae1cf4018370bfacc4f7dc"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table.controller.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table.controller.js",
+      "bytes": 23169,
+      "sha256": "2d4cbb70e3945ce9524c2b5f99c9e7bacc886078b973a0cd772d406558fe6111"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table.entity.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table.entity.js",
+      "bytes": 2101,
+      "sha256": "7b923285bda12842c471422c123a9eb1eaf052b16bb3271a804a2df12b7cc6f0"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table.module.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table.module.js",
+      "bytes": 4926,
+      "sha256": "4d7f397355fb73688eff1064dabf202be302287d377f764f1663d7be54f2b61d"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table.repository.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table.repository.js",
+      "bytes": 13340,
+      "sha256": "d08ccf299427b481b512092b834c9d19f5993345305739ad9c651b083a556bbc"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table.service.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table.service.js",
+      "bytes": 23207,
+      "sha256": "bea98d11eb895294a45bfc76173577cb8e4c038e3e20a114b4740bdcc00e27bd"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/data-table.types.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table.types.js",
+      "bytes": 288,
+      "sha256": "52b809848eebb9f1bbd5db27a3041b83d6241f8a82ab805cbe27be3cd2f26b15"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/errors/data-table-column-name-conflict.error.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/errors/data-table-column-name-conflict.error.js",
+      "bytes": 598,
+      "sha256": "06ce04f75884ef4a08b195aaeb6f26c8e1be26bc4a8db8abbf7a653b7de47dc5"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/errors/data-table-column-not-found.error.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/errors/data-table-column-not-found.error.js",
+      "bytes": 558,
+      "sha256": "fc9c732f184d1d9e864e263ec3763a23e9ac7a373be5e9e43d2020d4ab32ee21"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/errors/data-table-file-upload.error.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/errors/data-table-file-upload.error.js",
+      "bytes": 436,
+      "sha256": "67aac0411f503d7c2fe1f3683c0e5c1bfcbad77522512c8674137da13e605676"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/errors/data-table-name-conflict.error.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/errors/data-table-name-conflict.error.js",
+      "bytes": 516,
+      "sha256": "6fd2abd8a0fc3bbdc79e79a509bbbb39a266749020351e7a601b61026d1829c2"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/errors/data-table-not-found.error.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/errors/data-table-not-found.error.js",
+      "bytes": 491,
+      "sha256": "03be629d370048927e7dfc2db2810981958c4137dd70f7be2015dfe9afef0d3d"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/errors/data-table-system-column-name-conflict.error.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/errors/data-table-system-column-name-conflict.error.js",
+      "bytes": 605,
+      "sha256": "90c0b4564de5c4ab7bb5144a059df81017d9e8d3a25a14b820b133d7b264619b"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/errors/data-table-validation.error.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/errors/data-table-validation.error.js",
+      "bytes": 491,
+      "sha256": "372eb451ce97afa044b02570fbccafcc142f38b226addddcbfcdd6ace8e64b42"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/middleware/branch-write-access-middleware.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/middleware/branch-write-access-middleware.js",
+      "bytes": 895,
+      "sha256": "4fce01904590f02386cc6d26023a8f9f5ca4553aa1179e3a8da9c112b18d20b2"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/multer-upload-middleware.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/multer-upload-middleware.js",
+      "bytes": 5058,
+      "sha256": "b1180acff75ffcf35f616a26887fbe8a93eee03b4921404da522f373e28e3f59"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/types.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/types.js",
+      "bytes": 264,
+      "sha256": "88addd1242c7b9da0eaf6e70d4fc4d83fbc732b690cbf64e830ec539ffeba93e"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/utils/size-utils.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/utils/size-utils.js",
+      "bytes": 544,
+      "sha256": "8afb8a3f90cdb3bf25189e458ee19291d466b00ba0260296d0abd5fc6d93a627"
+    },
+    {
+      "package": "n8n",
+      "relative": "dist/modules/data-table/utils/sql-utils.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/utils/sql-utils.js",
+      "bytes": 8758,
+      "sha256": "66c06f6f2c819daa3bda24f07ee7ae1260a5106d4efe39ed5f112a1bb70a35e3"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/__schema__/v1.0.0/row/deleteRows.json",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/__schema__/v1.0.0/row/deleteRows.json",
+      "bytes": 252,
+      "sha256": "2363c0ed6d79708a4638bda3f1f2b85d0b32d3c4bd0dab0234000b780b9e15a9"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/__schema__/v1.0.0/row/get.json",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/__schema__/v1.0.0/row/get.json",
+      "bytes": 252,
+      "sha256": "2363c0ed6d79708a4638bda3f1f2b85d0b32d3c4bd0dab0234000b780b9e15a9"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/__schema__/v1.0.0/row/insert.json",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/__schema__/v1.0.0/row/insert.json",
+      "bytes": 252,
+      "sha256": "2363c0ed6d79708a4638bda3f1f2b85d0b32d3c4bd0dab0234000b780b9e15a9"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/__schema__/v1.1.0/row/deleteRows.json",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/__schema__/v1.1.0/row/deleteRows.json",
+      "bytes": 252,
+      "sha256": "2363c0ed6d79708a4638bda3f1f2b85d0b32d3c4bd0dab0234000b780b9e15a9"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/__schema__/v1.1.0/row/get.json",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/__schema__/v1.1.0/row/get.json",
+      "bytes": 252,
+      "sha256": "2363c0ed6d79708a4638bda3f1f2b85d0b32d3c4bd0dab0234000b780b9e15a9"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/__schema__/v1.1.0/row/insert.json",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/__schema__/v1.1.0/row/insert.json",
+      "bytes": 252,
+      "sha256": "2363c0ed6d79708a4638bda3f1f2b85d0b32d3c4bd0dab0234000b780b9e15a9"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/__schema__/v1.1.0/row/update.json",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/__schema__/v1.1.0/row/update.json",
+      "bytes": 252,
+      "sha256": "2363c0ed6d79708a4638bda3f1f2b85d0b32d3c4bd0dab0234000b780b9e15a9"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/__schema__/v1.1.0/row/upsert.json",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/__schema__/v1.1.0/row/upsert.json",
+      "bytes": 252,
+      "sha256": "2363c0ed6d79708a4638bda3f1f2b85d0b32d3c4bd0dab0234000b780b9e15a9"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/__schema__/v1.1.0/table/create.json",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/__schema__/v1.1.0/table/create.json",
+      "bytes": 1749,
+      "sha256": "005e568aed0649672316683810bf6b27efe91ddc722746c08a9d6df21f47f0d1"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/__schema__/v1.1.0/table/delete.json",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/__schema__/v1.1.0/table/delete.json",
+      "bytes": 199,
+      "sha256": "159f439b7925ade5f637b0bbbf28ad127ac07543f6832e77d9eff97eb690b0bf"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/__schema__/v1.1.0/table/list.json",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/__schema__/v1.1.0/table/list.json",
+      "bytes": 1474,
+      "sha256": "24515c7f869b43e2b51ef34ff0184a47a8b499594042bc6b16c9dff722e80c58"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/__schema__/v1.1.0/table/update.json",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/__schema__/v1.1.0/table/update.json",
+      "bytes": 131,
+      "sha256": "dc5ab6e672a497914cb1446204d6a4040cf1af1f466f676b472310bf0974f509"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/actions/router.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/actions/router.js",
+      "bytes": 5930,
+      "sha256": "3bc47a8d2cb735ce812f2ece8ec6cf764c7ff28cd2dba29ff81b972134c6b787"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/actions/row/delete.operation.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/actions/row/delete.operation.js",
+      "bytes": 1420,
+      "sha256": "712415fa96035497682123f47209edaca08590d0197027e968a3a1529ed717d4"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/actions/row/get.operation.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/actions/row/get.operation.js",
+      "bytes": 3833,
+      "sha256": "a44312a59c27dc9b91722305c58fc4a92603db8a773090f016b3dcb4f31a269e"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/actions/row/insert.operation.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/actions/row/insert.operation.js",
+      "bytes": 2504,
+      "sha256": "05e3fee31600270c1d83cb9b46a0c517c8e098ef8e59b2582a0853f03001054b"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/actions/row/Row.resource.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/actions/row/Row.resource.js",
+      "bytes": 4951,
+      "sha256": "30d044c219c2c1afc2ec8bebe255b35733e1c3f564d1af513450c184f9c81cf5"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/actions/row/rowExists.operation.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/actions/row/rowExists.operation.js",
+      "bytes": 816,
+      "sha256": "7f4040c412c08d564a3d602292fb992d1ff5076288a636cd9ef87ac1ebedea75"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/actions/row/rowNotExists.operation.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/actions/row/rowNotExists.operation.js",
+      "bytes": 824,
+      "sha256": "610278c947e4db43e9472b11f95b1c302c10f9241b317c62f56dd7c261e912ee"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/actions/row/update.operation.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/actions/row/update.operation.js",
+      "bytes": 1571,
+      "sha256": "4b584ec08941e948f2268ea3b02f03fb5e3ef96f07d36de7c915ce6593c55562"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/actions/row/upsert.operation.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/actions/row/upsert.operation.js",
+      "bytes": 1566,
+      "sha256": "a9dbe863519d22ff0a6382350327d662e5e11b4ee6739f11dfaf1e4485e21273"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/actions/table/create.operation.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/actions/table/create.operation.js",
+      "bytes": 3656,
+      "sha256": "3b665dc52153624c41c88bd90186982c9ee539fb8c4d13e2ba6f47996533da69"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/actions/table/delete.operation.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/actions/table/delete.operation.js",
+      "bytes": 1060,
+      "sha256": "0be82bc57bcfbe3f2ef8961c49abeaa0216e4be5c1e5610fbaacd8bab7f41a27"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/actions/table/list.operation.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/actions/table/list.operation.js",
+      "bytes": 3789,
+      "sha256": "c82013410b708554cbf3fcd60dd688d91f4b00f93a037e54f060f992919128dd"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/actions/table/Table.resource.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/actions/table/Table.resource.js",
+      "bytes": 3442,
+      "sha256": "8862f282dde8785c0fe21d990aec16ec4949fc1564637fc910459a6a58c121da"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/actions/table/update.operation.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/actions/table/update.operation.js",
+      "bytes": 982,
+      "sha256": "069505fc60b3de3bed6983039d29276566efe107c25d9f78adb805d653466f49"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/common/addRow.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/common/addRow.js",
+      "bytes": 1872,
+      "sha256": "2e2effc3aba0832b3d9c66ce31dc5c5a23268ba076b40af93dfa66cab4bf010a"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/common/constants.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/common/constants.js",
+      "bytes": 315,
+      "sha256": "5d0932b9b1268f09b51d304d32a4fd94919160ba70c1bf1179f22fc1560e53a8"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/common/fields.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/common/fields.js",
+      "bytes": 1377,
+      "sha256": "9694a7dc1b889d6e6319478a4a7436ff79cf4ab78247ab0a4e71fc5fa1ffa2cc"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/common/methods.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/common/methods.js",
+      "bytes": 4821,
+      "sha256": "50d066a61ad6c5871f5c04428f8bc544a4dbd58d639448d4a1e1590fca3b2e37"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/common/selectMany.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/common/selectMany.js",
+      "bytes": 8273,
+      "sha256": "976f6fae6e27589f6061e1c496304161897137562967cac2bd04fbaf2a9a1aff"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/common/utils.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/common/utils.js",
+      "bytes": 6839,
+      "sha256": "3bfe9002bf93ceb4bf56150bb6ea33987959c6cc5634d628b74d07cc81fae37e"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/DataTable.node.js",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/DataTable.node.js",
+      "bytes": 3832,
+      "sha256": "2e9311708c3344f0e7086f9bd272ee03e1aacd9e94b97d52029e5283d8a6e2cb"
+    },
+    {
+      "package": "nodes_base",
+      "relative": "dist/nodes/DataTable/DataTable.node.json",
+      "resolved": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/DataTable.node.json",
+      "bytes": 573,
+      "sha256": "df595de2d9f4e044104bf7b5a0104ce0158949d36b7c2195d71010994a83d7da"
+    }
+  ],
+  "data_table_node": "/usr/local/lib/node_modules/n8n/node_modules/.pnpm/n8n-nodes-base@file+packages+nodes-base_@aws-sdk+credential-providers@3.808.0_asn1.js@5_8da18263ca0574b0db58d4fefd8173ce/node_modules/n8n-nodes-base/dist/nodes/DataTable/DataTable.node.js",
+  "patch": {
+    "path": "/usr/local/lib/node_modules/n8n/dist/modules/data-table/data-table-proxy.service.js",
+    "before": "    'n8n-nodes-base.evaluation',\n];",
+    "after": "    'n8n-nodes-base.evaluation',\n    'CUSTOM.escalarJournalLoop',\n];",
+    "before_sha256": "a0d894b23a921928cdce7cf68d58dacbd2bb390180571617a5e57ad1909733ad",
+    "after_sha256": "f5b16c17d788a24f583999bea27d43dc67601c6ee5174c7a6cdef77f031913ec"
+  }
+}
