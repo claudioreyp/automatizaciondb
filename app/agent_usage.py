@@ -19,7 +19,7 @@ from .agent_runtime_api import as_utc, lease_valid, normalize_sender, require_ke
 from .auth import IntegrationAuthContext, require_integration_scope
 from .config import get_settings
 from .database import get_db
-from .models import AgentAttentionRequest, AgentModelUsage, Business, utcnow
+from .models import AgentAttentionRequest, AgentConversation, AgentModelUsage, Business, utcnow
 from .realtime import hub
 from .schemas import ApiModel
 
@@ -92,25 +92,65 @@ def _authorized(db, integration, conversation_id, payload):
     return conversation
 
 
+def _identity_hash(business_id, sender):
+    sender = normalize_sender(sender)
+    # Preserve the historical phone hash. A provider LID is an authenticated
+    # identity in its own namespace, never a guessed or invented phone number.
+    identity = f"whatsapp:lid:{sender}" if sender.endswith("@lid") else sender
+    return hashlib.sha256(f"{business_id}:{identity}".encode()).hexdigest()
+
+
 def _sender_hash(conversation):
     phone = (conversation.state or {}).get("_transport", {}).get("verified_phone")
-    if not phone and not conversation.sender.endswith("@lid"):
-        phone = conversation.sender
-    if not phone:
-        return None
-    phone = normalize_sender(phone)
-    if phone.endswith("@lid"):
-        return None
-    return hashlib.sha256(f"{conversation.business_id}:{phone}".encode()).hexdigest()
+    return _identity_hash(conversation.business_id, phone or conversation.sender)
 
 
-def _totals(db, row):
+def _identity_aliases(sender, state):
+    transport = (state or {}).get("_transport", {})
+    aliases = transport.get("identity_aliases", {})
+    values = {sender, transport.get("verified_phone")}
+    if isinstance(aliases, dict):
+        values.update(alias for alias, verified in aliases.items() if verified is True)
+    return {normalize_sender(value) for value in values if value}
+
+
+def _sender_hashes(db, conversation):
+    identities = _identity_aliases(conversation.sender, conversation.state)
+
+    def related(values):
+        # Transport metadata is private and cannot be supplied in agent state.
+        # Read peers without locking them: Conversation -> Business remains the
+        # lock order. One grouped query crosses branches, never businesses.
+        identity = or_(AgentConversation.sender.in_(values),
+            AgentConversation.state["_transport"]["verified_phone"].as_string().in_(values),
+            *(AgentConversation.state["_transport"]["identity_aliases"][value].as_boolean().is_(True)
+                for value in sorted(values)))
+        return db.execute(select(AgentConversation.sender, AgentConversation.state).where(
+            AgentConversation.business_id == conversation.business_id,
+            AgentConversation.channel == conversation.channel, identity)).all()
+
+    original_phones = {value for value in identities if not value.endswith("@lid")}
+    for sender, state in related(identities):
+        identities.update(_identity_aliases(sender, state))
+    discovered_phones = {value for value in identities if not value.endswith("@lid")} - original_phones
+    # A phone learned in another branch links its other LIDs too. At most one
+    # additional grouped read is needed; there is no query per alias or usage.
+    if discovered_phones:
+        for sender, state in related(discovered_phones):
+            identities.update(_identity_aliases(sender, state))
+    return {_identity_hash(conversation.business_id, value) for value in identities}
+
+
+def _totals(db, row, conversation):
     base = [AgentModelUsage.business_id == row.business_id,
         AgentModelUsage.window_start == row.window_start]
+    sender_hashes = _sender_hashes(db, conversation)
+    if row.sender_hash:
+        sender_hashes.add(row.sender_hash)
     def total(*where):
         return int(db.scalar(select(func.coalesce(func.sum(AgentModelUsage.charged_tokens), 0)).where(*base, *where)))
     return {"conversation": total(AgentModelUsage.conversation_id == row.conversation_id),
-        "sender": total(AgentModelUsage.sender_hash == row.sender_hash) if row.sender_hash else 0,
+        "sender": total(AgentModelUsage.sender_hash.in_(sender_hashes)),
         "business": total()}
 
 
@@ -142,9 +182,9 @@ def _notice(db, row, conversation, scope, event, details):
     return notice.id
 
 
-def _threshold_alerts(db, row, conversation, limits):
+def _threshold_alerts(db, row, conversation, limits, totals=None):
     new = []
-    for scope, amount in _totals(db, row).items():
+    for scope, amount in (totals if totals is not None else _totals(db, row, conversation)).items():
         limit = limits[scope + "_tokens"]
         if amount * 100 >= limit * limits["alert_percent"]:
             notice = _notice(db, row, conversation, scope, "near_limit",
@@ -196,7 +236,7 @@ async def reserve_usage(conversation_id: str, payload: UsageReserve, response: R
         charged_tokens=0, status="reserved", created_at=now, updated_at=now,
         attention_recorded=False)
     limits = usage_limits(row.business_id)
-    totals = _totals(db, row)
+    totals = _totals(db, row, conversation)
     exceeded = [scope for scope, amount in totals.items() if amount + row.reserved_tokens > limits[scope + "_tokens"]]
     row.denial_reason = "identity_unavailable" if not row.sender_hash else "budget_exceeded" if exceeded else None
     row.status = "denied" if row.denial_reason else "reserved"
@@ -211,7 +251,8 @@ async def reserve_usage(conversation_id: str, payload: UsageReserve, response: R
             if notice:
                 notices.append(notice)
     else:
-        notices.extend(_threshold_alerts(db, row, conversation, limits))
+        notices.extend(_threshold_alerts(db, row, conversation, limits,
+            {scope: amount + row.charged_tokens for scope, amount in totals.items()}))
     return await _finish(db, response, row, notices, dispatch_allowed=row.status == "reserved", reason=row.denial_reason)
 
 

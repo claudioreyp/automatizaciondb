@@ -169,13 +169,15 @@ def test_business_budget_accumulates_different_senders_and_conversations(client,
     assert reserve(client, agent_headers, second, tokens=5).json()["status"] == "denied"
 
 
-def test_missing_authenticated_lid_phone_fails_closed_without_guessing(client, agent_headers):
+def test_authenticated_lid_without_phone_reserves_without_guessing(client, agent_headers):
     lease = acquire(client, agent_headers, sender="123456789@lid", text="mi telefono 51999900001")
     response = reserve(client, agent_headers, lease)
-    assert response.status_code == 200 and response.json()["reason"] == "identity_unavailable"
-    assert response.json()["dispatch_allowed"] is False and response.json()["attention_recorded"]
+    assert response.status_code == 200 and response.json()["reason"] is None
+    assert response.json()["dispatch_allowed"] is True
     with SessionLocal() as db:
-        assert db.scalar(select(AgentModelUsage)).sender_hash is None
+        assert db.scalar(select(AgentModelUsage)).sender_hash is not None
+        conversation = db.get(AgentConversation, lease["conversation_id"])
+        assert conversation.state["_transport"].get("verified_phone") is None
 
 
 def test_utc_rollover_never_rebills_prior_reservation_or_grants_replay(client, agent_headers, monkeypatch):
@@ -280,6 +282,7 @@ def test_server_overrides_are_scoped_and_invalid_configuration_cannot_disable_gu
             Settings(_env_file=None,agent_usage_business_overrides=overrides)
 
 
+@pytest.mark.skipif(engine.dialect.name != "sqlite", reason="SQLite migration smoke requires the in-memory engine")
 def test_additive_migration_and_code_rollback_preserve_existing_records(tenant):
     path = Path(__file__).resolve().parents[1]/'migrations/versions/20261020_0029_agent_model_usage.py'
     spec = importlib.util.spec_from_file_location('isolated_usage_migration',path)

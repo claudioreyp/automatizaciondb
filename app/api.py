@@ -7600,14 +7600,18 @@ async def integration_create_order(
             raise HTTPException(422, "A complete catalog order with server pricing is required")
         if not payload.whatsapp_chat_id or normalize_sender(payload.whatsapp_chat_id) != integration.sender:
             raise HTTPException(403, "Order sender must match the authenticated conversation")
-        if not integration.verified_phone:
-            raise CodedHTTPException(409, "The transport must verify the customer phone before checkout", "TRANSPORT_PHONE_REQUIRED")
-        if not payload.customer_phone or normalize_sender(payload.customer_phone) != integration.verified_phone:
-            raise HTTPException(403, "Customer phone must match the authenticated conversation")
         if existing and existing.get("received_digest") is not None:
             if existing["received_digest"] != received_digest:
                 raise HTTPException(409, "Idempotency key already used with other data")
             return existing["result"]
+        if integration.verified_phone:
+            if not payload.customer_phone or normalize_sender(payload.customer_phone) != integration.verified_phone:
+                raise HTTPException(403, "Customer phone must match the authenticated conversation")
+        elif not integration.sender.endswith("@lid") or payload.customer_phone is not None:
+            # A transport-authenticated WhatsApp LID is an identity in its own
+            # right. Keep an unavailable phone null; never infer it from a LID
+            # or trust a number supplied in conversation text/model arguments.
+            raise CodedHTTPException(409, "The transport must verify any supplied customer phone before checkout", "TRANSPORT_PHONE_REQUIRED")
         if not existing:
             # Delivery pricing also evaluates schedules. Verify the agent's
             # explicit service contract first, including invalid timezones.
