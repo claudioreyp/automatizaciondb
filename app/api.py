@@ -7373,7 +7373,8 @@ async def integration_menu_card(
         data, content_type = await load_private_file(branch.menu_card_storage_path)
     except (FileNotFoundError, httpx.HTTPError) as exc:
         raise HTTPException(status_code=404, detail="No se encontró la imagen de la carta") from exc
-    if format == "whatsapp_cloud":
+    # The QR transport consumes this route too: agent images must be PNG/JPEG.
+    if format == "whatsapp_cloud" or integration.profile == "restaurant_agent":
         from .agent_media import whatsapp_cloud_image
         data, content_type = whatsapp_cloud_image(data, content_type)
     return Response(content=data, media_type=content_type, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
