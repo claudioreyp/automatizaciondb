@@ -1848,6 +1848,8 @@ async def onboard_restaurant(
     )
     db.add(business)
     supabase_user_id: str | None = None
+    notifications_credential: IntegrationCredential | None = None
+    notifications_token: str | None = None
     caller_authorization = request.headers.get("Authorization")
     try:
         # A concurrent slug insert may wait for this transaction. Keep that wait
@@ -1890,6 +1892,20 @@ async def onboard_restaurant(
         )
         db.add(credential)
         db.flush()
+        if payload.create_pos_notifications:
+            notifications_token, notifications_prefix, notifications_hash = issue_integration_token()
+            notifications_credential = IntegrationCredential(
+                business_id=business.id,
+                branch_id=branch.id,
+                name=f"Avisos POS - {branch.name}"[:120],
+                profile="generic",
+                token_prefix=notifications_prefix,
+                token_hash=notifications_hash,
+                scopes=["events:deliver", "events:read", "menu:read", "orders:read"],
+                created_by=user.user_id,
+            )
+            db.add(notifications_credential)
+            db.flush()
 
         owner_email = payload.owner_email.strip().lower()
         owner_name = payload.owner_name.strip()
@@ -1923,6 +1939,12 @@ async def onboard_restaurant(
             business.id,
             {"branch_id": branch.id, "scopes": payload.integration_scopes},
         )
+        if notifications_credential is not None:
+            audit(
+                db, user, "integration_credential.created", "integration_credential",
+                notifications_credential.id, business.id,
+                {"branch_id": branch.id, "scopes": notifications_credential.scopes},
+            )
         audit(
             db,
             user,
@@ -1935,6 +1957,14 @@ async def onboard_restaurant(
                 "owner_email": owner_email,
                 "owner_user_id": supabase_user_id,
             },
+        )
+        settings = get_settings()
+        api_base_url = (settings.public_api_base_url or f"{str(request.base_url).rstrip('/')}/api/v1").rstrip("/")
+        agent_package = integration_package(api_base_url, business.id, branch.id, credential.scopes, credential.profile)
+        notifications_package = (
+            integration_package(api_base_url, business.id, branch.id,
+                                notifications_credential.scopes, notifications_credential.profile)
+            if notifications_credential is not None else None
         )
         db.commit()
     except HTTPException:
@@ -1953,12 +1983,14 @@ async def onboard_restaurant(
             await delete_supabase_auth_user(supabase_user_id, caller_authorization)
         raise HTTPException(status_code=500, detail="No se pudo completar el alta del restaurante") from exc
 
-    settings = get_settings()
-    api_base_url = (settings.public_api_base_url or f"{str(request.base_url).rstrip('/')}/api/v1").rstrip("/")
     integration_base = f"{api_base_url}/integrations"
     response.headers["Cache-Control"] = "no-store"
     return {
-        "integration": integration_package(api_base_url, business.id, branch.id, credential.scopes, credential.profile),
+        "integration": agent_package,
+        **({"pos_notifications": {
+            "credential": {**serialize_integration_credential(notifications_credential), "token": notifications_token},
+            "integration": notifications_package,
+        }} if notifications_credential is not None else {}),
         "business": serialize_business(db, business),
         "branch": serialize_branch(branch),
         "owner_access": {

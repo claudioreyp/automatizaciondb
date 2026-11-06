@@ -121,9 +121,12 @@ class RestaurantOnboardingCreate(ApiModel):
     credential_name: str = Field(default="Integracion principal", min_length=2, max_length=120)
     integration_scopes: list[str] = Field(default_factory=lambda: sorted(DEFAULT_AGENT_SCOPES))
     integration_profile: Literal["generic", "restaurant_agent"] = "generic"
+    create_pos_notifications: bool = False
 
     @model_validator(mode="after")
     def restrict_agent_profile(self):
+        if self.create_pos_notifications and self.integration_profile != "restaurant_agent":
+            raise ValueError("POS notifications require the restaurant agent onboarding profile")
         if self.integration_profile == "restaurant_agent":
             if "integration_scopes" in self.model_fields_set and not set(self.integration_scopes).issubset(RESTAURANT_AGENT_SCOPES):
                 raise ValueError("Restaurant agents cannot receive administrative integration scopes")
