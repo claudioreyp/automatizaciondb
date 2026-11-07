@@ -5,7 +5,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import String, cast, or_, select
 
 from .auth import AuthContext, IntegrationAuthContext, ensure_branch_scope, require_integration_scope, require_roles
 from .database import get_db
@@ -45,6 +45,69 @@ def serialize_attention(row):
         "status", "version", "created_at", "resolved_at", "resolved_by", "resolution_note")}
     result["details"] = {key: deepcopy(value) for key, value in (row.details or {}).items() if not key.startswith("_")}
     return result
+
+
+def attention_contacts(db, rows, *, business_id, branch_id):
+    """Read-only staff projection of protected transport contact data.
+
+    Names are display data, never identity keys. A numeric LID is not a phone.
+    Keep this projection out of tool responses and saved idempotency receipts.
+    """
+    from .agent_runtime_api import contact_display_name, normalize_sender
+
+    def identity(value):
+        if not isinstance(value, str):
+            return None
+        try:
+            return normalize_sender(value)
+        except HTTPException:
+            return None
+
+    def phone(value):
+        value = identity(value)
+        return value if value and value.isascii() and value.isdigit() and len(value) <= 15 else None
+
+    normalized = {row.sender: identity(row.sender) for row in rows}
+    senders = sorted({sender for sender in normalized.values() if sender})
+    contacts = {sender: {"contact_display_name": None, "contact_phone": phone(sender)} for sender in senders}
+    transport_column = AgentConversation.state["_transport"]
+    for offset in range(0, len(senders), 100):
+        chunk = senders[offset:offset + 100]
+        predicates = [AgentConversation.sender.in_(chunk),
+                      transport_column["verified_phone"].as_string().in_([sender for sender in chunk if phone(sender)])]
+        # Avoid casting malformed historical JSON to a PostgreSQL boolean.
+        # SQLite renders a JSON true as 1; Python still requires literal True.
+        predicates.extend(cast(transport_column["identity_aliases"][sender], String).in_(["true", "1"])
+                          for sender in chunk)
+        candidates = {sender: {} for sender in chunk}
+        statement = select(AgentConversation.id, AgentConversation.sender, transport_column).where(
+            AgentConversation.business_id == business_id, AgentConversation.branch_id == branch_id,
+            AgentConversation.channel == "whatsapp", or_(*predicates))
+        for conversation_id, stored_sender, stored_transport in db.execute(statement):
+            transport = stored_transport if isinstance(stored_transport, dict) else {}
+            aliases = transport.get("identity_aliases")
+            aliases = aliases if isinstance(aliases, dict) else {}
+            stored_identity = identity(stored_sender)
+            verified_phone = phone(transport.get("verified_phone"))
+            for sender in chunk:
+                if not (stored_identity == sender or aliases.get(sender) is True
+                        or phone(sender) is not None and verified_phone == sender):
+                    continue
+                # A conflicting stored phone cannot lend its name to a PN notice.
+                if phone(sender) and verified_phone and verified_phone != sender:
+                    candidates[sender][conversation_id] = None
+                else:
+                    candidates[sender][conversation_id] = {
+                        "contact_display_name": contact_display_name(transport.get("contact_display_name")),
+                        "contact_phone": verified_phone or phone(stored_identity) or phone(sender),
+                    }
+        for sender, matches in candidates.items():
+            if len(matches) == 1:
+                contact = next(iter(matches.values()))
+                if contact is not None:
+                    contacts[sender] = contact
+    return {raw: contacts.get(sender, {"contact_display_name": None, "contact_phone": None})
+            for raw, sender in normalized.items()}
 
 
 class AttentionAttachment(ApiModel):
@@ -266,7 +329,9 @@ def list_attention(branch_id: int, response: Response, status: Literal["open", "
     if order_id is not None:
         stmt = stmt.where(AgentAttentionRequest.order_id == order_id)
     response.headers["Cache-Control"] = "no-store"
-    return [serialize_attention(row) for row in db.scalars(stmt.order_by(AgentAttentionRequest.created_at.desc(), AgentAttentionRequest.id))]
+    rows = list(db.scalars(stmt.order_by(AgentAttentionRequest.created_at.desc(), AgentAttentionRequest.id)))
+    contacts = attention_contacts(db, rows, business_id=branch.business_id, branch_id=branch_id)
+    return [{**serialize_attention(row), **contacts[row.sender]} for row in rows]
 
 
 @router.post("/agent-attention/{attention_id}/resolve")
