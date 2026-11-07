@@ -691,7 +691,9 @@ def create_order(
                 ServiceSchedule.archived_at.is_(None),
             )
         )
-        if primary_schedule and not schedule_is_open(db, primary_schedule):
+        # Staff can enter a manual delivery outside the online ordering hours.
+        manual_pos_delivery = payload.source == "pos" and payload.channel == "delivery"
+        if primary_schedule and not manual_pos_delivery and not schedule_is_open(db, primary_schedule):
             raise CodedHTTPException(409, "Branch is closed at this time", "BRANCH_CLOSED")
 
     if payload.channel == "dine_in" and not payload.table_id:
