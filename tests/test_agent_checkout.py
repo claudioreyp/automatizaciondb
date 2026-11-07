@@ -269,7 +269,12 @@ def test_shipping_yape_is_independent_and_allows_dispatch_before_review(client, 
     with SessionLocal() as db:
         assert db.query(Payment).count() == 2
         assert db.query(KitchenTicket).count() == 1
-        assert db.query(IntegrationEvent).filter_by(event_type="payment.approved").count() == 1
+        assert db.query(IntegrationEvent).filter_by(event_type="payment.approved").count() == 2
+        event = db.get(IntegrationEvent, accepted.json()["notification"]["event_id"])
+        assert event.payload["purpose"] == "delivery"
+        assert event.payload["payment_request_id"] == fee.json()["payment_request"]["id"]
+        assert event.payload["sent_to_kitchen"] is False
+        assert event.payload["ticket_ids"] == []
 
 
 def test_ready_notice_waits_for_addition_and_deduplicates_reopening(client, tenant, auth_headers):

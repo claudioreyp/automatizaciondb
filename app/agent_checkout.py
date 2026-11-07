@@ -319,6 +319,11 @@ def review_request(db, user, order, evidence, payload):
             "payment_id": payment.id, "payment_request_id": request.id, "purpose": request.purpose,
             "sent_to_kitchen": True, "appended_item_ids": [item.id for item in new_items],
             "ticket_ids": [ticket.id for ticket in tickets], "addition_amount": float(request.amount)}) if tickets else None
+        if request.purpose == "delivery":
+            event = create_integration_event(db, order, "payment.approved", {
+                "evidence_id": evidence.id, "payment_id": payment.id, "payment_request_id": request.id,
+                "purpose": "delivery", "payment_method": "yape", "payment_approved": True,
+                "sent_to_kitchen": False, "ticket_ids": []})
     evidence.reviewed_by = user.user_id
     evidence.reviewed_at = utcnow()
     request.version += 1
