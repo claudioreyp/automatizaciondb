@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from .errors import CodedHTTPException
 from .models import Branch, BranchSettings, DeliveryAssignment, Order, Payment, PaymentEvidence, Product
-from .services import active_order_items, money, recalculate_order, service_channel_for_order
+from .services import active_order_items, money, pending_pos_delivery_allowed, recalculate_order, service_channel_for_order
 
 
 DELIVERY_SERVICES = {"own", "uber_eats", "rappi", "didi_food"}
@@ -50,7 +50,9 @@ def edit_order_details(db: Session, order: Order, changes: dict, expected_total:
         raise CodedHTTPException(409, "Este pedido ya no se puede editar desde este formulario.", "ORDER_NOT_EDITABLE")
     previous = {key: getattr(order, key) for key in changes}
     changed = {key: value for key, value in changes.items() if value != previous[key]}
-    fulfillment_changed = bool(set(changed) & {"channel", "delivery_address", "delivery_fee"})
+    pos_pending = pending_pos_delivery_allowed(order)
+    confirms_pos_fee = pos_pending and "delivery_fee" in changes
+    fulfillment_changed = bool(set(changed) & {"channel", "delivery_address", "delivery_fee"}) or confirms_pos_fee
     if fulfillment_changed and policy["fulfillment_locked"]:
         raise CodedHTTPException(409, policy["reason"], "ORDER_FULFILLMENT_LOCKED")
 
@@ -66,7 +68,10 @@ def edit_order_details(db: Session, order: Order, changes: dict, expected_total:
         if channel == "delivery" and service == "own":
             name = changes.get("customer_name", order.customer_name)
             phone = changes.get("customer_phone", order.customer_phone)
-            if not name or not phone or not str(address.get("address", "")).strip() or not str(address.get("reference", "")).strip():
+            if order.source == "pos":
+                if not str(name or "").strip() or not str(phone or "").strip():
+                    raise CodedHTTPException(422, "Completa nombre y teléfono para el domicilio propio.", "DELIVERY_DETAILS_REQUIRED")
+            elif not name or not phone or not str(address.get("address", "")).strip() or not str(address.get("reference", "")).strip():
                 raise CodedHTTPException(422, "Completa nombre, teléfono, dirección y referencia para el domicilio propio.", "DELIVERY_DETAILS_REQUIRED")
         if channel != "delivery" or service != "own":
             previous.setdefault("delivery_fee", order.delivery_fee)
@@ -102,12 +107,19 @@ def edit_order_details(db: Session, order: Order, changes: dict, expected_total:
         # Customer-only edits must not re-evaluate expired or modified promotions.
         order.total = max(money(order.subtotal - order.discount + order.delivery_fee), Decimal("0"))
     if fulfillment_changed:
+        if pos_pending:
+            previous.update(delivery_quote_id=order.delivery_quote_id, delivery_fee_status=order.delivery_fee_status)
         order.delivery_quote_id = None
-        order.delivery_fee_status = "final"
+        order.delivery_fee_status = (
+            "pending_quote" if pos_pending and channel == "delivery" and service == "own" and not confirms_pos_fee else "final"
+        )
     if money(expected_total) != money(order.total):
         raise HTTPException(status_code=409, detail={
             "code": "ORDER_TOTAL_CHANGED",
             "message": "El total cambió. Revisa el importe y confirma nuevamente para guardar.",
             "total": float(order.total), "version": order.version,
         })
-    return {"before": previous, "after": {**changes, "total": order.total, "discount": order.discount}}
+    after = {**changes, "total": order.total, "discount": order.discount}
+    if pos_pending and fulfillment_changed:
+        after.update(delivery_quote_id=order.delivery_quote_id, delivery_fee_status=order.delivery_fee_status)
+    return {"before": previous, "after": after}

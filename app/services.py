@@ -777,25 +777,32 @@ def create_order(
                 "One or more products are outside their configured schedule",
                 "PRODUCT_SCHEDULE_CLOSED",
             )
+    if payload.allow_pending_delivery_quote and order.source == "pos":
+        own_delivery = ((order.delivery_address or {}).get("delivery_service") or "own") == "own"
+        if order.channel != "delivery" or not own_delivery or payload.delivery_quote_id or money(payload.delivery_fee):
+            raise CodedHTTPException(422, "A pending POS delivery requires an unquoted own delivery without a delivery fee", "POS_PENDING_DELIVERY_INVALID")
+        if not str(order.customer_name or "").strip() or not str(order.customer_phone or "").strip():
+            raise CodedHTTPException(422, "Completa nombre y teléfono para el pedido a domicilio.", "DELIVERY_DETAILS_REQUIRED")
     if payload.delivery_quote_id:
         if payload.channel != "delivery":
             raise HTTPException(status_code=422, detail="Delivery quotes can only be used for delivery orders")
         apply_delivery_quote_to_order(db, order, payload.delivery_quote_id)
         recalculate_order(db, order)
     if payload.allow_pending_delivery_quote:
-        from .agent_checkout import AGENT_SOURCES
-        validated_pending_quote = payload.delivery_quote_id and order.delivery_fee_status == "pending_quote"
-        if (order.source not in AGENT_SOURCES or order.channel != "delivery" or not branch_settings
-                or not branch_settings.digital_delivery or (not validated_pending_quote and
-                    (payload.delivery_quote_id or branch_settings.delivery_mode != "quote"))):
-            raise HTTPException(422, "Pending delivery is only allowed for WhatsApp orders with quotation pricing")
+        if order.source != "pos":
+            from .agent_checkout import AGENT_SOURCES
+            validated_pending_quote = payload.delivery_quote_id and order.delivery_fee_status == "pending_quote"
+            if (order.source not in AGENT_SOURCES or order.channel != "delivery" or not branch_settings
+                    or not branch_settings.digital_delivery or (not validated_pending_quote and
+                        (payload.delivery_quote_id or branch_settings.delivery_mode != "quote"))):
+                raise HTTPException(422, "Pending delivery is only allowed for WhatsApp orders with quotation pricing")
         order.delivery_fee_status = "pending_quote"
         order.delivery_fee = Decimal("0")
         recalculate_order(db, order)
     if payload.quoted_total is not None and money(payload.quoted_total) != money(order.total):
         raise CodedHTTPException(409, "The price changed; confirm the new total before payment", "ORDER_QUOTE_CHANGED")
     if order.source == "pos":
-        ensure_final_delivery_fee(order)
+        ensure_final_delivery_fee(order, allow_pos_pending=payload.allow_pending_delivery_quote)
     order.folio = reserve_order_folio(db, branch.business_id)
     db.add(order)
     db.flush()
@@ -1010,11 +1017,19 @@ def commit_order_stock(db: Session, user: AuthContext, order: Order) -> None:
     commit_order_items_stock(db, user, order, active_order_items(order))
 
 
-def ensure_final_delivery_fee(order: Order, *, allow_agent_pending: bool = False) -> None:
+def pending_pos_delivery_allowed(order: Order) -> bool:
+    return (order.source == "pos" and order.channel == "delivery"
+            and ((order.delivery_address or {}).get("delivery_service") or "own") == "own"
+            and order.delivery_fee_status == "pending_quote")
+
+
+def ensure_final_delivery_fee(order: Order, *, allow_agent_pending: bool = False, allow_pos_pending: bool = False) -> None:
     if allow_agent_pending:
         from .agent_checkout import pending_delivery_allowed
         if pending_delivery_allowed(order):
             return
+    if allow_pos_pending and pending_pos_delivery_allowed(order):
+        return
     if order.delivery_fee_status == "pending_quote" or order.delivery_fee is None:
         raise CodedHTTPException(
             409,
@@ -1024,7 +1039,7 @@ def ensure_final_delivery_fee(order: Order, *, allow_agent_pending: bool = False
 
 
 def confirm_order(db: Session, user: AuthContext, order: Order) -> Order:
-    ensure_final_delivery_fee(order, allow_agent_pending=True)
+    ensure_final_delivery_fee(order, allow_agent_pending=True, allow_pos_pending=True)
     if order.status == "confirmed":
         return order
     if order.status not in {"draft", "pending_confirmation"}:
@@ -1221,7 +1236,7 @@ def ensure_order_products_mutable(
 
 
 def send_order_to_kitchen(db: Session, user: AuthContext, order: Order) -> list[KitchenTicket]:
-    ensure_final_delivery_fee(order, allow_agent_pending=True)
+    ensure_final_delivery_fee(order, allow_agent_pending=True, allow_pos_pending=True)
     db.flush()
     ensure_no_open_payment_evidence(db, order, "sending the order to kitchen", initial_only=True)
     existing = list(
