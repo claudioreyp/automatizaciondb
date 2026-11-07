@@ -602,6 +602,7 @@ class OrderTransition(ApiModel):
     status: Literal["preparing", "ready", "dispatched", "delivered", "closed", "cancelled"]
     expected_version: int | None = None
     reason: str | None = Field(default=None, max_length=1000)
+    delivery_collection: Literal["courier_pending"] | None = None
 
     @field_validator("reason", mode="before")
     @classmethod
@@ -624,6 +625,7 @@ class PaymentCreate(ApiModel):
     note: str | None = None
     allocations: list[PaymentAllocationInput] = Field(default_factory=list)
     expected_version: int | None = None
+    payment_request_id: str | None = None
 
 
 class OrderRefundInput(ApiModel):
@@ -775,6 +777,8 @@ class DeliveryAssign(ApiModel):
 class DeliveryTransition(ApiModel):
     expected_version: int | None = Field(default=None, ge=1)
     status: Literal["preparing", "ready", "assigned", "dispatched", "delivered", "cancelled"]
+    delivery_collection: Literal["courier_pending"] | None = None
+    reason: str | None = Field(default=None, max_length=1000)
 
 
 class EvidenceMetadata(ApiModel):
@@ -794,6 +798,7 @@ class EvidenceReview(ApiModel):
     register_id: int | None = None
     expected_version: int | None = None
     confirmed_amount: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    allocation: Literal["original", "original_and_delivery"] | None = None
 
 
 class IntegrationEvidenceCreate(EvidenceMetadata):

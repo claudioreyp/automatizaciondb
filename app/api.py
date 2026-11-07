@@ -4818,7 +4818,8 @@ async def transition_order_endpoint(
     ensure_branch_scope(user, order.business_id, order.branch_id)
     assert_version(order.version, payload.expected_version)
     previous_status = order.status
-    transition_order(db, user, order, payload.status, reason=payload.reason)
+    transition_order(db, user, order, payload.status, reason=payload.reason,
+        delivery_collection=payload.delivery_collection, expected_version=payload.expected_version)
     if order.status != previous_status and order.status == "ready":
         ready_event(db, order)
     elif order.status != previous_status and order.status in {"dispatched", "delivered", "cancelled"}:
@@ -4957,6 +4958,19 @@ async def create_payment_endpoint(
     db: Session = Depends(get_db),
 ):
     order = scoped_order_for_user(db, user, order_id, for_update=True)
+    if payload.payment_request_id:
+        from .agent_checkout_api import replay, finish
+        from .agent_delivery_payments import settle_delivery_payment
+        scope = f"delivery-payment-settle:{order.id}:{payload.payment_request_id}"
+        previous, digest = replay(db, order, scope, idempotency_key, payload)
+        if previous is not None:
+            return previous
+        ensure_no_open_payment_evidence(db, order, "recording another payment")
+        payment = settle_delivery_payment(db, user, order, payload)
+        result = {"payment": {"id": payment.id, "order_id": payment.order_id,
+            "cash_session_id": payment.cash_session_id, "method": payment.method,
+            "amount": float(payment.amount), "status": payment.status}, "order": serialize_order(order)}
+        return await finish(db, order, scope, idempotency_key, digest, result)
     scope = f"order-payment:{order_id}"
     existing = get_idempotent_response(db, scope, idempotency_key, order.business_id)
     if existing:
@@ -6457,8 +6471,12 @@ async def transition_delivery(
         raise HTTPException(status_code=409, detail="Invalid delivery transition")
     previous_status = assignment.status
     if payload.status in {"dispatched", "delivered"}:
-        ensure_dispatch(db, order)
-        ensure_no_open_payment_evidence(db, order, "dispatching the order")
+        from .agent_delivery_payments import ensure_transition_evidence
+        ensure_transition_evidence(db, order, payload.status)
+        ensure_dispatch(db, order, payload.status, user=user, delivery_collection=payload.delivery_collection,
+            reason=payload.reason, expected_version=payload.expected_version)
+    elif payload.delivery_collection:
+        raise CodedHTTPException(422, "Courier collection is only applicable when completing delivery", "DELIVERY_COLLECTION_NOT_APPLICABLE")
     assignment.status = payload.status
     if payload.status == "dispatched":
         assignment.dispatched_at = utcnow()
@@ -6788,6 +6806,21 @@ async def review_payment_evidence(
     )
     order = scoped_order_for_user(db, user, evidence.order_id, for_update=True)
     evidence = scoped_payment_evidence_for_user(db, user, evidence_id, for_update=True)
+    if payload.allocation:
+        from .agent_checkout_api import replay, finish
+        from .agent_delivery_payments import review_receipt_allocation
+        scope = f"evidence-allocation-review:{evidence.id}"
+        previous, digest = replay(db, order, scope, idempotency_key, payload)
+        if previous is not None:
+            return previous
+        tickets, event = review_receipt_allocation(db, user, order, evidence, payload)
+        db.flush()
+        result = {"order": serialize_order(order), "evidence": serialize_payment_evidence(evidence),
+            "tickets": [serialize_ticket(ticket, order=order) for ticket in tickets],
+            "command_committed": bool(tickets), "appended_item_ids": [],
+            "notification": {"event_id": event.id if event else None, "queued": bool(event),
+                "recipient_available": bool(order.whatsapp_chat_id or order.customer_phone)}}
+        return await finish(db, order, scope, idempotency_key, digest, result)
     if order.source in AGENT_SOURCES and evidence.payment_request_id is None:
         from .agent_original_payment import require_current_original_evidence
         require_current_original_evidence(order, evidence)
@@ -7954,7 +7987,8 @@ async def integration_upload_payment_evidence(
             if stored_evidence is not None:
                 require_current_original_evidence(order, stored_evidence)
         return existing
-    if order.status in {"cancelled", "closed", "delivered"} or (order.status == "dispatched" and not initial_agent_receipt):
+    delivery_during_dispatch = bool(target and target.purpose == "delivery" and order.channel == "delivery")
+    if order.status in {"cancelled", "closed", "delivered"} or (order.status == "dispatched" and not (initial_agent_receipt or delivery_during_dispatch)):
         raise CodedHTTPException(409, "Order no longer accepts an integration receipt", "ORDER_ITEMS_LOCKED")
     if initial_agent_receipt and order.status == "dispatched":
         # A dispatched order can receive its original unpaid Yape receipt, but

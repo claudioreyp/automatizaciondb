@@ -143,6 +143,7 @@ def serialize_request(request):
             "version": request.version, "items": (request.snapshot or {}).get("pricing", {}).get("items", []),
             "created_at": request.created_at, "payment_id": request.payment_id,
             "blocked_reason": (request.snapshot or {}).get("blocked_reason"),
+            "collection_pending_with_courier": bool((request.snapshot or {}).get("courier_collection_pending")),
             "resolution_note": (request.snapshot or {}).get("resolution_note"),
             "resolved_at": (request.snapshot or {}).get("resolved_at")}
 
@@ -249,7 +250,8 @@ def payment_request(db, order, request_id):
 
 
 def ensure_request_upload(db, order, request):
-    assert_open(order)
+    if not (order.status == "dispatched" and order.channel == "delivery" and request.purpose == "delivery"):
+        assert_open(order)
     if request.method != "yape" or request.status not in {"pending", "rejected", "awaiting_base_review"}:
         raise CodedHTTPException(409, "This payment request cannot receive another receipt", "PAYMENT_REQUEST_LOCKED")
     existing = db.scalar(select(PaymentEvidence.id).where(PaymentEvidence.payment_request_id == request.id,
@@ -258,7 +260,7 @@ def ensure_request_upload(db, order, request):
         raise CodedHTTPException(409, "Resolve the current receipt first", "PAYMENT_EVIDENCE_UNDER_REVIEW")
 
 
-def ensure_dispatch(db, order):
+def ensure_dispatch(db, order, next_status="delivered", *, user=None, delivery_collection=None, reason=None, expected_version=None):
     requests = requests_for_order(db, order)
     if any(r.purpose == "addition" and r.status in PENDING_ADDITION_STATUSES for r in requests):
         raise CodedHTTPException(409, "Resolve the pending addition before completion", "ADDITION_PENDING")
@@ -266,19 +268,32 @@ def ensure_dispatch(db, order):
         return
     if order.delivery_fee_status != "final":
         raise CodedHTTPException(409, "Confirm delivery fee before dispatch", "DELIVERY_FEE_PENDING")
+    if order.source in AGENT_SOURCES and initial_payment_pending(db, order):
+        raise CodedHTTPException(409, "Approve the initial receipt first", "INITIAL_PAYMENT_PENDING")
+    unpaid_yape = []
     for request in requests:
         if request.status in INACTIVE_REQUEST_STATUSES:
             continue
-        if request.purpose == "delivery" and (request.method == "unselected" or
-                (request.method == "yape" and request.status != "paid")):
+        if request.purpose == "delivery" and request.method == "unselected":
             raise CodedHTTPException(409, "Confirm how delivery will be paid and review its receipt", "DELIVERY_PAYMENT_PENDING")
+        if request.purpose == "delivery" and request.method == "yape" and request.status != "paid":
+            unpaid_yape.append(request)
+    if unpaid_yape and next_status != "dispatched":
+        if (next_status != "delivered" or delivery_collection != "courier_pending" or len(unpaid_yape) != 1
+                or user is None or order.status != "dispatched"):
+            raise CodedHTTPException(409, "Review the delivery receipt or confirm collection by the courier", "DELIVERY_PAYMENT_PENDING")
+        from .agent_delivery_payments import confirm_courier_collection
+        confirm_courier_collection(db, user, order, unpaid_yape[0], reason=reason, expected_version=expected_version)
+    elif delivery_collection:
+        raise CodedHTTPException(422, "Courier collection confirmation only applies to an unpaid Yape delivery", "DELIVERY_COLLECTION_NOT_APPLICABLE")
 
 
 def review_request(db, user, order, evidence, payload):
     request = payment_request(db, order, evidence.payment_request_id)
     if evidence.status in {"paid", "rejected", "superseded"}:
         return None
-    assert_open(order)
+    if not (order.status == "dispatched" and order.channel == "delivery" and request.purpose == "delivery"):
+        assert_open(order)
     if not payload.approve:
         evidence.status = "rejected"
         evidence.rejection_reason = payload.note or "Rejected by cashier"
@@ -298,6 +313,7 @@ def review_request(db, user, order, evidence, payload):
             note=payload.note or f"Approved {request.purpose} receipt"))
         request.payment_id = payment.id
         request.status = "paid"
+        request.snapshot = {**(request.snapshot or {}), "courier_collection_pending": None}
         evidence.status = "paid"
         event = create_integration_event(db, order, "payment.approved", {"evidence_id": evidence.id,
             "payment_id": payment.id, "payment_request_id": request.id, "purpose": request.purpose,

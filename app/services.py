@@ -1797,6 +1797,8 @@ def transition_order(
     next_status: str,
     *,
     reason: str | None = None,
+    delivery_collection: str | None = None,
+    expected_version: int | None = None,
 ) -> Order:
     if next_status == order.status:
         if next_status == "cancelled":
@@ -1804,8 +1806,14 @@ def transition_order(
         return order
     if next_status in {"dispatched", "delivered", "closed"}:
         from .agent_checkout import ensure_dispatch
-        ensure_dispatch(db, order)
-    ensure_no_open_payment_evidence(db, order, "changing the order status")
+        from .agent_delivery_payments import ensure_transition_evidence
+        ensure_transition_evidence(db, order, next_status)
+        ensure_dispatch(db, order, next_status, user=user, delivery_collection=delivery_collection,
+            reason=reason, expected_version=expected_version)
+    else:
+        if delivery_collection:
+            raise CodedHTTPException(422, "Courier collection is only applicable when completing delivery", "DELIVERY_COLLECTION_NOT_APPLICABLE")
+        ensure_no_open_payment_evidence(db, order, "changing the order status")
     if next_status not in ORDER_TRANSITIONS.get(order.status, set()):
         raise HTTPException(status_code=409, detail=f"Cannot transition {order.status} to {next_status}")
     if next_status == "closed" and order.payment_status != "paid":

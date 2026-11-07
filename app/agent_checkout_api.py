@@ -137,6 +137,8 @@ def replay(db, order, scope, key, payload):
     content = payload.model_dump(mode="json")
     if content.get("confirmed_amount") is None:
         content.pop("confirmed_amount", None)  # Older evidence-review fingerprints.
+    if content.get("allocation") is None:
+        content.pop("allocation", None)  # Preserve existing review receipts.
     # Older addition retries did not contain this optional field.
     if isinstance(payload, Addition) and payload.payment_method is None:
         content.pop("payment_method", None)
@@ -276,6 +278,12 @@ def customer_state(order_id: int, sender: str, response: Response, integration: 
     operational_reason = operational_block_reason(db, order)
     is_open = operational_reason is None
     requests = requests_for_order(db, order)
+    delivery_receipt_request = next((r for r in requests if r.purpose == "delivery" and r.method == "yape"
+        and r.status in {"pending", "rejected", "awaiting_base_review"}), None)
+    delivery_receipt_allowed = bool(delivery_receipt_request and order.channel == "delivery"
+        and (is_open or order.status == "dispatched") and not db.scalar(select(PaymentEvidence.id).where(
+            PaymentEvidence.payment_request_id == delivery_receipt_request.id,
+            PaymentEvidence.status.in_(["under_review", "evidence_received", "paid"]))))
     kitchen_completed = kitchen_was_completed(db, order)
     from .agent_original_payment import original_payment_policy
     payment_policy, _, _, _, _ = original_payment_policy(db, order)
@@ -306,12 +314,14 @@ def customer_state(order_id: int, sender: str, response: Response, integration: 
             "fulfillment_change_block_reason": None if is_open else "order_dispatched_or_completed",
             "editable_item_ids": [item.id for item in order.items if item.status not in {"cancelled", "superseded"}] if original_mutable else [],
             "choose_delivery_payment": bool(is_open and any(r.purpose == "delivery" and r.method == "unselected" for r in requests)),
+            "submit_delivery_receipt": delivery_receipt_allowed,
             "reasons": {"add_items": operational_reason or ("INITIAL_ORDER_PENDING" if order.status in {"draft", "pending_confirmation"}
                 else "PAYMENT_METHOD_DISABLED" if order.payment_method not in {"cash", "yape"} else None),
                 "revise_items": None if original_mutable else operational_reason or "ORIGINAL_ITEMS_LOCKED",
                 "cancel_order": None if original_mutable else operational_reason or "ORIGINAL_ITEMS_LOCKED",
                 "change_to_delivery": fulfillment_reasons["delivery"], "change_to_takeaway": fulfillment_reasons["takeaway"],
                 "change_original_payment": payment_policy["block_reason"],
+                "submit_delivery_receipt": None if delivery_receipt_allowed else "DELIVERY_RECEIPT_UNAVAILABLE",
                 "change_fulfillment": None if any(reason is None for reason in fulfillment_reasons.values()) else fulfillment_reasons["delivery"],
                 "choose_delivery_payment": operational_reason or (None if any(r.purpose == "delivery" and r.method == "unselected" for r in requests) else "NO_UNSELECTED_DELIVERY_PAYMENT")},
         }, "payment_requests": [serialize_request(r) for r in requests],

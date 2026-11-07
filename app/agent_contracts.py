@@ -215,6 +215,7 @@ class AllowedActions(PublicModel):
     change_to_delivery: bool
     change_to_takeaway: bool
     choose_delivery_payment: bool
+    submit_delivery_receipt: bool | None = None
     editable_item_ids: list[int]
     fulfillment_change_block_reason: str | None
     reasons: dict[str, str | None] = Field(default_factory=dict)
@@ -242,6 +243,7 @@ class PaymentRequest(PublicModel):
     items: list[dict[str, Any]] | None = None
     created_at: datetime | None = None
     payment_id: int | None = None
+    collection_pending_with_courier: bool | None = None
     blocked_reason: str | None = None
     resolution_note: str | None = None
     resolved_at: str | None = None

@@ -241,7 +241,7 @@ def test_prepared_line_is_protected_and_customer_state_reports_exact_balance(cli
     assert state["allowed_actions"]["add_items"]
 
 
-def test_shipping_yape_is_independent_and_blocks_all_dispatch_until_review(client, tenant, auth_headers):
+def test_shipping_yape_is_independent_and_allows_dispatch_before_review(client, tenant, auth_headers):
     headers, order = setup(client, tenant, auth_headers, quote=True)
     receipt = upload(client, headers, order)
     open_cash(client, auth_headers, tenant)
@@ -262,7 +262,7 @@ def test_shipping_yape_is_independent_and_blocks_all_dispatch_until_review(clien
     chosen = client.patch(f"/api/v1/integrations/orders/{order['id']}/delivery-payment",
         headers={**headers, "Idempotency-Key": "method"}, json={"sender": PHONE, "method": "yape", "expected_version": fee.json()["order"]["version"]})
     assert chosen.status_code == 200, chosen.text
-    assert client.post(path, headers=auth_headers, json={"status": "dispatched"}).status_code == 409
+    assert client.post(path, headers=auth_headers, json={"status": "dispatched"}).status_code == 200
     extra = upload(client, headers, order, chosen.json()["payment_request"]["id"])
     accepted = review(client, auth_headers, tenant, extra)
     assert accepted.status_code == 200, accepted.text
