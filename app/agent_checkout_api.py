@@ -700,6 +700,10 @@ async def set_delivery_fee(order_id: int, payload: DeliveryFee, idempotency_key:
     settings = db.scalar(select(BranchSettings).where(BranchSettings.branch_id == order.branch_id))
     if payload.method and settings and payload.method not in (settings.payment_methods or {}).get("delivery", []):
         raise HTTPException(409, "Payment method is disabled")
+    method = payload.method
+    # A pending agent quote does not change the original products payment choice.
+    if method is None and order.payment_method == "yape" and settings and "yape" in (settings.payment_methods or {}).get("delivery", []):
+        method = "yape"
     quote = db.get(DeliveryQuote, order.delivery_quote_id) if order.delivery_quote_id else None
     change_quote = quote and (quote.input_snapshot or {}).get("context") == "agent_fulfillment"
     baseline = money(quote.input_snapshot.get("delivery_charge_baseline", 0)) if change_quote else Decimal(0)
@@ -710,11 +714,11 @@ async def set_delivery_fee(order_id: int, payload: DeliveryFee, idempotency_key:
     if request is None:
         amount = Decimal(0) if change_quote else order.delivery_fee
         request = OrderPaymentRequest(business_id=order.business_id, branch_id=order.branch_id, order_id=order.id,
-            purpose="delivery", method=payload.method or "unselected", amount=amount,
+            purpose="delivery", method=method or "unselected", amount=amount,
             status="pending" if amount else "waived", snapshot={"delivery_charge_baseline": str(baseline)})
         db.add(request)
-    elif payload.method:
-        request.method = payload.method
+    elif method:
+        request.method = method
     request.snapshot = {**(request.snapshot or {}), "quote_id": order.delivery_quote_id}
     order.version += 1
     paid = sync_order_payment_status(db, order)

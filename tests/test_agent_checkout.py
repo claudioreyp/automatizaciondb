@@ -258,12 +258,9 @@ def test_shipping_yape_is_independent_and_allows_dispatch_before_review(client, 
                          headers={**auth_headers, "Idempotency-Key": "fee"})
     assert again.json() == fee.json()
     path = f"/api/v1/orders/{order['id']}/transition"
-    assert client.post(path, headers=auth_headers, json={"status": "dispatched"}).status_code == 409
-    chosen = client.patch(f"/api/v1/integrations/orders/{order['id']}/delivery-payment",
-        headers={**headers, "Idempotency-Key": "method"}, json={"sender": PHONE, "method": "yape", "expected_version": fee.json()["order"]["version"]})
-    assert chosen.status_code == 200, chosen.text
+    assert fee.json()["payment_request"]["method"] == "yape"
     assert client.post(path, headers=auth_headers, json={"status": "dispatched"}).status_code == 200
-    extra = upload(client, headers, order, chosen.json()["payment_request"]["id"])
+    extra = upload(client, headers, order, fee.json()["payment_request"]["id"])
     accepted = review(client, auth_headers, tenant, extra)
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["order"]["total"] == 25
