@@ -14,6 +14,7 @@ from .agent_attention import router as agent_attention_router
 from .agent_runtime_api import router as agent_runtime_router
 from .agent_turn_context import router as agent_turn_context_router
 from .agent_usage import router as agent_usage_router
+from .admin_agent_usage import router as admin_agent_usage_router
 from .agent_event_outbox import router as agent_event_outbox_router
 from .agent_selection import router as agent_selection_router
 from .agent_http_contracts import error_body, integration_http_exception, install_openapi
@@ -74,6 +75,7 @@ app.include_router(agent_attention_router)
 app.include_router(agent_runtime_router)
 app.include_router(agent_turn_context_router)
 app.include_router(agent_usage_router)
+app.include_router(admin_agent_usage_router)
 app.include_router(agent_event_outbox_router)
 app.include_router(agent_selection_router)
 app.add_exception_handler(StarletteHTTPException, integration_http_exception)
