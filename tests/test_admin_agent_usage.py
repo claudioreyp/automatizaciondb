@@ -276,4 +276,3 @@ def test_timeout_code_is_recognized_for_both_postgres_drivers(client, tenant, mo
     assert response.status_code == 503
     assert "exceeded its time budget" in response.json()["detail"]
     assert not reporting._CACHE
-

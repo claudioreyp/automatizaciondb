@@ -65,4 +65,3 @@ def test_actual_statement_timeout_returns_503_and_does_not_leak_to_pool(client, 
         assert connection.execute(text("SHOW statement_timeout")).scalar() == "0"
         assert connection.execute(text("SHOW transaction_read_only")).scalar() == "off"
     assert report(client).status_code == 200
-
