@@ -9,6 +9,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import quote
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -66,6 +67,7 @@ from .config import get_settings
 from .database import get_db
 from .catalog_availability import product_selection_unavailable_reason, selection_unavailable_reason, set_product_availability, sync_variant_availability
 from .agent_contracts import RestaurantContext
+from .agent_menu_pdf import menu_pdf_filename
 from .dashboard_report import dashboard_report
 from .errors import CodedHTTPException
 from .command_revisions import effective_ticket_context, effective_ticket_items
@@ -7378,6 +7380,11 @@ def integration_context(
             "menu_card_configured": bool(branch.menu_card_storage_path),
             "agent_name": branch.agent_name,
             "menu_images": [{"id": image["id"], "url": f"/api/v1/integrations/context/menu-cards/{image['id']}"} for image in menu_images(branch)],
+            "menu_pdf": {
+                "filename": menu_pdf_filename(branch.agent_menu_pdf["filename"]),
+                "size_bytes": branch.agent_menu_pdf["size_bytes"],
+                "url": "/api/v1/integrations/context/menu-card?prefer_pdf=true",
+            } if branch.agent_menu_pdf else None,
             "yape_qr_url": (
                 f"/api/v1/public/{business.slug}/{branch.slug}/yape-qr"
                 if branch.yape_qr_storage_path
@@ -7428,10 +7435,21 @@ async def integration_yape_qr(
 async def integration_menu_card(
     branch_id: int | None = None,
     format: str | None = Query(default=None, pattern="^whatsapp_cloud$"),
+    prefer_pdf: bool = False,
     integration: IntegrationAuthContext = Depends(require_integration_scope("menu:read")),
     db: Session = Depends(get_db),
 ):
     _, branch = integration_branch_from_auth(db, integration, branch_id)
+    if prefer_pdf and branch.agent_menu_pdf:
+        try:
+            data, _ = await load_private_file(branch.agent_menu_pdf["path"])
+        except (FileNotFoundError, httpx.HTTPError) as exc:
+            raise HTTPException(status_code=404, detail="No se encontró el PDF de la carta") from exc
+        filename = quote(menu_pdf_filename(branch.agent_menu_pdf["filename"]), safe="")
+        return Response(content=data, media_type="application/pdf", headers={
+            "Content-Disposition": f'attachment; filename="carta.pdf"; filename*=UTF-8\'\'{filename}',
+            "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+        })
     if not branch.menu_card_storage_path:
         raise HTTPException(status_code=404, detail="La carta no está configurada")
     try:

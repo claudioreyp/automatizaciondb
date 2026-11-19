@@ -151,7 +151,8 @@ def test_pdf_keeps_ten_images_legacy_qr_and_conversation_draft(client, tenant, a
     headers = integration_headers(credential["token"])
     context = client.get("/api/v1/integrations/context", headers=headers).json()["branch"]
     assert len(context["menu_images"]) == 10
-    assert "menu_pdf" not in context
+    assert context["menu_pdf"] == {"filename": "carta.pdf", "size_bytes": len(pdf_bytes()),
+                                   "url": "/api/v1/integrations/context/menu-card?prefer_pdf=true"}
     assert client.get(context["menu_images"][0]["url"], headers=headers).content == image.getvalue()
     # A settings user session is required; the isolated environment has no JWT provider.
     assert client.get(path(tenant) + "/menu-pdf", headers=headers).status_code in {401, 403, 503}
