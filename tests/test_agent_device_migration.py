@@ -20,7 +20,7 @@ def test_additive_agent_migration_preserves_existing_primary_and_device(tmp_path
         command.upgrade(config, "20260912_0021")
         with engine.begin() as db:
             # The bootstrap uses live metadata; restore the real pre-upgrade shape.
-            for name in ["agent_name", "agent_menu_images"]:
+            for name in ["agent_name", "agent_menu_images", "agent_menu_pdf"]:
                 db.execute(sa.text(f"ALTER TABLE branches DROP COLUMN {name}"))
             for name in device_columns:
                 db.execute(sa.text(f"ALTER TABLE paired_devices DROP COLUMN {name}"))

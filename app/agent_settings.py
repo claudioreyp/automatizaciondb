@@ -2,12 +2,14 @@
 import hashlib
 import json
 from uuid import uuid4
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from .auth import AuthContext, get_current_user, require_integration_scope
 from .database import get_db
@@ -16,6 +18,7 @@ from .services import assert_version, audit, get_idempotent_response, save_idemp
 from .settings_api import _key, _validate_branch_media, BRANCH_MEDIA_MAX_BYTES
 from .settings_service import scoped_branch, require_settings_permission, actor_display_name, lock_staff_business
 from .storage import store_private_file, load_private_file, delete_private_file
+from .agent_menu_pdf import MENU_PDF_MAX_BYTES, menu_pdf_filename, validate_menu_pdf
 
 router = APIRouter(tags=["agent settings"])
 
@@ -41,6 +44,8 @@ def agent_response(branch):
     return {"branch_id": branch.id, "version": branch.version, "name": branch.agent_name,
             "yape_number": branch.yape_number, "payment_recipient_name": branch.payment_recipient_name,
             "images": [{"id": item["id"], "url": f"{base}/images/{item['id']}?v={branch.version}"} for item in menu_images(branch)],
+            "menu_pdf": {"filename": branch.agent_menu_pdf["filename"], "size_bytes": branch.agent_menu_pdf["size_bytes"],
+                         "url": f"{base}/menu-pdf?v={branch.version}"} if branch.agent_menu_pdf else None,
             "yape_qr_url": f"{base}/yape-qr?v={branch.version}" if branch.yape_qr_storage_path else None}
 
 
@@ -87,7 +92,8 @@ def commit(db, branch, user, scope, key, signature):
     audit(db, user, scope, "branch", branch.id, branch.business_id,
           {"name": branch.agent_name, "yape_number": branch.yape_number,
            "payment_recipient_name": branch.payment_recipient_name,
-           "image_ids": [i["id"] for i in menu_images(branch)], "yape_qr_configured": bool(branch.yape_qr_storage_path)},
+           "image_ids": [i["id"] for i in menu_images(branch)], "yape_qr_configured": bool(branch.yape_qr_storage_path),
+           "menu_pdf_configured": bool(branch.agent_menu_pdf)},
           branch_id=branch.id, actor_display_name=actor_display_name(db, user))
     save_idempotent_response(db, scope, key, branch.business_id, {"fingerprint": signature, "result": result})
     db.commit()
@@ -99,7 +105,7 @@ async def cleanup_unreferenced(db, path):
         return
     # Legacy uploads can share a stored object; never remove a referenced object.
     for branch in db.scalars(select(Branch)):
-        if path in {branch.logo_storage_path, branch.cover_storage_path, branch.yape_qr_storage_path, branch.menu_card_storage_path} or any(i["path"] == path for i in menu_images(branch)):
+        if path in {branch.logo_storage_path, branch.cover_storage_path, branch.yape_qr_storage_path, branch.menu_card_storage_path} or any(i["path"] == path for i in menu_images(branch)) or (branch.agent_menu_pdf or {}).get("path") == path:
             return
     try:
         await delete_private_file(path)
@@ -134,6 +140,100 @@ def update_agent(branch_id: int, payload: AgentUpdate, idempotency_key: str | No
             raise HTTPException(422, "El orden debe incluir cada imagen exactamente una vez")
         set_menu_images(branch, [images[i] for i in payload.image_order])
     return commit(db, branch, user, scope, key, signature)
+
+
+def _commit_menu_pdf_upload(db, user, branch_id, expected_version, scope, key, signature, path, filename, size_bytes):
+    # Keep the entire locked transaction on one worker. Legacy image uploads can
+    # yield while holding this lock; waiting here must never block their event loop.
+    try:
+        branch = writable(db, user, branch_id)
+        previous = replay(db, branch, scope, key, signature)
+        if previous:
+            db.rollback()
+            return previous, None, False
+        assert_version(branch.version, expected_version)
+        old_path = (branch.agent_menu_pdf or {}).get("path")
+        branch.agent_menu_pdf = {"path": path, "filename": filename, "size_bytes": size_bytes}
+        return commit(db, branch, user, scope, key, signature), old_path, True
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _commit_menu_pdf_delete(db, user, branch_id, expected_version, scope, key, signature):
+    try:
+        branch = writable(db, user, branch_id)
+        previous = replay(db, branch, scope, key, signature)
+        if previous:
+            db.rollback()
+            return previous, None
+        assert_version(branch.version, expected_version)
+        if not branch.agent_menu_pdf:
+            raise HTTPException(404, "La carta PDF no está configurada")
+        path = branch.agent_menu_pdf["path"]
+        branch.agent_menu_pdf = None
+        return commit(db, branch, user, scope, key, signature), path
+    except Exception:
+        db.rollback()
+        raise
+
+
+@router.post("/settings/branches/{branch_id}/agent/menu-pdf")
+async def upload_agent_menu_pdf(branch_id: int, expected_version: int = Form(..., ge=1), file: UploadFile = File(...),
+                                idempotency_key: str | None = Header(None),
+                                user: AuthContext = Depends(get_current_user), db: Session = Depends(get_db)):
+    branch = scoped_branch(db, user, branch_id)
+    require_settings_permission(db, user, branch.business_id, "branch")
+    data = await file.read(MENU_PDF_MAX_BYTES + 1)
+    filename = menu_pdf_filename(file.filename)
+    await run_in_threadpool(validate_menu_pdf, data, file.content_type)
+    key, scope = _key(idempotency_key), f"settings.branch.{branch_id}.agent.menu_pdf.uploaded"
+    signature = fingerprint([hashlib.sha256(data).hexdigest(), filename, expected_version])
+    previous = replay(db, branch, scope, key, signature)
+    if previous:
+        return previous
+    assert_version(branch.version, expected_version)
+    path = await store_private_file(data, filename, "application/pdf", "agent-menu-pdf")
+    try:
+        result, old_path, used = await run_in_threadpool(
+            _commit_menu_pdf_upload, db, user, branch_id, expected_version, scope, key, signature,
+            path, filename, len(data),
+        )
+    except Exception:
+        await cleanup_unreferenced(db, path)
+        raise
+    await cleanup_unreferenced(db, old_path if used else path)
+    return result
+
+
+@router.delete("/settings/branches/{branch_id}/agent/menu-pdf")
+async def delete_agent_menu_pdf(branch_id: int, expected_version: int = Query(..., ge=1),
+                                idempotency_key: str | None = Header(None),
+                                user: AuthContext = Depends(get_current_user), db: Session = Depends(get_db)):
+    key, scope = _key(idempotency_key), f"settings.branch.{branch_id}.agent.menu_pdf.deleted"
+    signature = fingerprint([expected_version])
+    result, path = await run_in_threadpool(
+        _commit_menu_pdf_delete, db, user, branch_id, expected_version, scope, key, signature,
+    )
+    await cleanup_unreferenced(db, path)
+    return result
+
+
+@router.get("/settings/branches/{branch_id}/agent/menu-pdf")
+async def read_agent_menu_pdf(branch_id: int, user: AuthContext = Depends(get_current_user), db: Session = Depends(get_db)):
+    branch = scoped_branch(db, user, branch_id)
+    require_settings_permission(db, user, branch.business_id, "branch")
+    if not branch.agent_menu_pdf:
+        raise HTTPException(404, "La carta PDF no está configurada")
+    try:
+        data, _ = await load_private_file(branch.agent_menu_pdf["path"])
+    except (FileNotFoundError, httpx.HTTPError) as exc:
+        raise HTTPException(404, "No se encontró la carta PDF") from exc
+    filename = quote(menu_pdf_filename(branch.agent_menu_pdf["filename"]), safe="")
+    return Response(data, media_type="application/pdf", headers={
+        "Content-Disposition": f"attachment; filename=\"carta.pdf\"; filename*=UTF-8''{filename}",
+        "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+    })
 
 
 @router.post("/settings/branches/{branch_id}/agent/images")

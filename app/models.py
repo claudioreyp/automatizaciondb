@@ -94,6 +94,7 @@ class Branch(Base, TimestampMixin):
     menu_card_storage_path: Mapped[str | None] = mapped_column(Text)
     agent_name: Mapped[str | None] = mapped_column(String(80))
     agent_menu_images: Mapped[list | None] = mapped_column(JSON(none_as_null=True))
+    agent_menu_pdf: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     agent_context_notes: Mapped[str | None] = mapped_column(Text)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
